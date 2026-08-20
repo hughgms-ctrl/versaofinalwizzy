@@ -4,6 +4,7 @@ import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth }
 import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
 import { buildKnowledgeBlock } from '../_shared/agentKnowledge.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import { resumeFlow } from '../_shared/flowResume.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2566,21 +2567,16 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
 
               // Trigger flow-execute to continue from the next node (creates a fresh execution starting at nextNodeId)
-              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-              const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
               try {
-                await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-                  body: JSON.stringify({
-                    flowId: flowExec.flow_id,
-                    conversationId: ctx.conversationId,
-                    startNodeId: nextNodeId,
-                    // variables carrega o ai_resultado e tudo que o fluxo coletou antes do handoff;
-                    // o flow-execute só semeia o contato, então sem isto a execução nova nasce vazia.
-                    variables,
-                    triggerMessage: messageContent, // PASS MESSAGE TO TRIGGER NEXT AUTO-NODE
-                  }),
+                await resumeFlow({
+                  flowId: flowExec.flow_id,
+                  conversationId: ctx.conversationId,
+                  startNodeId: nextNodeId,
+                  // variables carrega o ai_resultado e tudo que o fluxo coletou antes do handoff;
+                  // o flow-execute só semeia o contato, então sem isto a execução nova nasce vazia.
+                  variables,
+                  triggerMessage: messageContent, // PASS MESSAGE TO TRIGGER NEXT AUTO-NODE
+                  reason: 'ai-handoff concluido',
                 });
               } catch (e) {
                 console.error('[ORCHESTRATOR] Error resuming flow:', e);
@@ -2726,13 +2722,13 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           delete metadata.ai_handoff_context;
           await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
 
-          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           try {
-            await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-              body: JSON.stringify({ flowId: flowExec.flow_id, conversationId: ctx.conversationId, startNodeId: nextNodeId, variables }),
+            await resumeFlow({
+              flowId: flowExec.flow_id,
+              conversationId: ctx.conversationId,
+              startNodeId: nextNodeId,
+              variables,
+              reason: 'ai-handoff concluido (fallback legado)',
             });
           } catch (e) {
             console.error('[LEGACY FALLBACK] Error resuming flow:', e);

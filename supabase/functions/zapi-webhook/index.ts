@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
+import { resumeFlow } from '../_shared/flowResume.ts';
 
 declare const EdgeRuntime: any;
 
@@ -2558,20 +2559,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
-          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-            body: JSON.stringify({
-              flowId: activeFlowExec.flow_id,
-              conversationId: conversation.id,
-              startNodeId: respondedTarget,
-              // Sem isto o flow-execute cria a execução nova só com o seed do contato e
-              // toda variável coletada antes da pausa fica abandonada na execução velha.
-              variables: (activeFlowExec as any).variables || {},
-              triggerMessage: triggerText || '[mídia]',
-            }),
-          });
-          runBackground(resumePromise);
+          runBackground(resumeFlow({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: respondedTarget,
+            variables: (activeFlowExec as any).variables || {},
+            triggerMessage: triggerText || '[mídia]',
+            reason: 'action-flow respondido',
+          }));
         } else {
           // No responded edge — flow STOPS here. Complete and cleanup.
           console.log(`[WEBHOOK] action-flow has NO responded edge — flow STOPS`);
@@ -2616,18 +2611,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
-          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-            body: JSON.stringify({
-              flowId: activeFlowExec.flow_id,
-              conversationId: conversation.id,
-              startNodeId: nextNodeId,
-              variables: existingVars,
-              triggerMessage: triggerText || '[mídia]',
-            }),
-          });
-          runBackground(resumePromise);
+          runBackground(resumeFlow({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: nextNodeId,
+            variables: existingVars,
+            triggerMessage: triggerText || '[mídia]',
+            reason: 'bloco de conteudo respondido',
+          }));
         } else {
           // No next node — flow STOPS here. Complete and cleanup.
           console.log(`[WEBHOOK] Content block has NO outgoing edge — flow STOPS`);
@@ -2733,18 +2724,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
-          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-            body: JSON.stringify({
-              flowId: activeFlowExec.flow_id,
-              conversationId: conversation.id,
-              startNodeId: nextNodeId,
-              variables: existingVars,
-              triggerMessage: triggerText || '[mídia]',
-            }),
-          });
-          runBackground(resumePromise);
+          runBackground(resumeFlow({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: nextNodeId,
+            variables: existingVars,
+            triggerMessage: triggerText || '[mídia]',
+            reason: 'botao/lista escolhido',
+          }));
         } else {
           // No matching edge — flow STOPS
           console.log(`[WEBHOOK] ${currentNode.type} has NO matching edge — flow STOPS`);
@@ -2783,18 +2770,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
-          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-            body: JSON.stringify({
-              flowId: activeFlowExec.flow_id,
-              conversationId: conversation.id,
-              startNodeId: followUpEdge.target,
-              variables: varsWithChoice,
-              triggerMessage: triggerText || '[mídia]',
-            }),
-          });
-          runBackground(resumePromise);
+          runBackground(resumeFlow({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: followUpEdge.target,
+            variables: varsWithChoice,
+            triggerMessage: triggerText || '[mídia]',
+            reason: 'botao de follow-up',
+          }));
         } else if (!hasOutgoingEdge) {
           console.log(`[WEBHOOK] Node ${activeFlowExec.current_node_id} has NO outgoing edge — flow STOPS`);
           await supabase.from('flow_executions').update({
@@ -2813,18 +2796,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           }).eq('id', conversation.id);
         } else {
           console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
-          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-            body: JSON.stringify({
-              flowId: activeFlowExec.flow_id,
-              conversationId: conversation.id,
-              startNodeId: activeFlowExec.current_node_id,
-              variables: (activeFlowExec as any).variables || {},
-              triggerMessage: triggerText || '[mídia]',
-            }),
-          });
-          runBackground(resumePromise);
+          runBackground(resumeFlow({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: activeFlowExec.current_node_id,
+            variables: (activeFlowExec as any).variables || {},
+            triggerMessage: triggerText || '[mídia]',
+            reason: 'waiting_input generico',
+          }));
         }
       } else {
         console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);

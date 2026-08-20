@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resumeFlow } from '../_shared/flowResume.ts';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
@@ -494,13 +495,16 @@ async function cleanupFlowEnd(
   // Check if there's a PARENT flow execution still active for this conversation
   const { data: otherActiveFlows } = await supabase
     .from('flow_executions')
-    .select('id')
+    .select('id, flow_id, current_node_id, status, variables')
     .eq('conversation_id', conversationId)
     .neq('id', executionId)
     // waiting_delay também é fluxo vivo (pai parado num atraso inteligente):
     // sem isso, o fim de um sub-fluxo jogaria a conversa para 'humano' e
     // mataria o pai que só estava esperando a hora de continuar.
     .in('status', ['running', 'waiting_input', 'waiting_delay'])
+    // Entre vários fluxos vivos, o mais recente é o candidato a pai — um fluxo
+    // antigo esquecido não pode sequestrar a volta do sub-fluxo.
+    .order('started_at', { ascending: false })
     .limit(1);
 
   const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
@@ -527,28 +531,114 @@ async function cleanupFlowEnd(
 
     console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to ativo, cleared ai_agent_id`);
   } else {
-    const parentExec = otherActiveFlows[0];
-    console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow ${parentExec.id} still active. RESUMING parent.`);
-    
-    // Resume parent flow automatically
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    // We fetch without waiting to avoid circular dependency/timeout lag
-    fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-      body: JSON.stringify({ 
-        conversationId, 
-        resumeExecutionId: parentExec.id 
-      }),
-    }).catch(err => console.error('[FLOW EXECUTE] Error resuming parent flow:', err));
+    await resumeParentFlow(supabase, conversationId, executionId, otherActiveFlows[0] as ParentExecution);
   }
 
   await supabase
     .from('flows')
     .update({ triggers_count: (flow.triggers_count || 0) + 1 })
     .eq('id', flow.id);
+}
+
+interface ParentExecution {
+  id: string;
+  flow_id: string;
+  current_node_id: string | null;
+  status: string;
+  variables: Record<string, unknown> | null;
+}
+
+/**
+ * Sub-fluxo terminou e o fluxo pai está parado esperando por ele. Este é o
+ * caminho de volta — o nó "Disparar fluxo" com "Aguardar resposta" ligado diz,
+ * na própria tela, "Pausa o orquestrador até o fluxo terminar".
+ *
+ * Nunca funcionou. O corpo antigo mandava `resumeExecutionId`, chave que o
+ * flow-execute não lê, e omitia `flowId` — a chamada batia no 400 logo na
+ * entrada do handler e morria calada, sem erro em log nenhum. Na prática o pai
+ * ficava pendurado até o timeout de 24h, ou até o contato mandar outra mensagem
+ * por conta própria: aí o zapi-webhook o destravava pela aresta 'responded', e
+ * foi isso que mascarou o bug esse tempo todo.
+ */
+async function resumeParentFlow(
+  supabase: SupabaseClientType,
+  conversationId: string,
+  subExecutionId: string,
+  parentExec: ParentExecution,
+) {
+  // Sem "Aguardar resposta" o pai não parou: seguiu sozinho logo depois de
+  // disparar o sub-fluxo. Retomar aqui reexecutaria o trecho inteiro.
+  if (parentExec.status !== 'waiting_input') {
+    console.log(`[FLOW EXECUTE] Pai ${parentExec.id} não está pausado (status=${parentExec.status}) — nada a retomar.`);
+    return;
+  }
+
+  const { data: parentFlow } = await supabase
+    .from('flows')
+    .select('nodes, edges')
+    .eq('id', parentExec.flow_id)
+    .maybeSingle();
+
+  const parentNodes = (parentFlow?.nodes || []) as FlowNode[];
+  const parentEdges = (parentFlow?.edges || []) as FlowEdge[];
+  const parkedNode = parentNodes.find(n => n.id === parentExec.current_node_id);
+
+  // Só o nó de sub-fluxo devolve o controle assim. Um pai parado num
+  // content-block ou num ai-handoff espera o CONTATO, não o sub-fluxo — e
+  // acordá-lo aqui atropelaria a resposta que ainda vai chegar.
+  if (parkedNode?.type !== 'action-flow' && parkedNode?.type !== 'orch-flow') {
+    console.log(`[FLOW EXECUTE] Pai ${parentExec.id} parado num ${parkedNode?.type || 'nó desconhecido'} — não é espera de sub-fluxo.`);
+    return;
+  }
+
+  const nextEdge =
+    parentEdges.find(e => e.source === parkedNode.id && e.sourceHandle === 'responded') ||
+    parentEdges.find(e => e.source === parkedNode.id && !e.sourceHandle) ||
+    parentEdges.find(e => e.source === parkedNode.id);
+
+  // O que o sub-fluxo coletou volta para o pai. É o que faz um sub-fluxo de
+  // triagem compartilhado valer a pena: ele pergunta, o pai usa a resposta.
+  const { data: subExec } = await supabase
+    .from('flow_executions')
+    .select('variables')
+    .eq('id', subExecutionId)
+    .maybeSingle();
+
+  // Fecha a execução do pai: o flow-execute não continua uma execução, ele cria
+  // outra. resumedFromExecutionId mantém as duas na mesma passagem do contato.
+  await supabase.from('flow_executions').update({
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    timeout_at: null,
+    remarketing_step: 0,
+  }).eq('id', parentExec.id);
+
+  if (!nextEdge?.target) {
+    console.log(`[FLOW EXECUTE] Nó ${parkedNode.id} não tem saída ligada — o fluxo pai termina aqui.`);
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversationId)
+      .single();
+    const cleanMetadata = { ...(convData?.metadata || {}) };
+    delete cleanMetadata.ai_handoff_context;
+    cleanMetadata.flow_ended_at = new Date().toISOString();
+    await supabase
+      .from('conversations')
+      .update({ service_mode: 'ativo', ai_agent_id: null, metadata: cleanMetadata })
+      .eq('id', conversationId);
+    return;
+  }
+
+  await resumeFlow({
+    flowId: parentExec.flow_id,
+    conversationId,
+    startNodeId: nextEdge.target,
+    variables: parentExec.variables || {},
+    extraVariables: (subExec?.variables || {}) as Record<string, unknown>,
+    resumedFromExecutionId: parentExec.id,
+    reason: 'sub-fluxo terminou, retomando o pai',
+  });
 }
 
 async function runFlowExecution(
@@ -1069,6 +1159,8 @@ async function executeSubFlow(
   const flowId = String(data.flowId || '');
   const flowName = String(data.flowName || data.label || 'Sub-fluxo');
   const waitForResponse = Boolean(data.waitForResponse);
+  // Herda por padrão: fluxo já desenhado não tem a chave e precisa passar a herdar.
+  const inheritVariables = data.inheritVariables !== false;
   const remarketingSteps = (data.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
 
   if (!flowId) {
@@ -1094,6 +1186,12 @@ async function executeSubFlow(
         conversationId: context.conversationId,
         isFromOrchestrator: context.isFromOrchestrator,
         triggerMessage: context.triggerMessage, // Propagate the message that resumed the parent flow
+        // O sub-fluxo é a MESMA conversa com o MESMO lead: as variáveis são sobre
+        // a pessoa, não sobre o fluxo. Sem herdar, um sub-fluxo de triagem começa
+        // cego e quem desenhou o fluxo passa a tarde atrás de {{variavel}} vazia.
+        // O risco é colisão de nome (o pai atropelando um nome igual no filho) —
+        // para isso existe o desligador no nó.
+        ...(inheritVariables ? { variables: context.variables } : {}),
       }),
     });
 

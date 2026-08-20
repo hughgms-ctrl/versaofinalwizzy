@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import { resumeFlow } from '../_shared/flowResume.ts';
 import {
   MAX_EVOLUTION_REPLY_BUTTONS,
   evolutionButtonsAccepted,
@@ -557,21 +558,18 @@ Deno.serve(async (req) => {
 
         console.log(`[FLOW TIMEOUTS] Smart delay elapsed for exec ${exec.id} — resuming at node ${exec.current_node_id}`);
 
-        await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-          body: JSON.stringify({
-            flowId: exec.flow_id,
-            conversationId: exec.conversation_id,
-            startNodeId: exec.current_node_id,
-            // Liga a execução nova à que acabou de fechar: as duas são a MESMA
-            // passagem do contato pelo fluxo, só fatiada pela espera. Sem isso o
-            // histórico mostraria cada trecho como uma entrada independente.
-            resumedFromExecutionId: exec.id,
-            // As variáveis acumuladas até aqui precisam atravessar a espera —
-            // senão o trecho depois do atraso perde o que o fluxo já coletou.
-            variables: exec.variables || {},
-          }),
+        await resumeFlow({
+          flowId: exec.flow_id,
+          conversationId: exec.conversation_id,
+          startNodeId: exec.current_node_id,
+          // Liga a execução nova à que acabou de fechar: as duas são a MESMA
+          // passagem do contato pelo fluxo, só fatiada pela espera. Sem isso o
+          // histórico mostraria cada trecho como uma entrada independente.
+          resumedFromExecutionId: exec.id,
+          // As variáveis acumuladas até aqui precisam atravessar a espera —
+          // senão o trecho depois do atraso perde o que o fluxo já coletou.
+          variables: exec.variables || {},
+          reason: 'atraso inteligente vencido',
         });
 
         delaysResumed++;
@@ -734,17 +732,14 @@ Deno.serve(async (req) => {
               remarketing_step: 0,
             }).eq('id', exec.id);
 
-            await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-              body: JSON.stringify({
-                flowId: exec.flow_id,
-                conversationId: exec.conversation_id,
-                startNodeId: respondedEdge.target,
-                // Mesma passagem do contato: sem as variáveis a retomada perde tudo que o
-                // fluxo já coletou antes da espera.
-                variables: exec.variables || {},
-              }),
+            await resumeFlow({
+              flowId: exec.flow_id,
+              conversationId: exec.conversation_id,
+              startNodeId: respondedEdge.target,
+              // Mesma passagem do contato: sem as variáveis a retomada perde tudo que o
+              // fluxo já coletou antes da espera.
+              variables: exec.variables || {},
+              reason: 'follow-up: contato respondeu',
             });
           } else {
             await supabase.from('flow_executions').update({
@@ -947,15 +942,12 @@ Deno.serve(async (req) => {
               variables: { ...(exec.variables || {}), _timeout: true },
             }).eq('id', exec.id);
 
-            await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-              body: JSON.stringify({
-                flowId: exec.flow_id,
-                conversationId: exec.conversation_id,
-                startNodeId: nextNodeId,
-                variables: { ...(exec.variables || {}), _timeout: true },
-              }),
+            await resumeFlow({
+              flowId: exec.flow_id,
+              conversationId: exec.conversation_id,
+              startNodeId: nextNodeId,
+              variables: { ...(exec.variables || {}), _timeout: true },
+              reason: 'follow-up esgotado, aresta timeout',
             });
 
             processed++;

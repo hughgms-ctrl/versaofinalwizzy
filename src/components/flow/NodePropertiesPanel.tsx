@@ -2047,11 +2047,24 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50/50">
               <div className="space-y-0.5">
                 <Label className="text-xs">Aguardar resposta</Label>
-                <p className="text-[10px] text-muted-foreground">Pausa o orquestrador até o fluxo terminar.</p>
+                <p className="text-[10px] text-muted-foreground">Pausa o fluxo aqui até o sub-fluxo terminar.</p>
+              </div>
+              {/* Era `!== false`, o que deixava a chave desenhada LIGADA num nó novo
+                  enquanto o backend lia `Boolean(data.waitForResponse)` — ou seja,
+                  desligada. A tela prometia uma pausa que nunca acontecia. */}
+              <Switch
+                checked={!!(localData.waitForResponse as boolean)}
+                onCheckedChange={(val) => handleChange('waitForResponse', val)}
+              />
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50/50">
+              <div className="space-y-0.5">
+                <Label className="text-xs">Herdar variáveis do fluxo pai</Label>
+                <p className="text-[10px] text-muted-foreground">O sub-fluxo enxerga o que já foi coletado, e devolve o que coletar. Desligue só se os dois fluxos usam nomes de variável iguais para coisas diferentes.</p>
               </div>
               <Switch
-                checked={(localData.waitForResponse as boolean) !== false}
-                onCheckedChange={(val) => handleChange('waitForResponse', val)}
+                checked={(localData.inheritVariables as boolean) !== false}
+                onCheckedChange={(val) => handleChange('inheritVariables', val)}
               />
             </div>
             {!!(localData.waitForResponse) && (
