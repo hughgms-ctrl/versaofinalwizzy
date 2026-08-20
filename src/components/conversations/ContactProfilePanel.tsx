@@ -43,6 +43,7 @@ import { ContactContractsSection } from './ContactContractsSection';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 import { ConversationAttributesPanel } from './ConversationAttributesPanel';
 import { ContactProfileTabs } from './ContactProfileTabs';
+import { ContactCustomFieldsSection } from '@/components/contacts/ContactCustomFieldsSection';
 import { getDerivedStatusInfo } from '@/lib/conversationStatus';
 
 interface ContactProfilePanelProps {
@@ -495,6 +496,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
                 <Separator />
 
+                {/* Campos personalizados (gravados por fluxo/IA/importacao) */}
+                <ContactCustomFieldsSection metadata={profileContact?.metadata} withSeparator />
+
                 {/* Attributes */}
                 <ConversationAttributesPanel conversation={conversation} compact />
 
@@ -900,6 +904,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           </div>
 
           <Separator />
+
+          {/* Campos personalizados (gravados por fluxo/IA/importacao) */}
+          <ContactCustomFieldsSection metadata={profileContact?.metadata} withSeparator />
 
           {/* Atributos da conversa (Workspace, Responsável, Origem, Pipeline) */}
           <div className="space-y-2">
