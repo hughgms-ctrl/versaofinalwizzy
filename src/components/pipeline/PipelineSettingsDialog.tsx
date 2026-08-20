@@ -59,44 +59,73 @@ import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ChevronDown } from 'lucide-react';
 
-function ColumnAutoTagsEditor({ columns, pipelineId }: { columns: any[]; pipelineId: string }) {
+// Editor CONTROLADO: não grava nada, acumula no rascunho do diálogo e quem
+// persiste é o "Salvar". Antes cada clique dava .update() direto no banco, e o
+// "Cancelar" ao lado não desfazia nada — quem marcava a tag errada tinha que
+// reabrir e desmarcar uma a uma.
+function ColumnAutoTagsEditor({
+  columns,
+  draft,
+  onChange,
+}: {
+  columns: PipelineColumn[];
+  draft: Record<string, string[]>;
+  onChange: (columnId: string, tagIds: string[]) => void;
+}) {
   const { data: tags = [] } = useTags();
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState<string | null>(null);
 
-  const toggle = async (col: any, tagId: string) => {
-    const current: string[] = col.auto_add_tag_ids || [];
-    const next = current.includes(tagId) ? current.filter((t) => t !== tagId) : [...current, tagId];
-    setBusy(col.id);
-    await (supabase as any).from('pipeline_columns').update({ auto_add_tag_ids: next }).eq('id', col.id);
-    await qc.invalidateQueries({ queryKey: ['pipeline-columns', pipelineId] });
-    setBusy(null);
+  // Um popover aberto por vez. Cada coluna tinha um <Popover> não controlado, e
+  // o Radix só fecha o anterior no pointerdown de fora — que clique
+  // programático (E2E/automação) nem sempre dispara. Sobravam vários abertos ao
+  // mesmo tempo, com markup idêntico, e o seletor acertava o popover errado.
+  const [openColumnId, setOpenColumnId] = useState<string | null>(null);
+
+  const tagsOf = (col: PipelineColumn) => draft[col.id] ?? col.auto_add_tag_ids ?? [];
+
+  const toggle = (col: PipelineColumn, tagId: string) => {
+    const current = tagsOf(col);
+    onChange(
+      col.id,
+      current.includes(tagId) ? current.filter((t) => t !== tagId) : [...current, tagId],
+    );
   };
 
   return (
-    <div className="space-y-2 max-h-[180px] overflow-y-auto">
+    <div className="space-y-2">
       {columns.map((col) => {
-        const selected: string[] = col.auto_add_tag_ids || [];
+        const selected = tagsOf(col);
         return (
-          <div key={col.id} className="flex items-center gap-2">
+          <div key={col.id} className="flex items-center gap-2" data-column-id={col.id}>
             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
             <span className="text-sm flex-1 truncate">{col.name || 'Sem nome'}</span>
-            <Popover>
+            <Popover
+              open={openColumnId === col.id}
+              onOpenChange={(isOpen) => setOpenColumnId(isOpen ? col.id : null)}
+            >
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" disabled={busy === col.id} className="h-8 text-xs">
+                <Button variant="outline" size="sm" className="h-8 text-xs">
                   {selected.length === 0 ? 'Nenhuma' : `${selected.length} tag(s)`}
                   <ChevronDown className="h-3 w-3 ml-1" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-64 p-2 max-h-[240px] overflow-y-auto">
+              <PopoverContent className="w-64 p-2 max-h-[240px] overflow-y-auto" data-column-id={col.id}>
                 {tags.length === 0 ? (
                   <p className="text-xs text-muted-foreground p-2">Nenhuma tag cadastrada.</p>
                 ) : (
                   tags.map((t: any) => (
-                    <div key={t.id} className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggle(col, t.id)}>
-                      <Checkbox checked={selected.includes(t.id)} />
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color || '#888' }} />
-                      <span className="text-sm">{t.name}</span>
+                    <div key={t.id} className="flex items-center gap-2 p-1 hover:bg-muted rounded">
+                      <Checkbox
+                        id={`auto-tag-${col.id}-${t.id}`}
+                        checked={selected.includes(t.id)}
+                        onCheckedChange={() => toggle(col, t.id)}
+                      />
+                      <Label
+                        htmlFor={`auto-tag-${col.id}-${t.id}`}
+                        className="flex flex-1 items-center gap-2 cursor-pointer font-normal"
+                      >
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#888' }} />
+                        <span className="text-sm">{t.name}</span>
+                      </Label>
                     </div>
                   ))
                 )}
@@ -214,6 +243,11 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [activeSection, setActiveSection] = useState<'general' | 'checklists' | 'notifications' | 'tags'>('general');
   const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>({});
   const [showUnassigned, setShowUnassigned] = useState(pipeline.show_unassigned || false);
+  // Só as colunas mexidas nesta sessão entram aqui. As demais continuam lendo o
+  // valor do banco, então um refetch no meio da edição não apaga o rascunho nem
+  // ressuscita valor velho nas colunas já tocadas.
+  const [autoTagsDraft, setAutoTagsDraft] = useState<Record<string, string[]>>({});
+  const [savingTags, setSavingTags] = useState(false);
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
   const { data: allPipelines = [] } = usePipelines();
@@ -247,6 +281,12 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
     setShowUnassigned(pipeline.show_unassigned || false);
   }, [pipeline, selectedWorkspaceId]);
+
+  // O diálogo não desmonta ao fechar (só o DialogContent), então o rascunho
+  // sobreviveria para a próxima abertura se não fosse zerado aqui.
+  useEffect(() => {
+    if (open) setAutoTagsDraft({});
+  }, [open]);
 
   // Keep the local (optimistic) column config mirrored from the DB query.
   useEffect(() => {
@@ -286,11 +326,51 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged || completionChanged || showUnassignedChanged;
   };
 
+  const sameTags = (a: string[], b: string[]) =>
+    JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+  const changedTagColumns = () =>
+    columns.filter((col) => {
+      const drafted = autoTagsDraft[col.id];
+      return drafted !== undefined && !sameTags(drafted, col.auto_add_tag_ids || []);
+    });
+
   const handleSave = async () => {
+    const tagColumns = changedTagColumns();
+
+    if (tagColumns.length > 0) {
+      setSavingTags(true);
+      try {
+        for (const col of tagColumns) {
+          const { data, error } = await supabase
+            .from('pipeline_columns')
+            .update({ auto_add_tag_ids: autoTagsDraft[col.id] })
+            .eq('id', col.id)
+            .select('id');
+          if (error) throw error;
+          // A RLS não erra num update que não casa linha nenhuma: sem esta
+          // checagem o diálogo fecharia como se tivesse salvado.
+          if (!data || data.length === 0) {
+            throw new Error(`Sem permissão para alterar as tags da coluna "${col.name || 'Sem nome'}".`);
+          }
+        }
+        await qc.invalidateQueries({ queryKey: ['pipeline-columns', pipeline.id] });
+      } catch (error: any) {
+        toast({
+          title: 'Erro ao salvar as tags automáticas',
+          description: error?.message || 'Erro desconhecido',
+          variant: 'destructive',
+        });
+        return; // mantém o diálogo aberto, com o rascunho intacto
+      } finally {
+        setSavingTags(false);
+      }
+    }
+
     if (hasChanges()) {
-      await updatePipeline.mutateAsync({ 
-        id: pipeline.id, 
-        name, 
+      await updatePipeline.mutateAsync({
+        id: pipeline.id,
+        name,
         description,
         workspace_ids: selectedWorkspaceIds,
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
@@ -300,6 +380,13 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         show_unassigned: showUnassigned,
       });
     }
+
+    setAutoTagsDraft({});
+    onOpenChange(false);
+  };
+
+  const handleCancel = () => {
+    setAutoTagsDraft({});
     onOpenChange(false);
   };
 
@@ -395,7 +482,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
           </DialogHeader>
 
           {/* Section tabs */}
-          <div className="flex gap-2 border-b border-border pb-2">
+          <div className="flex gap-2 border-b border-border pb-2 shrink-0">
             <Button
               variant={activeSection === 'general' ? 'default' : 'ghost'}
               size="sm"
@@ -429,7 +516,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
             </Button>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
             {activeSection === 'general' && (
               <>
                 <div className="space-y-2">
@@ -834,19 +921,27 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </p>
                 </div>
                 <div className="rounded-lg border border-border p-4 bg-muted/20">
-                  <ColumnAutoTagsEditor columns={columns} pipelineId={pipeline.id} />
+                  <ColumnAutoTagsEditor
+                    columns={columns}
+                    draft={autoTagsDraft}
+                    onChange={(columnId, tagIds) =>
+                      setAutoTagsDraft((prev) => ({ ...prev, [columnId]: tagIds }))
+                    }
+                  />
                 </div>
               </div>
             )}
 
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {/* shrink-0: sem isto o rodapé é comprimido pelo corpo rolante e os
+              botões passam por cima das últimas linhas da lista de colunas. */}
+          <DialogFooter className="shrink-0 border-t border-border bg-background pt-4">
+            <Button variant="outline" onClick={handleCancel}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={updatePipeline.isPending}>
-              Salvar
+            <Button onClick={handleSave} disabled={updatePipeline.isPending || savingTags}>
+              {savingTags ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>

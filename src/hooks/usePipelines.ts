@@ -27,6 +27,7 @@ export interface PipelineColumn {
   name: string;
   color: string;
   order: number;
+  auto_add_tag_ids: string[];
   created_at: string;
   updated_at: string;
 }
