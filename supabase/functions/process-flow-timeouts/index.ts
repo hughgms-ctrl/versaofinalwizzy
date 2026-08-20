@@ -741,6 +741,9 @@ Deno.serve(async (req) => {
                 flowId: exec.flow_id,
                 conversationId: exec.conversation_id,
                 startNodeId: respondedEdge.target,
+                // Mesma passagem do contato: sem as variáveis a retomada perde tudo que o
+                // fluxo já coletou antes da espera.
+                variables: exec.variables || {},
               }),
             });
           } else {
@@ -951,6 +954,7 @@ Deno.serve(async (req) => {
                 flowId: exec.flow_id,
                 conversationId: exec.conversation_id,
                 startNodeId: nextNodeId,
+                variables: { ...(exec.variables || {}), _timeout: true },
               }),
             });
 

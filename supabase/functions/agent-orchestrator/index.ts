@@ -2576,6 +2576,9 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                     flowId: flowExec.flow_id,
                     conversationId: ctx.conversationId,
                     startNodeId: nextNodeId,
+                    // variables carrega o ai_resultado e tudo que o fluxo coletou antes do handoff;
+                    // o flow-execute só semeia o contato, então sem isto a execução nova nasce vazia.
+                    variables,
                     triggerMessage: messageContent, // PASS MESSAGE TO TRIGGER NEXT AUTO-NODE
                   }),
                 });
@@ -2729,7 +2732,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-              body: JSON.stringify({ flowId: flowExec.flow_id, conversationId: ctx.conversationId, startNodeId: nextNodeId }),
+              body: JSON.stringify({ flowId: flowExec.flow_id, conversationId: ctx.conversationId, startNodeId: nextNodeId, variables }),
             });
           } catch (e) {
             console.error('[LEGACY FALLBACK] Error resuming flow:', e);

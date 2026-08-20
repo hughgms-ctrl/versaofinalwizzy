@@ -2565,6 +2565,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: respondedTarget,
+              // Sem isto o flow-execute cria a execução nova só com o seed do contato e
+              // toda variável coletada antes da pausa fica abandonada na execução velha.
+              variables: (activeFlowExec as any).variables || {},
               triggerMessage: triggerText || '[mídia]',
             }),
           });
@@ -2620,6 +2623,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: nextNodeId,
+              variables: existingVars,
               triggerMessage: triggerText || '[mídia]',
             }),
           });
@@ -2736,6 +2740,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: nextNodeId,
+              variables: existingVars,
               triggerMessage: triggerText || '[mídia]',
             }),
           });
@@ -2785,6 +2790,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: followUpEdge.target,
+              variables: varsWithChoice,
               triggerMessage: triggerText || '[mídia]',
             }),
           });
@@ -2814,6 +2820,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: activeFlowExec.current_node_id,
+              variables: (activeFlowExec as any).variables || {},
               triggerMessage: triggerText || '[mídia]',
             }),
           });
