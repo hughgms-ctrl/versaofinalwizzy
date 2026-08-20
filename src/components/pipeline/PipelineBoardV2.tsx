@@ -1713,22 +1713,27 @@ function PipelineCardDetailDialog({
     if (!contactId) return;
     setIsSaving(true);
     try {
-      const currentMetadata = (contact?.metadata as Record<string, unknown>) || {};
-      const updates: Record<string, unknown> = {
-        metadata: {
-          ...currentMetadata,
+      // Observacao e descricao vao por merge no banco: reescrever
+      // contacts.metadata a partir da copia carregada no card apagaria o
+      // custom_field que a IA gravou enquanto o vendedor digitava.
+      // Ver merge_contact_metadata (20260819180000).
+      const { error: metadataError } = await (supabase as any).rpc('merge_contact_metadata', {
+        _contact_id: contactId,
+        _patch: {
           note: editedObservation.trim() || null,
           description: editedDescription.trim() || null,
         },
-      };
-      if (editedName.trim()) updates.name = editedName.trim();
+      });
+      if (metadataError) throw metadataError;
 
-      const { error } = await supabase
-        .from('contacts')
-        .update(updates)
-        .eq('id', contactId);
-
-      if (error) throw error;
+      // O nome e coluna propria, sem disputa com o jsonb.
+      if (editedName.trim()) {
+        const { error: nameError } = await supabase
+          .from('contacts')
+          .update({ name: editedName.trim() })
+          .eq('id', contactId);
+        if (nameError) throw nameError;
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });

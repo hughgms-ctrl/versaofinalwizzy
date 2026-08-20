@@ -205,23 +205,13 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 
     setIsUpdating(true);
     try {
-      const { data: currentContact } = await supabase
-        .from('contacts')
-        .select('metadata')
-        .eq('id', conversation.contact.id)
-        .single();
-
-      const currentMetadata = (currentContact?.metadata as Record<string, unknown>) || {};
-
-      const { error } = await supabase
-        .from('contacts')
-        .update({
-          metadata: {
-            ...currentMetadata,
-            blocked: true
-          }
-        })
-        .eq('id', conversation.contact.id);
+      // Le-e-regrava trocado por merge no banco: o SELECT anterior deixava uma
+      // janela em que um custom_field gravado pela IA sumia no UPDATE.
+      // Ver merge_contact_metadata (20260819180000).
+      const { error } = await (supabase as any).rpc('merge_contact_metadata', {
+        _contact_id: conversation.contact.id,
+        _patch: { blocked: true },
+      });
 
       if (error) throw error;
 

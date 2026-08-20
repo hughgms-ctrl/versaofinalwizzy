@@ -304,10 +304,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     if (!contactId) return;
     setIsSavingNote(true);
     try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ metadata: { ...contactMetadata, note: editedNote.trim() || null } })
-        .eq('id', contactId);
+      // Merge no banco em vez de reescrever contacts.metadata inteiro: a IA da
+      // triagem grava custom_fields no mesmo contato enquanto o vendedor digita,
+      // e regravar o jsonb a partir da copia carregada na tela apagaria o que ela
+      // acabou de coletar. Ver merge_contact_metadata (20260819180000).
+      // O cast para any e porque a RPC nao esta nos types gerados, mesmo padrao
+      // de contact_custom_fields em useContactCustomFields.
+      const { error } = await (supabase as any).rpc('merge_contact_metadata', {
+        _contact_id: contactId,
+        _patch: { note: editedNote.trim() || null },
+      });
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
@@ -325,10 +331,11 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     if (!contactId) return;
     setIsSavingDescription(true);
     try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ metadata: { ...contactMetadata, description: editedDescription.trim() || null } })
-        .eq('id', contactId);
+      // Mesmo motivo do handleSaveNote: merge no banco, nunca o objeto inteiro.
+      const { error } = await (supabase as any).rpc('merge_contact_metadata', {
+        _contact_id: contactId,
+        _patch: { description: editedDescription.trim() || null },
+      });
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
