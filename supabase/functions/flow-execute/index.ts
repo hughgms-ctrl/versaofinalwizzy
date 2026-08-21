@@ -937,6 +937,9 @@ async function runNodeByType(
     case 'action-generate-pdf':
       return await executeGeneratePdfAction(data, context);
 
+    case 'action-query-contacts':
+      return await executeQueryContacts(data, context, supabase);
+
     case 'action-workspace':
       return await executeWorkspaceAssignment(data, context, supabase);
 
@@ -1092,6 +1095,382 @@ async function executeGeneratePdfAction(
   } catch (error) {
     console.error('[FLOW EXECUTE] action-generate-pdf error:', error);
     return { success: false, error: String(error) };
+  }
+}
+
+// ==================== CONSULTAR CONTATOS ====================
+//
+// Ate aqui o fluxo so sabia agir sobre O CONTATO da conversa: aplicar tag,
+// mover no funil, gravar campo. Ele nao sabia NADA sobre a base -- nao dava para
+// perguntar "quantos estao na coluna Pago" ou "quem tem a tag X e nao respondeu
+// Y". Toda pergunta desse tipo virava webhook para fora ou SQL na mao.
+//
+// Este no faz a pergunta dentro do fluxo e devolve a resposta numa variavel,
+// como qualquer outro no. Contar vira numero, que um no de condicao compara;
+// listar vira texto, que um content-block manda.
+//
+// Guarda-corpos, e por que cada um existe:
+//
+//   1. SEMPRE escopado em context.organizationId. Nao e opcional nem
+//      configuravel na tela: e a unica coisa entre um fluxo e a base de outro
+//      cliente.
+//   2. Campo personalizado so pode ser um que EXISTE em contact_custom_fields
+//      da org. A chave vira parte de um caminho jsonb; validar o formato nao
+//      basta, tem que existir.
+//   3. Teto de linhas na listagem, e o texto DIZ quando cortou. Lista truncada
+//      que se apresenta como completa e pior que erro.
+//   4. Filtro de tag/pipeline resolve ids em sub-query com teto. Se o teto for
+//      atingido, o no FALHA com mensagem clara em vez de devolver um numero
+//      errado -- e a diferenca entre "nao consegui" e "menti".
+//
+// So modo E (todas as condicoes). Um OU entre "tem a tag" e "campo = X" nao da
+// para montar numa query so sem virar uniao de conjuntos com teto, e teto em
+// contagem e exatamente o que o guarda-corpo 4 recusa.
+
+// Teto de ids trazidos por filtro de tag/pipeline. Acima disso o no falha em vez
+// de mentir. 20k uuids sao ~700KB, aceitavel num edge que roda de vez em quando.
+const QUERY_CONTACTS_ID_CAP = 20000;
+
+// Teto duro de linhas na listagem, independente do que a tela pedir. O texto vai
+// para uma mensagem de WhatsApp -- alem disso nao e relatorio, e despejo.
+const QUERY_CONTACTS_LIST_CAP = 200;
+
+// Quantos uuids cabem num `.in()` sem estourar a URL. `.in()` vai na
+// querystring: 36 caracteres por uuid mais a virgula, entao 300 ja sao ~11KB de
+// URL. E o teto por CONSULTA, nao por resultado -- conjunto maior e fatiado e as
+// fatias sao somadas, entao nao corta resposta nenhuma.
+const QUERY_CONTACTS_URL_ID_CAP = 300;
+
+interface ContactQueryFilter {
+  id?: string;
+  type: string;
+  negate?: boolean;
+  tagId?: string;
+  columnId?: string;
+  fieldKey?: string;
+  operator?: string;
+  value?: string;
+}
+
+/** Ids de contato que tem determinada tag. Devolve null se estourou o teto. */
+async function contactIdsWithTag(
+  supabase: SupabaseClientType,
+  tagId: string,
+): Promise<string[] | null> {
+  const { data, error } = await supabase
+    .from('contact_tags')
+    .select('contact_id')
+    .eq('tag_id', tagId)
+    .limit(QUERY_CONTACTS_ID_CAP + 1);
+
+  if (error) throw new Error(`contact_tags: ${error.message}`);
+  const ids = (data || []).map((r: { contact_id: string }) => r.contact_id);
+  return ids.length > QUERY_CONTACTS_ID_CAP ? null : Array.from(new Set(ids));
+}
+
+/**
+ * Ids de contato cuja conversa esta numa coluna de funil. Duas queries em vez de
+ * embed aninhado: conversation_pipeline_positions guarda conversation_id, e quem
+ * conhece contact_id e conversations. Devolve null se estourou o teto.
+ */
+async function contactIdsInPipelineColumn(
+  supabase: SupabaseClientType,
+  organizationId: string,
+  columnId: string,
+): Promise<string[] | null> {
+  const { data: positions, error: posError } = await supabase
+    .from('conversation_pipeline_positions')
+    .select('conversation_id')
+    .eq('column_id', columnId)
+    .limit(QUERY_CONTACTS_ID_CAP + 1);
+
+  if (posError) throw new Error(`conversation_pipeline_positions: ${posError.message}`);
+  const conversationIds = (positions || []).map((r: { conversation_id: string }) => r.conversation_id);
+  if (conversationIds.length > QUERY_CONTACTS_ID_CAP) return null;
+  if (conversationIds.length === 0) return [];
+
+  const contactIds = new Set<string>();
+  // `.in()` com 20k uuids nao cabe numa querystring; vai em fatias do mesmo
+  // tamanho usado no resto do no.
+  const CHUNK = QUERY_CONTACTS_URL_ID_CAP;
+  for (let i = 0; i < conversationIds.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('contact_id')
+      .eq('organization_id', organizationId)
+      .in('id', conversationIds.slice(i, i + CHUNK));
+
+    if (error) throw new Error(`conversations: ${error.message}`);
+    for (const row of data || []) {
+      if (row.contact_id) contactIds.add(row.contact_id);
+    }
+  }
+
+  return Array.from(contactIds);
+}
+
+/** Aspas para um valor dentro de `or(...)`: virgula e parenteses sao separadores la. */
+function quoteForPostgrestOr(value: string): string {
+  return `"${value.replace(/["\\]/g, (m) => `\\${m}`)}"`;
+}
+
+function readCustomFieldFromMetadata(metadata: unknown, key: string): string {
+  let parsed = metadata;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = null;
+    }
+  }
+  const custom = (parsed as Record<string, unknown> | null)?.custom_fields;
+  if (!custom || typeof custom !== 'object' || Array.isArray(custom)) return '';
+  const value = (custom as Record<string, unknown>)[key];
+  return value === undefined || value === null ? '' : String(value);
+}
+
+async function executeQueryContacts(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType,
+): Promise<NodeResult> {
+  const mode = String(data.queryMode || 'count') === 'list' ? 'list' : 'count';
+
+  const rawVariable = String(data.outputVariable ?? '').trim();
+  // A variavel volta como {{nome}} e o replace so casa \w+. Nome fora disso
+  // seria gravado e nunca mais lido.
+  const outputVariable = /^\w+$/.test(rawVariable) ? rawVariable : 'consulta_resultado';
+
+  const filters = (Array.isArray(data.filters) ? data.filters : []) as ContactQueryFilter[];
+
+  try {
+    // Catalogo dos campos personalizados da org. Filtro que aponte para chave
+    // inexistente e recusado: a chave entra num caminho jsonb, e "formato
+    // valido" nao e o mesmo que "existe aqui".
+    const { data: fieldRows, error: fieldsError } = await supabase
+      .from('contact_custom_fields')
+      .select('key')
+      .eq('organization_id', context.organizationId);
+
+    if (fieldsError) throw new Error(`contact_custom_fields: ${fieldsError.message}`);
+    const knownKeys = new Set((fieldRows || []).map((r: { key: string }) => r.key));
+
+    // 1) Filtros que viram conjunto de ids (tag, pipeline).
+    let candidateIds: Set<string> | null = null;
+    const excludedIds = new Set<string>();
+
+    const intersect = (ids: string[]) => {
+      if (candidateIds === null) {
+        candidateIds = new Set(ids);
+        return;
+      }
+      const next = new Set<string>();
+      for (const id of ids) if (candidateIds.has(id)) next.add(id);
+      candidateIds = next;
+    };
+
+    for (const filter of filters) {
+      if (filter.type === 'tag' && filter.tagId) {
+        const ids = await contactIdsWithTag(supabase, filter.tagId);
+        if (ids === null) {
+          return {
+            success: false,
+            error: `Consultar contatos: a tag do filtro tem mais de ${QUERY_CONTACTS_ID_CAP} contatos. Estreite o filtro — devolver um numero cortado seria pior que nao devolver.`,
+          };
+        }
+        if (filter.negate) ids.forEach((id) => excludedIds.add(id));
+        else intersect(ids);
+      } else if (filter.type === 'pipeline' && filter.columnId) {
+        const ids = await contactIdsInPipelineColumn(supabase, context.organizationId, filter.columnId);
+        if (ids === null) {
+          return {
+            success: false,
+            error: `Consultar contatos: a etapa do filtro tem mais de ${QUERY_CONTACTS_ID_CAP} conversas. Estreite o filtro.`,
+          };
+        }
+        if (filter.negate) ids.forEach((id) => excludedIds.add(id));
+        else intersect(ids);
+      }
+    }
+
+    // Intersecao vazia: acabou aqui, sem ir ao banco de novo.
+    if (candidateIds !== null && (candidateIds as Set<string>).size === 0) {
+      const empty = mode === 'count' ? '0' : 'Nenhum contato encontrado.';
+      return {
+        success: true,
+        variables: { [outputVariable]: empty, [`${outputVariable}_total`]: '0' },
+        metadata: { mode, total: 0 },
+      };
+    }
+
+    // Exclusao ("nao tem a tag") sai do conjunto de candidatos aqui mesmo,
+    // quando existe um -- e de graca, e evita mandar a lista de excluidos na
+    // URL. So quando NAO ha candidato e que ela precisa virar um `not.in`.
+    if (candidateIds !== null && excludedIds.size > 0) {
+      for (const id of excludedIds) (candidateIds as Set<string>).delete(id);
+      excludedIds.clear();
+    }
+
+    if (excludedIds.size > QUERY_CONTACTS_URL_ID_CAP) {
+      return {
+        success: false,
+        error: `Consultar contatos: o filtro "nao tem" alcanca ${excludedIds.size} contatos e sozinho nao cabe numa consulta. Junte um filtro positivo (tag ou etapa) para estreitar antes.`,
+      };
+    }
+
+    // Reexamina o vazio: a subtracao acima pode ter zerado o conjunto.
+    if (candidateIds !== null && (candidateIds as Set<string>).size === 0) {
+      const empty = mode === 'count' ? '0' : 'Nenhum contato encontrado.';
+      return {
+        success: true,
+        variables: { [outputVariable]: empty, [`${outputVariable}_total`]: '0' },
+        metadata: { mode, total: 0 },
+      };
+    }
+
+    // 2) Monta a query de contatos: escopo da org + filtros de campo
+    //    personalizado em SQL.
+    //
+    // `idSlice` existe porque `.in('id', [...])` vai na QUERYSTRING: 20 mil
+    // uuids sao ~740KB de URL e o PostgREST recusa muito antes disso. O
+    // conjunto de candidatos e fatiado, e quem chama soma/junta os pedacos.
+    const applyFilters = (query: any, idSlice: string[] | null) => {
+      let q = query.eq('organization_id', context.organizationId);
+
+      if (idSlice !== null) {
+        q = q.in('id', idSlice);
+      }
+      if (excludedIds.size > 0) {
+        q = q.not('id', 'in', `(${Array.from(excludedIds).join(',')})`);
+      }
+
+      for (const filter of filters) {
+        if (filter.type !== 'custom_field') continue;
+        const key = String(filter.fieldKey || '');
+        if (!/^\w+$/.test(key) || !knownKeys.has(key)) continue;
+
+        const path = `metadata->custom_fields->>${key}`;
+        const value = replaceVariables(String(filter.value ?? ''), context.variables).trim();
+
+        switch (filter.operator || 'equals') {
+          case 'equals':
+            q = q.eq(path, value);
+            break;
+          case 'not_equals':
+            // Quem nao tem o campo preenchido tambem "nao e X" -- e o que a
+            // pergunta quer dizer. NULL <> 'x' e NULL, nao true, entao um neq
+            // puro deixaria esses de fora.
+            q = q.or(`${path}.is.null,${path}.neq.${quoteForPostgrestOr(value)}`);
+            break;
+          case 'contains':
+            q = q.ilike(path, `%${value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+            break;
+          case 'is_empty':
+            q = q.or(`${path}.is.null,${path}.eq.${quoteForPostgrestOr('')}`);
+            break;
+          case 'is_not_empty':
+            q = q.not(path, 'is', null).neq(path, '');
+            break;
+          default:
+            console.warn(`[FLOW EXECUTE] query-contacts: operador desconhecido "${filter.operator}" — ignorado`);
+        }
+      }
+
+      return q;
+    };
+
+    // Uma consulta por fatia de candidatos (ou uma so, quando nao ha conjunto).
+    const idSlices: (string[] | null)[] = candidateIds === null
+      ? [null]
+      : (() => {
+        const all = Array.from(candidateIds as Set<string>);
+        const out: string[][] = [];
+        for (let i = 0; i < all.length; i += QUERY_CONTACTS_URL_ID_CAP) {
+          out.push(all.slice(i, i + QUERY_CONTACTS_URL_ID_CAP));
+        }
+        return out;
+      })();
+
+    // 3) Total exato, sempre. Vale para os dois modos: e ele que permite a
+    //    listagem dizer honestamente quantos ficaram de fora. Somar as fatias
+    //    da o numero certo porque os ids sao unicos e nao se repetem entre elas.
+    let total = 0;
+    for (const slice of idSlices) {
+      const { count, error: countError } = await applyFilters(
+        supabase.from('contacts').select('id', { count: 'exact', head: true }),
+        slice,
+      );
+      if (countError) throw new Error(`contacts (count): ${countError.message}`);
+      total += count ?? 0;
+    }
+
+    if (mode === 'count') {
+      console.log(`[FLOW EXECUTE] query-contacts: contagem = ${total} em {{${outputVariable}}}`);
+      return {
+        success: true,
+        variables: { [outputVariable]: String(total), [`${outputVariable}_total`]: String(total) },
+        metadata: { mode, total },
+      };
+    }
+
+    // 4) Listagem.
+    const requestedLimit = Number(data.listLimit) || 20;
+    const limit = Math.max(1, Math.min(requestedLimit, QUERY_CONTACTS_LIST_CAP));
+
+    const listFields = (Array.isArray(data.listFields) && data.listFields.length > 0
+      ? data.listFields
+      : ['name', 'phone']) as string[];
+
+    // Cada fatia devolve os seus `limit` mais recentes; o top-N global e
+    // necessariamente um subconjunto da uniao desses, entao juntar, reordenar e
+    // cortar da o mesmo resultado de uma consulta unica.
+    const collected: Record<string, unknown>[] = [];
+    for (const slice of idSlices) {
+      const { data: sliceRows, error: listError } = await applyFilters(
+        supabase.from('contacts').select('id, name, phone, email, metadata, created_at'),
+        slice,
+      )
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (listError) throw new Error(`contacts (list): ${listError.message}`);
+      collected.push(...(sliceRows || []));
+    }
+
+    const rows = collected
+      .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+      .slice(0, limit);
+
+    const lines = (rows || []).map((row: Record<string, unknown>) => {
+      const parts = listFields.map((field) => {
+        if (field === 'name') return String(row.name || 'Sem nome');
+        if (field === 'phone') return String(row.phone || '');
+        if (field === 'email') return String(row.email || '');
+        return readCustomFieldFromMetadata(row.metadata, field);
+      });
+      return parts.filter((p) => p !== '').join(' — ');
+    }).filter((line: string) => line !== '');
+
+    let text = lines.length > 0 ? lines.join('\n') : 'Nenhum contato encontrado.';
+    if (total > lines.length) {
+      // O teto aparece no texto. Lista cortada que se apresenta como completa e
+      // pior que erro: quem le acha que viu tudo.
+      text += `\n\n(mostrando ${lines.length} de ${total})`;
+    }
+
+    console.log(`[FLOW EXECUTE] query-contacts: listagem ${lines.length}/${total} em {{${outputVariable}}}`);
+
+    return {
+      success: true,
+      variables: { [outputVariable]: text, [`${outputVariable}_total`]: String(total) },
+      metadata: { mode, total, listed: lines.length },
+    };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] query-contacts error:', error);
+    // Falhar PARA o fluxo, como o action-generate-pdf. Seguir faria o no
+    // seguinte mandar uma mensagem com {{variavel}} cru ou comparar contra
+    // vazio, e ninguem ficaria sabendo que a consulta nao rodou.
+    return { success: false, error: `Falha ao consultar contatos: ${String(error)}` };
   }
 }
 

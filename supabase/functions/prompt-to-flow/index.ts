@@ -88,6 +88,11 @@ TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
 10. "action-webhook" - Webhook externo. Data: { label, webhookUrl }
 10b. "action-contact-field" - Salva respostas nos campos do contato. Data: { label, assignments: [{ id, fieldKey, value }] } onde value aceita {{variavel}}
 10c. "action-generate-pdf" - Transforma um texto do fluxo em PDF. Data: { label, content, documentName, saveUrlToVariable } onde content e documentName aceitam {{variavel}}. A URL do PDF volta em {{saveUrlToVariable}} (padrao "pdf_url"), para ser enviada num content-block do tipo document
+10d. "action-query-contacts" - Pergunta algo sobre a BASE de contatos da organizacao (nao sobre o contato da conversa). Data: { label, queryMode: "count"|"list", filters: [{ id, type: "tag"|"pipeline"|"custom_field", negate?, tagId?, pipelineId?, columnId?, fieldKey?, operator?: "equals"|"not_equals"|"contains"|"is_empty"|"is_not_empty", value? }], listFields: ["name"|"phone"|"email"|key de campo personalizado], listLimit, outputVariable }
+    - Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro, conta a organizacao inteira.
+    - queryMode "count" grava o numero em {{outputVariable}}; "list" grava um texto com uma linha por contato. Nos dois casos {{outputVariable}_total} traz o total exato.
+    - Use quando o pedido for "quantos", "quem sao", "avise se passar de N", "liste quem tem a tag X e nao respondeu Y". Ligue um no "condition" comparando {{outputVariable}_total} para ramificar por quantidade.
+    - negate vale para tag e pipeline. value aceita {{variavel}}.
 
 11. "action-flow" - Iniciar outro fluxo. Data: { label, flowId, flowName }
 
@@ -149,7 +154,7 @@ IMPORTANTE:
       "start", "content-block", "message-buttons", "message-list",
       "ai-handoff", "action-tag", "action-pipeline", "action-transfer",
       "action-delay", "action-webhook", "action-flow", "action-department", "action-contact-field",
-      "action-generate-pdf",
+      "action-generate-pdf", "action-query-contacts",
       "action-document", "action-workspace", "condition", "user-input",
       "randomizer", "smart-delay"
     ];

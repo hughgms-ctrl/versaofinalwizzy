@@ -26,7 +26,8 @@ import {
   Users,
   Building2,
   UserCog,
-  FileDown
+  FileDown,
+  DatabaseZap
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { flowComponentCategories } from '@/data/flowComponents';
@@ -56,6 +57,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Building2,
   UserCog,
   FileDown,
+  DatabaseZap,
 };
 
 interface FlowSidebarProps {

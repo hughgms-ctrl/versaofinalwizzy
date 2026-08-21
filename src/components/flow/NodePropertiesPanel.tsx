@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown,
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown, DatabaseZap,
   AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant, ContactFieldAssignment } from '@/types/flow';
+import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant, ContactFieldAssignment, ContactQueryFilter, ContactQueryFilterType, ContactQueryOperator } from '@/types/flow';
 import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useAllTags } from '@/hooks/useTags';
@@ -134,6 +134,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-whatsapp-group': Users,
   'action-contact-field': UserCog,
   'action-generate-pdf': FileDown,
+  'action-query-contacts': DatabaseZap,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
@@ -159,6 +160,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-whatsapp-group': 'Enviar Grupo WhatsApp',
   'action-contact-field': 'Salvar no Contato',
   'action-generate-pdf': 'Gerar PDF',
+  'action-query-contacts': 'Consultar Contatos',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
 };
@@ -2682,6 +2684,259 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               <p className="text-[11px] text-muted-foreground">
                 Se o conteudo ficar vazio, nenhum PDF e gerado e o fluxo segue. Se a geracao falhar, o fluxo PARA — melhor
                 do que enviar um documento quebrado.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      case 'action-query-contacts': {
+        // O fluxo so sabia agir sobre O CONTATO da conversa. Este no e a
+        // primeira vez que ele consegue PERGUNTAR algo sobre a base.
+        const queryMode = String(localData.queryMode || 'count');
+        const queryFilters = (localData.filters as ContactQueryFilter[]) || [];
+        const listFields = (localData.listFields as string[]) || ['name', 'phone'];
+        const rawOutput = String(localData.outputVariable || '').trim();
+        const outputIsValid = rawOutput === '' || /^\w+$/.test(rawOutput);
+        const effectiveOutput = outputIsValid && rawOutput ? rawOutput : 'consulta_resultado';
+
+        const updateQueryFilter = (id: string, patch: Partial<ContactQueryFilter>) => {
+          handleChange('filters', queryFilters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+        };
+        const addQueryFilter = () => {
+          const nf: ContactQueryFilter = {
+            id: Math.random().toString(36).substring(2, 10),
+            type: 'tag',
+            negate: false,
+          };
+          handleChange('filters', [...queryFilters, nf]);
+        };
+        const removeQueryFilter = (id: string) => {
+          handleChange('filters', queryFilters.filter((f) => f.id !== id));
+        };
+        const toggleListField = (field: string) => {
+          handleChange(
+            'listFields',
+            listFields.includes(field) ? listFields.filter((f) => f !== field) : [...listFields, field],
+          );
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg flex items-center gap-3">
+              <DatabaseZap className="h-5 w-5 text-indigo-600" />
+              <div>
+                <p className="text-xs font-semibold">Consultar Contatos</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Pergunta algo sobre a base e grava a resposta numa variavel do fluxo. Sempre so dentro desta organizacao.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">O que devolver</Label>
+              <Select value={queryMode} onValueChange={(v) => handleChange('queryMode', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="count">Contar — devolve um numero</SelectItem>
+                  <SelectItem value="list">Listar — devolve texto com os campos escolhidos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs">Filtros</Label>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addQueryFilter}>
+                  <Plus className="h-3 w-3 mr-1" /> Filtro
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-2">
+                Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro nenhum, conta a base inteira da organizacao.
+              </p>
+
+              <div className="space-y-2">
+                {queryFilters.map((f) => (
+                  <div key={f.id} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
+                    <div className="flex items-center justify-between gap-2">
+                      <Select value={f.type} onValueChange={(v) => updateQueryFilter(f.id, { type: v as ContactQueryFilterType })}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="tag">Tag</SelectItem>
+                          <SelectItem value="pipeline">Etapa do funil</SelectItem>
+                          <SelectItem value="custom_field">Campo personalizado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeQueryFilter(f.id)}>
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+
+                    {f.type === 'tag' && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
+                          <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao tem a tag' : 'Tem a tag'}</span>
+                        </div>
+                        <Select value={f.tagId || ''} onValueChange={(v) => updateQueryFilter(f.id, { tagId: v })}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione tag..." /></SelectTrigger>
+                          <SelectContent>
+                            {tags.map((tag) => (
+                              <SelectItem key={tag.id} value={tag.id}>
+                                <div className="flex items-center gap-2">
+                                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                                  {tag.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
+
+                    {f.type === 'pipeline' && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
+                          <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao esta na etapa' : 'Esta na etapa'}</span>
+                        </div>
+                        <Select
+                          value={f.pipelineId || ''}
+                          onValueChange={(v) => updateQueryFilter(f.id, { pipelineId: v, columnId: undefined })}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pipeline..." /></SelectTrigger>
+                          <SelectContent>
+                            {pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {f.pipelineId && (
+                          <Select value={f.columnId || ''} onValueChange={(v) => updateQueryFilter(f.id, { columnId: v })}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Etapa..." /></SelectTrigger>
+                            <SelectContent>
+                              {pipelineColumns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </>
+                    )}
+
+                    {f.type === 'custom_field' && (
+                      <>
+                        <Select value={f.fieldKey || ''} onValueChange={(v) => updateQueryFilter(f.id, { fieldKey: v })}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qual campo..." /></SelectTrigger>
+                          <SelectContent>
+                            {contactCustomFields.map((cf) => (
+                              <SelectItem key={cf.id} value={cf.key}>{cf.label}</SelectItem>
+                            ))}
+                            {!contactCustomFields.length && (
+                              <SelectItem value="none" disabled>Nenhum campo personalizado criado</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={f.operator || 'equals'}
+                          onValueChange={(v) => updateQueryFilter(f.id, { operator: v as ContactQueryOperator })}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="equals">Igual a</SelectItem>
+                            <SelectItem value="not_equals">Diferente de</SelectItem>
+                            <SelectItem value="contains">Contem</SelectItem>
+                            <SelectItem value="is_not_empty">Esta preenchido</SelectItem>
+                            <SelectItem value="is_empty">Esta vazio</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {f.operator !== 'is_empty' && f.operator !== 'is_not_empty' && (
+                          <Input
+                            value={f.value || ''}
+                            onChange={(e) => updateQueryFilter(f.id, { value: e.target.value })}
+                            placeholder="Valor (aceita {{variavel}})"
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+                {queryFilters.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground italic px-1">Nenhum filtro — conta todos os contatos da organizacao.</p>
+                )}
+              </div>
+            </div>
+
+            {queryMode === 'list' && (
+              <>
+                <div>
+                  <Label className="text-xs">Campos em cada linha</Label>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {[
+                      { key: 'name', label: 'Nome' },
+                      { key: 'phone', label: 'Telefone' },
+                      { key: 'email', label: 'E-mail' },
+                      ...contactCustomFields.map((cf) => ({ key: cf.key, label: cf.label })),
+                    ].map((field) => (
+                      <button
+                        key={field.key}
+                        type="button"
+                        onClick={() => toggleListField(field.key)}
+                        className={cn(
+                          'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                          listFields.includes(field.key)
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border text-muted-foreground hover:bg-muted/50',
+                        )}
+                      >
+                        {field.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs">Maximo de linhas</Label>
+                  <Input
+                    type="number"
+                    value={Number(localData.listLimit) || 20}
+                    onChange={(e) => handleChange('listLimit', Number(e.target.value) || 20)}
+                    className="mt-1"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Teto duro de 200, independente do que estiver aqui — o texto vai para uma mensagem de WhatsApp. Se
+                    cortar, a propria mensagem diz "mostrando X de Y".
+                  </p>
+                </div>
+              </>
+            )}
+
+            <div>
+              <Label className="text-xs">Salvar resultado na variavel</Label>
+              <Input
+                value={rawOutput}
+                onChange={(e) => handleChange('outputVariable', e.target.value)}
+                placeholder="consulta_resultado"
+                className="mt-1 font-mono"
+              />
+              {!outputIsValid ? (
+                <p className="text-[10px] text-amber-600 mt-1">
+                  Use so letras, numeros e _ — outro formato nunca voltaria como {'{{variavel}}'}. Vai usar{' '}
+                  <span className="font-mono">consulta_resultado</span>.
+                </p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  <span className="font-mono">{`{{${effectiveOutput}}}`}</span> traz{' '}
+                  {queryMode === 'count' ? 'o numero' : 'o texto da lista'}, e{' '}
+                  <span className="font-mono">{`{{${effectiveOutput}_total}}`}</span> traz sempre o total exato — use ele
+                  num no de Condicao para comparar.
+                </p>
+              )}
+            </div>
+
+            <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground">
+                Se um filtro de tag ou etapa alcancar mais de 20 mil contatos, o no FALHA em vez de devolver um numero
+                cortado — numero errado seria pior que erro. E um filtro "nao tem" sozinho, sem nenhum filtro positivo
+                junto, so funciona ate algumas centenas de contatos.
               </p>
             </div>
           </div>

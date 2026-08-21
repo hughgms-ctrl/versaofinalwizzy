@@ -119,6 +119,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         color: 'bg-fuchsia-600',
       },
       {
+        type: 'action-query-contacts',
+        label: 'Consultar Contatos',
+        description: 'Conta ou lista contatos da base por tag, etapa e campo',
+        icon: 'DatabaseZap',
+        color: 'bg-indigo-600',
+      },
+      {
         type: 'action-whatsapp-group',
         label: 'Enviar Grupo WhatsApp',
         description: 'Envia mensagem para um grupo de WhatsApp',

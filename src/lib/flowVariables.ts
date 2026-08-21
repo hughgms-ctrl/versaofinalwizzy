@@ -43,6 +43,31 @@ function nodeProducedVariables(node: Node): FlowVariable[] {
         description: `Valor digitado${label ? ` na pergunta "${label}"` : ''}`,
       }];
     }
+    case 'action-query-contacts': {
+      const name = asTrimmedString(data.outputVariable) || 'consulta_resultado';
+      const isList = asTrimmedString(data.queryMode) === 'list';
+      return [
+        {
+          name,
+          description: isList
+            ? `Texto da listagem${label ? ` da consulta "${label}"` : ''}`
+            : `Contagem${label ? ` da consulta "${label}"` : ''}`,
+        },
+        {
+          name: `${name}_total`,
+          description: 'Total exato de contatos que bateram nos filtros (útil num nó de Condição)',
+        },
+      ];
+    }
+    case 'action-generate-pdf': {
+      // Também salva em variables desde 480c5eda, mas nunca foi listado aqui —
+      // a URL existia e o inseridor de variáveis não a oferecia.
+      const name = asTrimmedString(data.saveUrlToVariable) || 'pdf_url';
+      return [{
+        name,
+        description: `URL do PDF${label ? ` gerado em "${label}"` : ''}`,
+      }];
+    }
     default:
       return [];
   }

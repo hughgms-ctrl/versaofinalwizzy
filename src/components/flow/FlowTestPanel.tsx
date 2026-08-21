@@ -843,6 +843,34 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         break;
       }
 
+      case 'action-query-contacts': {
+        const rawOutput = String(d.outputVariable || '').trim();
+        const variable = /^\w+$/.test(rawOutput) ? rawOutput : 'consulta_resultado';
+        const isList = String(d.queryMode || 'count') === 'list';
+        const filterCount = Array.isArray(d.filters) ? (d.filters as unknown[]).length : 0;
+
+        // A simulação NÃO consulta a base. Preenche a variável com um valor de
+        // exemplo e diz que é exemplo — o simulador é sobre o CAMINHO que o
+        // fluxo percorre, e devolver um número que parecesse real faria alguém
+        // desenhar a ramificação em cima de um dado inventado.
+        addMsg({
+          type: 'action',
+          content: `${isList ? 'Listando' : 'Contando'} contatos (${filterCount} filtro(s)) — resultado simulado`,
+          actionIcon: '🔎',
+        });
+        setSimState(prev => ({
+          ...prev,
+          variables: {
+            ...prev.variables,
+            [variable]: isList ? 'Fulano — 5511999999999\nCiclana — 5521988888888' : '2',
+            [`${variable}_total`]: '2',
+          },
+        }));
+        await wait(700);
+        await advanceOrEnd();
+        break;
+      }
+
       case 'action-webhook': {
         addMsg({ type: 'action', content: `Executando webhook: ${d.url || '...'}`, actionIcon: '🌐' });
         await wait(1000);

@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users, UserCog, FileDown } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users, UserCog, FileDown, DatabaseZap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFollowUpOutputs } from './followUpHandles';
 import { WaitOutputRows } from './followUpOutputs';
@@ -334,6 +334,24 @@ export function GeneratePdfActionNode({ data, selected }: NodeProps<ActionNode>)
       </p>
       <p className="text-[10px] text-muted-foreground mt-1">
         URL em <span className="font-mono text-foreground">{`{{${variable}}}`}</span>
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function QueryContactsActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const variable = String(data.outputVariable || 'consulta_resultado');
+  const isList = String(data.queryMode || 'count') === 'list';
+  const filterCount = Array.isArray(data.filters) ? (data.filters as unknown[]).length : 0;
+
+  return (
+    <BaseActionNode selected={!!selected} icon={DatabaseZap} color="bg-indigo-600" title="Consultar Contatos">
+      <p className="text-xs text-muted-foreground truncate">
+        {isList ? 'Listar' : 'Contar'} contatos
+        {filterCount > 0 ? ` — ${filterCount} filtro(s)` : ' — sem filtro'}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-1">
+        Resultado em <span className="font-mono text-foreground">{`{{${variable}}}`}</span>
       </p>
     </BaseActionNode>
   );

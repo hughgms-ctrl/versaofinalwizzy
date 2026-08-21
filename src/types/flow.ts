@@ -16,6 +16,7 @@ export type FlowNodeType =
   | 'action-workspace'
   | 'action-contact-field'
   | 'action-generate-pdf'
+  | 'action-query-contacts'
   | 'action-whatsapp-group'
   | 'condition'
   | 'user-input'
@@ -126,6 +127,42 @@ export interface ConditionRule {
   // pending/bot/human são o que a tela gravava antes de bater com o enum —
   // ficam aceitos porque há fluxo salvo com eles.
   serviceMode?: 'pendente' | 'ia' | 'ativo' | 'arquivado' | 'pending' | 'bot' | 'human';
+}
+
+// === CONSULTAR CONTATOS ===
+
+export type ContactQueryFilterType = 'tag' | 'pipeline' | 'custom_field';
+
+export type ContactQueryOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'is_empty'
+  | 'is_not_empty';
+
+export interface ContactQueryFilter {
+  id: string;
+  type: ContactQueryFilterType;
+  /** Só para tag e pipeline: inverte ("não tem a tag", "não está na etapa"). */
+  negate?: boolean;
+  tagId?: string;
+  pipelineId?: string;
+  columnId?: string;
+  /** Só para custom_field: a `key` do campo personalizado. */
+  fieldKey?: string;
+  operator?: ContactQueryOperator;
+  value?: string;
+}
+
+export interface ContactQueryConfig {
+  /** 'count' devolve um número; 'list' devolve texto com os campos escolhidos. */
+  queryMode: 'count' | 'list';
+  filters: ContactQueryFilter[];
+  /** Campos concatenados em cada linha da listagem: 'name' | 'phone' | 'email' | key de campo personalizado. */
+  listFields: string[];
+  listLimit: number;
+  /** Nome da variável de fluxo onde o resultado é gravado. */
+  outputVariable: string;
 }
 
 export interface AdvancedConditionConfig {
