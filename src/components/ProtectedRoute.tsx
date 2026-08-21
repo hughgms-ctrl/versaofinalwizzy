@@ -179,11 +179,35 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
+  // Quatro portas diferentes mandam para /plans e a tela de planos nao diz qual
+  // delas foi. Do lado de quem usa, "trial vencido", "organizacao sem linha em
+  // organization_plans", "a consulta do plano falhou" e "esta rota nao esta no
+  // plano" sao o mesmo sintoma: caiu em planos de novo. Sem isto aqui, so da
+  // para descobrir lendo o codigo. Nao muda regra nenhuma -- so diz por que.
+  const logPlanRedirect = (reason: string, extra?: Record<string, unknown>) => {
+    console.warn('[PLANO] redirecionado para /plans:', reason, {
+      motivo: reason,
+      rota: location.pathname,
+      organizationId: activeOrganizationId,
+      paymentStatus: paymentStatus || '(vazio)',
+      trialEndsAt,
+      temLinhaDePlano: Boolean(onboardingPlan),
+      erroDaConsulta: planError ? String((planError as Error)?.message || planError) : null,
+      ...extra,
+    });
+  };
+
   if (activeOrganizationId && !hasActiveAccess && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
+    logPlanRedirect('sem acesso ativo (plano nao esta pago/manual/ativo e o trial nao vale)');
     return <Navigate to="/plans" replace state={{ from: location }} />;
   }
 
   if ((trialExpired || planError || (activeOrganizationId && !onboardingPlan && localTrialExpired)) && !isAllowedOnboardingPath) {
+    logPlanRedirect(
+      planError
+        ? 'a consulta do plano FALHOU (organization_plans ou a edge organization-usage)'
+        : 'trial vencido',
+    );
     return <Navigate to="/plans" replace state={{ from: location, reason: 'trial_expired' }} />;
   }
 
@@ -191,6 +215,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // canAccessPlanModule() retorna false (hasActiveAccess ainda false) e redirecionaria
   // todo mundo pra /plans no flash inicial. So barra depois que o dado chega.
   if (routePlanModule && !isAllowedOnboardingPath && !modulePlanLoading && !canAccessPlanModule(routePlanModule)) {
+    logPlanRedirect('modulo fora do plano', { modulo: routePlanModule });
     return <Navigate to="/plans" replace state={{ from: location, reason: 'module_locked', module: routePlanModule }} />;
   }
 
