@@ -43,6 +43,7 @@ import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { ContactAvatar } from './ContactAvatar';
 import { getDerivedStatusInfo } from '@/lib/conversationStatus';
+import { openDocFileInNewTab, isContactFilesPublicUrl } from '@/components/documents/documentFiles';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
@@ -1558,6 +1559,38 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
 
     if (type === 'document' && media_url) {
       const fileName = content || media_url.split('/').pop() || 'Documento';
+
+      // PDF gerado pela IA: mora no contact-files, que é privado. A URL guardada
+      // é a crua (formato público) de propósito -- ela não expira e permite
+      // reassinar depois. Aqui, na leitura, assina via sign-document-file, que
+      // autoriza por org pela linha de generated_documents. Sem isto o clique
+      // dava 403 para o próprio operador.
+      const generatedDocumentId = metadata?.generated_document_id as string | undefined;
+      if (generatedDocumentId && isContactFilesPublicUrl(media_url)) {
+        return (
+          <button
+            type="button"
+            className="flex w-full items-center gap-3 p-3 rounded-lg bg-background/50 hover:bg-background/80 transition-colors text-left"
+            onClick={() =>
+              openDocFileInNewTab({
+                table: 'generated_documents',
+                id: generatedDocumentId,
+                field: 'pdf_url',
+                rawUrl: media_url,
+              })
+            }
+          >
+            <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-primary/20">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{fileName}</p>
+              <p className="text-xs opacity-60">Clique para abrir</p>
+            </div>
+          </button>
+        );
+      }
+
       return (
         <a
           href={media_url}

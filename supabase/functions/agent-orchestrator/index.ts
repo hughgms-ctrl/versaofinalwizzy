@@ -5,6 +5,7 @@ import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
 import { buildKnowledgeBlock } from '../_shared/agentKnowledge.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 import { resumeFlow } from '../_shared/flowResume.ts';
+import { signContactFileUrl } from '../_shared/storageDownload.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2189,7 +2190,7 @@ async function invokeDocumentAgentAI(
 
               // Send each PDF in chat if enabled
               if (docCtx.send_pdf_in_chat) {
-                await sendMediaViaZAPI(supabase, ctx.conversation, pdfResult.pdf_url, `📄 ${tmpl.name}.pdf`);
+                await sendMediaViaZAPI(supabase, ctx.conversation, pdfResult.pdf_url, `📄 ${tmpl.name}.pdf`, genDoc?.id);
               }
 
               // Create signature request per document if needed
@@ -2327,7 +2328,30 @@ async function invokeDocumentAgentAI(
 }
 
 // Helper: Send media (PDF) through the configured WhatsApp provider.
-async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: string, caption: string) {
+//
+// `mediaUrl` chega no formato público do contact-files, que é privado desde
+// 20260715120000. O provedor (Evolution/UAZAPI) baixa a URL do lado DELE, sem
+// credencial nenhuma: URL de bucket privado dá 403 lá, e o documento nunca
+// chegava no WhatsApp do cliente -- um 403 vivo em produção desde julho.
+//
+// A saída NÃO é virar o bucket para público: são contratos. É assinar na hora do
+// envio, que é exatamente o que signContactFileUrl já faz para as páginas
+// públicas de assinatura (ver public-form-submit). O provedor recebe uma URL
+// assinada; o histórico guarda a URL CRUA, que não expira -- é a mesma coisa que
+// generated_documents.pdf_url guarda, e é o que permite reassinar depois.
+//
+// Quem for exibir isso na tela precisa assinar na leitura. Por isso o id do
+// documento vai para o metadata da mensagem: o chat usa
+// resolveDocFileUrl({ table: 'generated_documents', id }) e o edge
+// sign-document-file autoriza por org. Sem o id, a mensagem no chat continuaria
+// sendo um link que dá 403 para o próprio operador.
+async function sendMediaViaZAPI(
+  supabase: any,
+  conversation: any,
+  mediaUrl: string,
+  caption: string,
+  generatedDocumentId?: string | null,
+) {
   const contactPhone = conversation.contact?.phone;
   if (!contactPhone) return;
 
@@ -2345,12 +2369,17 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
     return;
   }
 
+  // TTL longo de propósito: o provedor costuma baixar em segundos, mas fila,
+  // retry e reenvio do lado dele podem acontecer bem depois. URLs que não são do
+  // contact-files (nada hoje, mas o helper aceita) voltam iguais.
+  const deliverableUrl = await signContactFileUrl(mediaUrl, supabase, 60 * 60 * 24 * 7);
+
   try {
     const sendResult = await sendWhatsAppMessage(supabase, {
       organizationId: conversation.organization_id,
       phone: contactPhone,
       type: 'document',
-      mediaUrl,
+      mediaUrl: deliverableUrl || mediaUrl,
       caption,
       conversationInstanceId: binding.workspaceInstanceId || conversation.whatsapp_instance_id,
     });
@@ -2361,6 +2390,7 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
       type: 'document',
       direction: 'outbound',
       is_from_bot: true,
+      // Crua, não assinada: assinatura expira e o histórico não pode expirar.
       media_url: mediaUrl,
       zapi_message_id: sendResult.zapiMessageId,
       metadata: {
@@ -2368,6 +2398,7 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
         provider_response: sendResult.responseJson || sendResult.responseText,
         ai_generated: true,
         document_type: 'contract',
+        generated_document_id: generatedDocumentId || null,
       },
       ...(sendResult.ok ? {} : {
         failed_at: new Date().toISOString(),
