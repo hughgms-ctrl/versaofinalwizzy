@@ -105,7 +105,8 @@ type Block =
   | { type: "p" | "h1" | "h2" | "h3"; runs: InlineRun[]; align?: "left" | "center" | "right" | "justify" }
   | { type: "li"; ordered: boolean; index: number; runs: InlineRun[] }
   | { type: "spacer"; height: number }
-  | { type: "hr" };
+  | { type: "hr" }
+  | { type: "bars"; title?: string; items: Array<{ label: string; value: number }> };
 
 function parseFontSizeFromStyle(style: string | null | undefined): number | undefined {
   if (!style) return undefined;
@@ -265,6 +266,45 @@ function parseHtmlToBlocks(html: string): Block[] {
     blocks.push({ type: "p", runs: parseInlineRuns(html) });
   }
   return blocks;
+}
+
+// ====================== Diretiva de grafico de barras ======================
+// Formato aceito dentro do texto puro do template:
+//   [[GRAFICO Abertura a mentoria]]
+//   Faria muita | 12
+//   Talvez | 7
+//   [[/GRAFICO]]
+// Grupo 1 = titulo (pode vir vazio), grupo 2 = as linhas "rotulo | numero".
+// A extracao tem que acontecer ANTES do escape de HTML: se a diretiva passar
+// pelo replace de "<" ela vira texto literal no PDF.
+const RE_GRAFICO = /\[\[GRAFICO([^\]]*)\]\]\s*([\s\S]*?)\[\[\/GRAFICO\]\]/g;
+
+function parseBarsDirective(title: string, body: string): Block | null {
+  const items: Array<{ label: string; value: number }> = [];
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const sep = line.lastIndexOf("|");
+    if (sep < 0) continue; // linha sem "|" nao e item
+    const label = sanitizeWinAnsi(decodeHtmlEntities(line.slice(0, sep).trim()));
+    const value = parseFloat(line.slice(sep + 1).trim().replace(",", "."));
+    // Linha malformada e ignorada em silencio: uma diretiva torta nao pode
+    // derrubar o PDF inteiro.
+    if (!label || !Number.isFinite(value)) continue;
+    items.push({ label, value: Math.max(0, value) });
+  }
+  if (items.length === 0) return null;
+  const cleanTitle = sanitizeWinAnsi(decodeHtmlEntities(title.trim()));
+  return { type: "bars", title: cleanTitle || undefined, items };
+}
+
+function truncateToWidth(font: PDFFont, text: string, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  let out = text;
+  while (out.length > 1 && font.widthOfTextAtSize(out + "...", size) > maxWidth) {
+    out = out.slice(0, -1);
+  }
+  return out + "...";
 }
 
 // ====================== PDF rendering ======================
@@ -446,6 +486,78 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
       ctx.y -= block.height;
       continue;
     }
+    if (block.type === "bars") {
+      const items = block.items;
+      if (items.length === 0) continue;
+
+      if (block.title) {
+        ensureSpace(ctx, 20);
+        ctx.page.drawText(block.title, {
+          x: ctx.margin,
+          y: ctx.y - 12,
+          size: 12,
+          font: ctx.fontBold,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        ctx.y -= 20;
+      }
+
+      // Coluna de rotulos: o maior rotulo, com teto de 40% da largura util.
+      const labelSize = 9;
+      const maxLabelWidth = ctx.contentWidth * 0.4;
+      const labels = items.map((it) => truncateToWidth(ctx.font, it.label, labelSize, maxLabelWidth));
+      const labelColumn = labels.reduce((m, l) => Math.max(m, ctx.font.widthOfTextAtSize(l, labelSize)), 0);
+      const valueColumn = 34; // espaco reservado para o numero depois da barra
+      const trackWidth = Math.max(20, ctx.contentWidth - labelColumn - 8 - valueColumn);
+      // O ", 1" evita divisao por zero quando todo mundo respondeu zero.
+      const maxValue = Math.max(...items.map((i) => i.value), 1);
+
+      for (let i = 0; i < items.length; i++) {
+        // ensureSpace por item (e nao antes do grafico inteiro): um grafico
+        // grande quebra entre paginas em vez de estourar a margem.
+        ensureSpace(ctx, 18);
+        // A origem do drawRectangle e o canto inferior esquerdo e ctx.y desce,
+        // entao a barra comeca em ctx.y - 12.
+        const barY = ctx.y - 12;
+        const barX = ctx.margin + labelColumn + 8;
+        ctx.page.drawText(labels[i], {
+          x: ctx.margin,
+          y: barY + 3,
+          size: labelSize,
+          font: ctx.font,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        ctx.page.drawRectangle({
+          x: barX,
+          y: barY,
+          width: trackWidth,
+          height: 12,
+          color: rgb(0.91, 0.91, 0.93),
+        });
+        // Minimo de 2pt: barra de largura zero some e parece bug, e a diferenca
+        // entre "ninguem" e "um" precisa ficar visivel.
+        const filled = Math.max(2, (items[i].value / maxValue) * trackWidth);
+        ctx.page.drawRectangle({
+          x: barX,
+          y: barY,
+          width: filled,
+          height: 12,
+          color: rgb(0.15, 0.35, 0.65),
+        });
+        const value = items[i].value;
+        const valueLabel = Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
+        ctx.page.drawText(valueLabel, {
+          x: barX + filled + 5,
+          y: barY + 3,
+          size: labelSize,
+          font: ctx.font,
+          color: rgb(0.25, 0.25, 0.25),
+        });
+        ctx.y -= 18;
+      }
+      ctx.y -= 6;
+      continue;
+    }
     if (block.type === "hr") {
       ensureSpace(ctx, 12);
       ctx.page.drawLine({
@@ -594,15 +706,26 @@ serve(async (req) => {
       logo_url = tpl.logo_url || logo_url;
     }
 
-    // Determine HTML source: prefer rich HTML, fall back to plain text wrapped in <p>
-    let rawHtml = "";
+    // Fonte do conteudo: prefere o HTML rico e cai para o texto puro em <p>.
+    // No caminho do texto puro, as diretivas [[GRAFICO]] sao extraidas ANTES do
+    // escape de "<": se passassem por ele virariam texto literal no PDF.
+    type Segment = { kind: "text"; text: string } | { kind: "bars"; title: string; body: string };
+    const segments: Segment[] = [];
+    let richHtml: string | null = null;
+
     if (template_content_html && String(template_content_html).trim()) {
-      rawHtml = String(template_content_html);
+      richHtml = String(template_content_html);
     } else if (template_content && String(template_content).trim()) {
-      rawHtml = String(template_content)
-        .split(/\r?\n/)
-        .map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`)
-        .join("");
+      const plain = String(template_content);
+      RE_GRAFICO.lastIndex = 0;
+      let cursor = 0;
+      let m: RegExpExecArray | null;
+      while ((m = RE_GRAFICO.exec(plain)) !== null) {
+        if (m.index > cursor) segments.push({ kind: "text", text: plain.slice(cursor, m.index) });
+        segments.push({ kind: "bars", title: m[1] || "", body: m[2] || "" });
+        cursor = m.index + m[0].length;
+      }
+      if (cursor < plain.length) segments.push({ kind: "text", text: plain.slice(cursor) });
     } else {
       return new Response(JSON.stringify({ error: "template_content or template_content_html is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -610,10 +733,26 @@ serve(async (req) => {
     }
 
     // Inject filled values with type-aware formatting
-    const filledHtml = fillTemplate(rawHtml, filled_data || {}, fields || []);
+    const fill = (value: string) => fillTemplate(value, filled_data || {}, fields || []);
 
-    // Parse to block list
-    const blocks = parseHtmlToBlocks(filledHtml);
+    // Monta os blocos pedaco a pedaco, na ordem em que aparecem no texto.
+    const blocks: Block[] = [];
+    if (richHtml !== null) {
+      blocks.push(...parseHtmlToBlocks(fill(richHtml)));
+    } else {
+      for (const seg of segments) {
+        if (seg.kind === "bars") {
+          const bars = parseBarsDirective(fill(seg.title), fill(seg.body));
+          if (bars) blocks.push(bars);
+          continue;
+        }
+        const html = seg.text
+          .split(/\r?\n/)
+          .map((line) => `<p>${line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`)
+          .join("");
+        blocks.push(...parseHtmlToBlocks(fill(html)));
+      }
+    }
 
     // Build PDF
     const pdfDoc = await PDFDocument.create();
