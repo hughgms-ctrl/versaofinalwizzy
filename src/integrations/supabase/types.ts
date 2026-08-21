@@ -1390,6 +1390,9 @@ export type Database = {
           start_time: string | null
           trigger_count: number
           trigger_keyword: string
+          trigger_priority: number
+          trigger_tag_ids: string[]
+          trigger_tag_match: string
           updated_at: string
           webhook_token: string | null
           workspace_id: string | null
@@ -1408,6 +1411,9 @@ export type Database = {
           start_time?: string | null
           trigger_count?: number
           trigger_keyword: string
+          trigger_priority?: number
+          trigger_tag_ids?: string[]
+          trigger_tag_match?: string
           updated_at?: string
           webhook_token?: string | null
           workspace_id?: string | null
@@ -1426,6 +1432,9 @@ export type Database = {
           start_time?: string | null
           trigger_count?: number
           trigger_keyword?: string
+          trigger_priority?: number
+          trigger_tag_ids?: string[]
+          trigger_tag_match?: string
           updated_at?: string
           webhook_token?: string | null
           workspace_id?: string | null

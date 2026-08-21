@@ -18,6 +18,12 @@ export interface Campaign {
     pending_count?: number;
     workspace_id?: string | null;
     webhook_token?: string;
+    /** Público do gatilho por palavra-chave. Vazio/ausente = qualquer contato dispara. */
+    trigger_tag_ids?: string[];
+    /** any | all | none -- como combinar trigger_tag_ids. */
+    trigger_tag_match?: string;
+    /** Desempate entre campanhas com palavras-chave sobrepostas. Maior ganha. */
+    trigger_priority?: number;
     folder_id?: string | null;
     position?: number;
     created_at: string;

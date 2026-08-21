@@ -2812,7 +2812,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       // 2. No active flow — check Campaign Triggers (keyword/webhook match starts a new flow).
       // Only reached when there's no flow already running for this conversation.
       if (triggerText) {
-        const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, triggerText);
+        const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, contact.id, triggerText);
 
         if (campaignTrigger) {
           console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
@@ -3419,14 +3419,33 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     }
     return false;
   }
-
-  // Check for exact, contains, or starts_with matches in active campaigns
-  async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
+  // Check for exact, contains, or starts_with matches in active campaigns.
+  //
+  // Duas coisas que faltavam aqui e que mudam o comportamento do produto:
+  //
+  // 1. PÚBLICO. Antes, a função só olhava o TEXTO. Qualquer contato da
+  //    organização que digitasse a palavra-chave disparava a campanha — não havia
+  //    como restringir. Palavra-chave comum ("sim", "quero", "lista") virava
+  //    gatilho aberto para a base inteira, e comando interno pelo WhatsApp era
+  //    impossível de montar. Agora, campanha com trigger_tag_ids preenchido só
+  //    casa se o contato passar no filtro; sem tags configuradas, nada muda.
+  //
+  // 2. ORDEM. Não havia ORDER BY: entre duas campanhas com textos que se
+  //    sobrepõem, ganhava a que o banco entregasse primeiro. Agora é
+  //    trigger_priority DESC e, no empate, created_at ASC — arbitrário, mas
+  //    estável, que é o que faltava.
+  //
+  // Palavra casou mas o público não? Segue para a PRÓXIMA campanha em vez de
+  // desistir: é justamente assim que "campanha restrita ao staff" e "campanha
+  // aberta ao lead" convivem na mesma palavra-chave, decididas por prioridade.
+  async function checkCampaignTriggers(supabase: any, organizationId: string, contactId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
     const { data: campaigns, error: campaignsError } = await supabase
       .from('campaigns')
-      .select('id, trigger_keyword, match_type, flow_id, is_active')
+      .select('id, trigger_keyword, match_type, flow_id, is_active, trigger_tag_ids, trigger_tag_match, trigger_priority')
       .eq('organization_id', organizationId)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .order('trigger_priority', { ascending: false })
+      .order('created_at', { ascending: true });
 
     if (campaignsError) {
       console.error('Error fetching campaigns:', campaignsError);
@@ -3436,6 +3455,31 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     console.log(`Found ${campaigns?.length || 0} active campaigns for org ${organizationId}`);
 
     if (!campaigns?.length) return null;
+
+    // Tags do contato: carregadas UMA vez, e só se alguma campanha tiver filtro
+    // de público. Org que não usa o recurso não paga query nenhuma por mensagem.
+    let contactTagIds: Set<string> | null = null;
+    const loadContactTagIds = async (): Promise<Set<string>> => {
+      if (contactTagIds) return contactTagIds;
+      const { data: rows } = await supabase
+        .from('contact_tags')
+        .select('tag_id')
+        .eq('contact_id', contactId);
+      contactTagIds = new Set((rows || []).map((r: any) => r.tag_id));
+      return contactTagIds;
+    };
+
+    const audienceAllows = async (campaign: any): Promise<boolean> => {
+      const required: string[] = Array.isArray(campaign.trigger_tag_ids) ? campaign.trigger_tag_ids : [];
+      if (!required.length) return true;
+
+      const has = await loadContactTagIds();
+      const mode = campaign.trigger_tag_match || 'any';
+
+      if (mode === 'all') return required.every((t) => has.has(t));
+      if (mode === 'none') return !required.some((t) => has.has(t));
+      return required.some((t) => has.has(t));
+    };
 
     const msgLower = messageContent.toLowerCase().trim();
     console.log(`Comparing message "${msgLower}" against campaigns...`);
@@ -3448,6 +3492,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
 
       const msgNormalized = normalizeText(msgLower);
+      let matchedKeyword: string | null = null;
 
       // "all_words": E lógico -- todos os termos da lista precisam aparecer na
       // mensagem, em qualquer ordem. Ignora pontuação e espaço extra dos dois
@@ -3459,34 +3504,42 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
           .filter(Boolean);
 
         if (terms.length && terms.every((t: string) => msgWords.includes(t))) {
-          console.log(`MATCH FOUND! Campaign: ${campaign.id}, all_words:`, terms);
-          return { flowId: campaign.flow_id, campaignId: campaign.id };
+          matchedKeyword = terms.join(' + ');
         }
+      } else {
+        for (const kw of keywords) {
+          let matched = false;
+          const kwNormalized = normalizeText(kw);
+          switch (campaign.match_type) {
+            case 'exact':
+              matched = msgNormalized === kwNormalized;
+              break;
+            case 'contains':
+              matched = msgNormalized.includes(kwNormalized);
+              break;
+            case 'starts_with':
+              matched = msgNormalized.startsWith(kwNormalized);
+              break;
+            default:
+              matched = msgNormalized === kwNormalized;
+          }
+
+          if (matched) {
+            matchedKeyword = kw;
+            break;
+          }
+        }
+      }
+
+      if (!matchedKeyword) continue;
+
+      if (!(await audienceAllows(campaign))) {
+        console.log(`[WEBHOOK] Campaign ${campaign.id} casou com "${matchedKeyword}" mas o contato ${contactId} está fora do público (match=${campaign.trigger_tag_match}) — seguindo para a próxima`);
         continue;
       }
 
-      for (const kw of keywords) {
-        let matched = false;
-        const kwNormalized = normalizeText(kw);
-        switch (campaign.match_type) {
-          case 'exact':
-            matched = msgNormalized === kwNormalized;
-            break;
-          case 'contains':
-            matched = msgNormalized.includes(kwNormalized);
-            break;
-          case 'starts_with':
-            matched = msgNormalized.startsWith(kwNormalized);
-            break;
-          default:
-            matched = msgNormalized === kwNormalized;
-        }
-
-        if (matched) {
-          console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${kw}`);
-          return { flowId: campaign.flow_id, campaignId: campaign.id };
-        }
-      }
+      console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${matchedKeyword}, priority: ${campaign.trigger_priority}`);
+      return { flowId: campaign.flow_id, campaignId: campaign.id };
     }
 
     console.log('[WEBHOOK] No campaign match found for message:', msgLower);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -31,6 +31,7 @@ import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 import { useTags } from "@/hooks/useTags";
 import { enforceEntryCreationLimit } from "@/lib/entryFlow";
+import { findKeywordCollisions } from "@/lib/campaignKeywordMatch";
 import { CampaignTriggerFields } from "./CampaignTriggerFields";
 
 interface CampaignDialogProps {
@@ -58,6 +59,9 @@ export function CampaignDialog({
     const [workspaceId, setWorkspaceId] = useState<string>("");
     const [webhookToken, setWebhookToken] = useState<string>("");
     const [copied, setCopied] = useState(false);
+    const [triggerTagIds, setTriggerTagIds] = useState<string[]>([]);
+    const [triggerTagMatch, setTriggerTagMatch] = useState("any");
+    const [triggerPriority, setTriggerPriority] = useState(0);
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
@@ -86,6 +90,9 @@ export function CampaignDialog({
             setEndTime(campaignToEdit.end_time ?? "23:59");
             setWorkspaceId((campaignToEdit as any).workspace_id || "");
             setWebhookToken(campaignToEdit.webhook_token || "");
+            setTriggerTagIds(campaignToEdit.trigger_tag_ids ?? []);
+            setTriggerTagMatch(campaignToEdit.trigger_tag_match ?? "any");
+            setTriggerPriority(campaignToEdit.trigger_priority ?? 0);
         } else if (open) {
             setName("");
             setTriggerKeyword("");
@@ -94,6 +101,9 @@ export function CampaignDialog({
             setTriggerType("keyword");
             setWorkspaceId(selectedWorkspaceId && workspaces.some(w => w.id === selectedWorkspaceId) ? selectedWorkspaceId : "");
             setWebhookToken("");
+            setTriggerTagIds([]);
+            setTriggerTagMatch("any");
+            setTriggerPriority(0);
         }
     }, [campaignToEdit, open, flows, selectedWorkspaceId, workspaces]);
 
@@ -130,6 +140,12 @@ export function CampaignDialog({
             start_time: startTime,
             end_time: endTime,
             workspace_id: workspaceId || null,
+            // Público e prioridade só valem para o gatilho de palavra-chave --
+            // é o checkCampaignTriggers que os lê. Nos outros tipos zera, senão
+            // trocar o gatilho deixaria um filtro invisível para trás.
+            trigger_tag_ids: triggerType === 'keyword' ? triggerTagIds : [],
+            trigger_tag_match: triggerType === 'keyword' ? triggerTagMatch : 'any',
+            trigger_priority: triggerType === 'keyword' ? triggerPriority : 0,
         };
 
         if (campaignToEdit) {
@@ -144,6 +160,21 @@ export function CampaignDialog({
             );
         }
     };
+
+    // Quais campanhas ativas a mesma mensagem também dispararia. Recalcula a
+    // cada tecla, mas é comparação de string sobre a lista já carregada.
+    const collisions = useMemo(() => {
+        if (triggerType !== 'keyword') return [];
+        return findKeywordCollisions(
+            {
+                id: campaignToEdit?.id,
+                trigger_keyword: triggerKeyword,
+                match_type: matchType,
+                trigger_priority: triggerPriority,
+            },
+            campaigns,
+        );
+    }, [triggerType, triggerKeyword, matchType, triggerPriority, campaigns, campaignToEdit?.id]);
 
     const isSaving = createCampaign.isPending || updateCampaign.isPending;
     const isFormValid = name.trim() && flowId && ((triggerType !== 'keyword' && triggerType !== 'tag_added') || triggerKeyword.trim());
@@ -197,6 +228,13 @@ export function CampaignDialog({
                         matchType={matchType}
                         onMatchTypeChange={setMatchType}
                         tags={tags}
+                        triggerTagIds={triggerTagIds}
+                        onTriggerTagIdsChange={setTriggerTagIds}
+                        triggerTagMatch={triggerTagMatch}
+                        onTriggerTagMatchChange={setTriggerTagMatch}
+                        triggerPriority={triggerPriority}
+                        onTriggerPriorityChange={setTriggerPriority}
+                        collisions={collisions}
                         webhookUrl={webhookUrl}
                         onCopyWebhookUrl={handleCopyUrl}
                         copied={copied}

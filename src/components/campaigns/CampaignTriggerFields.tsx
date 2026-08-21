@@ -9,8 +9,10 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { MessageSquareText, Tag, Webhook, Copy, Check, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { MessageSquareText, Tag, Webhook, Copy, Check, RefreshCw, AlertTriangle, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CampaignCollision } from "@/lib/campaignKeywordMatch";
 
 interface TagOption {
     id: string;
@@ -26,6 +28,17 @@ interface CampaignTriggerFieldsProps {
     matchType: string;
     onMatchTypeChange: (value: string) => void;
     tags: TagOption[];
+    /** Público do gatilho: vazio = qualquer contato dispara (o padrão de sempre). */
+    triggerTagIds?: string[];
+    onTriggerTagIdsChange?: (value: string[]) => void;
+    /** any | all | none -- como combinar as tags de público. */
+    triggerTagMatch?: string;
+    onTriggerTagMatchChange?: (value: string) => void;
+    /** Desempate quando o texto colide com outra campanha. Maior ganha. */
+    triggerPriority?: number;
+    onTriggerPriorityChange?: (value: number) => void;
+    /** Campanhas ativas que a mesma mensagem também dispararia. */
+    collisions?: CampaignCollision[];
     /** Vazio até a campanha existir de verdade -- mostra o placeholder "salve primeiro". */
     webhookUrl: string;
     onCopyWebhookUrl: () => void;
@@ -47,12 +60,34 @@ export function CampaignTriggerFields({
     matchType,
     onMatchTypeChange,
     tags,
+    triggerTagIds = [],
+    onTriggerTagIdsChange,
+    triggerTagMatch = 'any',
+    onTriggerTagMatchChange,
+    triggerPriority = 0,
+    onTriggerPriorityChange,
+    collisions = [],
     webhookUrl,
     onCopyWebhookUrl,
     copied,
     onRotateWebhookUrl,
     isRotatingWebhookUrl,
 }: CampaignTriggerFieldsProps) {
+    const toggleAudienceTag = (tagId: string) => {
+        if (!onTriggerTagIdsChange) return;
+        onTriggerTagIdsChange(
+            triggerTagIds.includes(tagId)
+                ? triggerTagIds.filter((id) => id !== tagId)
+                : [...triggerTagIds, tagId],
+        );
+    };
+
+    const AUDIENCE_MATCH_LABELS: Record<string, string> = {
+        any: 'Tem pelo menos uma das tags',
+        all: 'Tem todas as tags',
+        none: 'Não tem nenhuma das tags',
+    };
+
     const triggerOptions = [
         {
             id: 'keyword',
@@ -143,6 +178,110 @@ export function CampaignTriggerFields({
                                             </SelectContent>
                                         </Select>
                                     </div>
+
+                                    {/* Aviso de colisão. Duas campanhas com textos que se
+                                        sobrepõem sempre foram permitidas e nunca deram erro --
+                                        o webhook simplesmente escolhia uma. Antes era sorteio;
+                                        agora a prioridade decide, mas a pessoa precisa ver que
+                                        está escolhendo. */}
+                                    {collisions.length > 0 && (
+                                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                                            <div className="flex items-start gap-2">
+                                                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                                <p className="text-xs font-medium text-foreground">
+                                                    A mesma mensagem também dispara {collisions.length === 1 ? 'outra campanha' : `outras ${collisions.length} campanhas`}
+                                                </p>
+                                            </div>
+                                            <ul className="space-y-1 pl-6">
+                                                {collisions.map((c) => (
+                                                    <li key={c.id} className="text-[11px] text-muted-foreground">
+                                                        <span className="font-mono">{c.keyword}</span> também cai em{' '}
+                                                        <strong className="text-foreground">{c.name}</strong> —{' '}
+                                                        {c.winner === 'esta'
+                                                            ? 'esta campanha ganha (prioridade maior).'
+                                                            : 'quem ganha hoje é a outra. Suba a prioridade abaixo para inverter.'}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {/* Público. Sem isto, toda palavra-chave era aberta para a
+                                        base inteira: qualquer lead que digitasse a palavra
+                                        disparava a campanha.
+                                        Só aparece onde o pai sabe guardar o valor -- a criação
+                                        guiada de orquestração usa este mesmo componente e não
+                                        passa os handlers; mostrar tags que não gravam nada
+                                        seria pior que não mostrar. */}
+                                    {onTriggerTagIdsChange && (
+                                    <div className="grid gap-2">
+                                        <Label className="text-xs flex items-center gap-1.5">
+                                            <Users className="h-3.5 w-3.5" />
+                                            Quem pode disparar
+                                        </Label>
+                                        {triggerTagIds.length > 0 && (
+                                            <Select value={triggerTagMatch} onValueChange={(v) => onTriggerTagMatchChange?.(v)}>
+                                                <SelectTrigger className="h-9">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {Object.entries(AUDIENCE_MATCH_LABELS).map(([value, label]) => (
+                                                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        )}
+                                        {tags.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {tags.map((tag) => {
+                                                    const selected = triggerTagIds.includes(tag.id);
+                                                    return (
+                                                        <button
+                                                            key={tag.id}
+                                                            type="button"
+                                                            onClick={() => toggleAudienceTag(tag.id)}
+                                                            className={cn(
+                                                                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                                                                selected
+                                                                    ? "border-primary bg-primary/10 text-foreground"
+                                                                    : "border-border text-muted-foreground hover:bg-muted/50"
+                                                            )}
+                                                        >
+                                                            <span
+                                                                className="h-2 w-2 rounded-full"
+                                                                style={{ backgroundColor: tag.color || '#6366f1' }}
+                                                            />
+                                                            {tag.name}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-[10px] text-muted-foreground italic">Nenhuma tag criada ainda.</p>
+                                        )}
+                                        <p className="text-[10px] text-muted-foreground">
+                                            {triggerTagIds.length === 0
+                                                ? 'Nenhuma tag marcada: qualquer contato que mandar a palavra-chave dispara a campanha.'
+                                                : `${AUDIENCE_MATCH_LABELS[triggerTagMatch] ?? ''}. Quem estiver fora não dispara — a mensagem segue como conversa normal.`}
+                                        </p>
+                                    </div>
+                                    )}
+
+                                    {onTriggerPriorityChange && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="trigger_priority" className="text-xs">Prioridade</Label>
+                                        <Input
+                                            id="trigger_priority"
+                                            type="number"
+                                            className="h-9"
+                                            value={triggerPriority}
+                                            onChange={(e) => onTriggerPriorityChange(Number(e.target.value) || 0)}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground">
+                                            Quando o texto cai em mais de uma campanha, a de maior prioridade ganha. Empate: a campanha mais antiga.
+                                        </p>
+                                    </div>
+                                    )}
                                 </div>
                             )}
 
