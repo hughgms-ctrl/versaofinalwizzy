@@ -922,6 +922,9 @@ async function runNodeByType(
     case 'action-contact-field':
       return await executeContactFieldAction(data, context, supabase);
 
+    case 'action-generate-pdf':
+      return await executeGeneratePdfAction(data, context);
+
     case 'action-workspace':
       return await executeWorkspaceAssignment(data, context, supabase);
 
@@ -995,6 +998,87 @@ async function executeContactFieldAction(
     return { success: true, variables: values, metadata: { savedFields: Object.keys(values) } };
   } catch (error) {
     console.error('[FLOW EXECUTE] action-contact-field error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// Pega um texto que ja esta numa variavel do fluxo e devolve um PDF.
+//
+// O motor (generate-document-pdf) sempre existiu, mas so o no action-document
+// falava com ele — e action-document e outra coisa: coleta campos do lead e
+// preenche um template cadastrado. Aqui a entrada e texto solto, tipicamente o
+// que a IA escreveu e gravou com save_contact_field antes de devolver o fluxo.
+//
+// Sai em bucket PUBLICO (visibility: 'public'): o destino natural do PDF e ser
+// enviado no WhatsApp, e quem baixa a URL e a Evolution/UAZAPI, sem credencial
+// nenhuma. contact-files virou privado em 20260715120000 e daria 403 la.
+async function executeGeneratePdfAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext
+): Promise<NodeResult> {
+  const content = replaceVariables(String(data.content ?? ''), context.variables).trim();
+
+  // Vazio nao gera. Mesma regra do action-contact-field: variavel nao
+  // preenchida vira string vazia depois do replace, e um PDF de uma pagina em
+  // branco e pior do que PDF nenhum — o no seguinte mandaria o anexo do mesmo
+  // jeito, e o destinatario abriria o nada.
+  if (!content) {
+    console.log('[FLOW EXECUTE] action-generate-pdf: content vazio apos interpolacao, nada gerado');
+    return { success: true, metadata: { skipped: 'empty_content' } };
+  }
+
+  const documentName =
+    replaceVariables(String(data.documentName ?? ''), context.variables).trim() || 'documento';
+  const logoUrl = replaceVariables(String(data.logoUrl ?? ''), context.variables).trim();
+
+  // A variavel volta para o fluxo como {{nome}}, e o replace so casa \w+.
+  // Nome fora disso seria gravado e nunca mais lido — melhor cair no padrao.
+  const rawVariable = String(data.saveUrlToVariable ?? '').trim();
+  const targetVariable = /^\w+$/.test(rawVariable) ? rawVariable : 'pdf_url';
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+      body: JSON.stringify({
+        template_content: content,
+        document_name: documentName,
+        logo_url: logoUrl || null,
+        // Sem campos: o gerador roda fillTemplate sobre o conteudo, e uma lista
+        // vazia deixa {{...}} que tenha sobrado no texto exatamente como esta,
+        // em vez de apagar.
+        fields: [],
+        filled_data: {},
+        visibility: 'public',
+        organization_id: context.organizationId,
+      }),
+    });
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || !result?.pdf_url) {
+      const message = result?.error || `generate-document-pdf respondeu ${response.status}`;
+      console.error('[FLOW EXECUTE] action-generate-pdf error:', message);
+      // Ao contrario do action-webhook, aqui falhar PARA o fluxo. Seguir faria o
+      // content-block seguinte enviar um documento com mediaUrl vazia: o cliente
+      // receberia uma mensagem quebrada em vez de nao receber nada, e ninguem
+      // ficaria sabendo. O executor marca a execucao como failed e chama
+      // cleanupFlowEnd, entao a conversa nao fica presa.
+      return { success: false, error: `Falha ao gerar PDF: ${message}` };
+    }
+
+    console.log(`[FLOW EXECUTE] action-generate-pdf: "${documentName}" gerado em {{${targetVariable}}}`);
+
+    return {
+      success: true,
+      variables: { [targetVariable]: result.pdf_url },
+      metadata: { documentName, variable: targetVariable },
+    };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] action-generate-pdf error:', error);
     return { success: false, error: String(error) };
   }
 }

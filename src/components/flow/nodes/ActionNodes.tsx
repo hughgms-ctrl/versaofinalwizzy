@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users, UserCog } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users, UserCog, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFollowUpOutputs } from './followUpHandles';
 import { WaitOutputRows } from './followUpOutputs';
@@ -320,6 +320,20 @@ export function ContactFieldActionNode({ data, selected }: NodeProps<ActionNode>
         {count > 0
           ? `${count} campo${count > 1 ? 's' : ''} do contato`
           : 'Configurar campos...'}
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function GeneratePdfActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const variable = String(data.saveUrlToVariable || 'pdf_url');
+  return (
+    <BaseActionNode selected={!!selected} icon={FileDown} color="bg-fuchsia-600" title="Gerar PDF">
+      <p className="text-xs text-muted-foreground truncate">
+        {String(data.documentName || 'Nomear o arquivo...')}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-1">
+        URL em <span className="font-mono text-foreground">{`{{${variable}}}`}</span>
       </p>
     </BaseActionNode>
   );

@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog,
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown,
   AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -133,6 +133,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-workspace': Building2,
   'action-whatsapp-group': Users,
   'action-contact-field': UserCog,
+  'action-generate-pdf': FileDown,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
@@ -157,6 +158,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-workspace': 'Atribuir Workspace',
   'action-whatsapp-group': 'Enviar Grupo WhatsApp',
   'action-contact-field': 'Salvar no Contato',
+  'action-generate-pdf': 'Gerar PDF',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
 };
@@ -2536,6 +2538,97 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             <p className="text-[10px] text-muted-foreground">
               Valor vazio nao apaga o que ja estava gravado no contato.
             </p>
+          </div>
+        );
+      }
+
+      case 'action-generate-pdf': {
+        // A ponte que faltava entre um texto que ja esta numa variavel e o
+        // gerador de PDF. O no action-document tambem gera PDF, mas coletando
+        // campos e preenchendo um template cadastrado — aqui a entrada e texto
+        // solto, normalmente o que o agente de IA escreveu.
+        const rawVariable = String(localData.saveUrlToVariable || '').trim();
+        const variableIsValid = rawVariable === '' || /^\w+$/.test(rawVariable);
+        const effectiveVariable = variableIsValid && rawVariable ? rawVariable : 'pdf_url';
+
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-fuchsia-50 dark:bg-fuchsia-950/30 rounded-lg flex items-center gap-3">
+              <FileDown className="h-5 w-5 text-fuchsia-600" />
+              <div>
+                <p className="text-xs font-semibold">Gerar PDF</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Transforma um texto do fluxo em PDF e devolve a URL numa variavel, pronta para enviar como documento.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Conteudo do PDF</Label>
+              <Textarea
+                value={String(localData.content || '')}
+                onChange={(e) => handleChange('content', e.target.value)}
+                placeholder={'{{relatorio_texto}}'}
+                rows={8}
+                className="mt-1 font-mono text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Aceita {'{{variavel}}'}. Cada linha vira um paragrafo. Markdown nao e interpretado: {'#'} e {'**'} sairiam
+                literais no arquivo.
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-xs">Nome do arquivo</Label>
+              <Input
+                value={String(localData.documentName || '')}
+                onChange={(e) => handleChange('documentName', e.target.value)}
+                placeholder="Relatorio {{evento_cidade}}"
+                className="mt-1"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                E o nome que o destinatario ve no WhatsApp. Acentos sao removidos.
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-xs">Salvar URL na variavel</Label>
+              <Input
+                value={rawVariable}
+                onChange={(e) => handleChange('saveUrlToVariable', e.target.value)}
+                placeholder="pdf_url"
+                className="mt-1 font-mono"
+              />
+              {!variableIsValid ? (
+                <p className="text-[10px] text-amber-600 mt-1">
+                  Use so letras, numeros e _ — outro formato nunca voltaria como {'{{variavel}}'}. Vai usar{' '}
+                  <span className="font-mono">pdf_url</span>.
+                </p>
+              ) : (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Use <span className="font-mono">{`{{${effectiveVariable}}}`}</span> num bloco de Conteudo do tipo
+                  Documento para enviar o arquivo.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label className="text-xs">Logo (URL, opcional)</Label>
+              <Input
+                value={String(localData.logoUrl || '')}
+                onChange={(e) => handleChange('logoUrl', e.target.value)}
+                placeholder="https://..."
+                className="mt-1"
+              />
+            </div>
+
+            <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 flex gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground">
+                Se o conteudo ficar vazio, nenhum PDF e gerado e o fluxo segue. Se a geracao falhar, o fluxo PARA — melhor
+                do que enviar um documento quebrado.
+              </p>
+            </div>
           </div>
         );
       }

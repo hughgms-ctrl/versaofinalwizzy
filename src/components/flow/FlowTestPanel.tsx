@@ -811,6 +811,38 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         break;
       }
 
+      case 'action-generate-pdf': {
+        const rawVariable = String(d.saveUrlToVariable || '').trim();
+        const variable = /^\w+$/.test(rawVariable) ? rawVariable : 'pdf_url';
+        // Mesma interpolação inline que o envio de texto usa mais acima —
+        // não existe helper compartilhado aqui.
+        const interpolate = (raw: string) => {
+          let out = raw;
+          Object.entries(simState.variables).forEach(([k, v]) => {
+            out = out.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+          });
+          return out;
+        };
+        const content = interpolate(String(d.content || ''));
+        const name = interpolate(String(d.documentName || '')) || 'documento';
+
+        // Mesma regra do motor: conteúdo vazio não gera arquivo nenhum, e o
+        // fluxo segue. Sem isto a simulação prometeria um PDF que em produção
+        // não existiria.
+        if (!content.trim()) {
+          addMsg({ type: 'action', content: 'Gerar PDF: conteúdo vazio, nada gerado', actionIcon: '📄' });
+        } else {
+          addMsg({ type: 'action', content: `Gerando PDF: ${name}`, actionIcon: '📄' });
+          setSimState(prev => ({
+            ...prev,
+            variables: { ...prev.variables, [variable]: `https://exemplo/simulado/${name}.pdf` },
+          }));
+        }
+        await wait(900);
+        await advanceOrEnd();
+        break;
+      }
+
       case 'action-webhook': {
         addMsg({ type: 'action', content: `Executando webhook: ${d.url || '...'}`, actionIcon: '🌐' });
         await wait(1000);

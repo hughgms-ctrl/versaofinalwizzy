@@ -529,6 +529,24 @@ serve(async (req) => {
     } = body;
     const generatedDocumentId: string | undefined = body.generated_document_id;
 
+    // Onde o PDF vai morar. `private` (default) = comportamento de sempre:
+    // contact-files, privado desde 20260715120000. Quem le ali e o front, que
+    // assina on-read (resolveDocFileUrl) — a URL publica devolvida abaixo nao
+    // abre sozinha, e nunca precisou.
+    //
+    // `public` existe para o PDF que sera ENTREGUE por um terceiro sem
+    // credencial: Evolution/UAZAPI baixam a URL do lado delas para mandar o
+    // documento no WhatsApp, e URL de bucket privado da 403 la. Esse caso vai
+    // para flow-media, publico exatamente por esse motivo (20260714130000).
+    const visibility: "private" | "public" = body.visibility === "public" ? "public" : "private";
+    const organizationId: string | undefined = body.organization_id;
+
+    if (visibility === "public" && !organizationId) {
+      return new Response(JSON.stringify({ error: "organization_id is required when visibility is 'public'" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Service client (also used for the "load by id" shortcut)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -689,10 +707,17 @@ serve(async (req) => {
     const safeName = (document_name || "documento")
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `generated/${Date.now()}-${safeName}.pdf`;
+    const storageBucket = visibility === "public" ? "flow-media" : "contact-files";
+    // flow-media e escrito sob `${orgId}/...` (write escopado por org na
+    // 20260714130000). Este upload e service_role e ignora RLS, mas seguir a
+    // convencao mantem o bucket navegavel e deixa a policy valer se um dia o
+    // front precisar mexer nesses arquivos.
+    const storagePath = visibility === "public"
+      ? `${organizationId}/generated-pdfs/${Date.now()}-${safeName}.pdf`
+      : `generated/${Date.now()}-${safeName}.pdf`;
 
     const { error: uploadError } = await supabase.storage
-      .from("contact-files")
+      .from(storageBucket)
       .upload(storagePath, pdfBytes, { contentType: "application/pdf", upsert: false });
 
     if (uploadError) {
@@ -701,7 +726,7 @@ serve(async (req) => {
     }
 
     const { data: urlData } = supabase.storage
-      .from("contact-files")
+      .from(storageBucket)
       .getPublicUrl(storagePath);
 
     // When invoked with a generated_document_id, persist the URL on the row

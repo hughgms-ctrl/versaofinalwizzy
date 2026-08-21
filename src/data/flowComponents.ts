@@ -112,6 +112,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         color: 'bg-teal-600',
       },
       {
+        type: 'action-generate-pdf',
+        label: 'Gerar PDF',
+        description: 'Transforma um texto do fluxo em PDF e devolve a URL',
+        icon: 'FileDown',
+        color: 'bg-fuchsia-600',
+      },
+      {
         type: 'action-whatsapp-group',
         label: 'Enviar Grupo WhatsApp',
         description: 'Envia mensagem para um grupo de WhatsApp',

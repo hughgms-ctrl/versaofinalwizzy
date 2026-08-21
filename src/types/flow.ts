@@ -15,6 +15,7 @@ export type FlowNodeType =
   | 'action-delay'
   | 'action-workspace'
   | 'action-contact-field'
+  | 'action-generate-pdf'
   | 'action-whatsapp-group'
   | 'condition'
   | 'user-input'

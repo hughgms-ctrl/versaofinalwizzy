@@ -25,7 +25,8 @@ import {
   FileText,
   Users,
   Building2,
-  UserCog
+  UserCog,
+  FileDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { flowComponentCategories } from '@/data/flowComponents';
@@ -54,6 +55,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Users,
   Building2,
   UserCog,
+  FileDown,
 };
 
 interface FlowSidebarProps {

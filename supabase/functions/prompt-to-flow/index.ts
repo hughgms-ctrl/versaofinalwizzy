@@ -87,6 +87,7 @@ TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
 
 10. "action-webhook" - Webhook externo. Data: { label, webhookUrl }
 10b. "action-contact-field" - Salva respostas nos campos do contato. Data: { label, assignments: [{ id, fieldKey, value }] } onde value aceita {{variavel}}
+10c. "action-generate-pdf" - Transforma um texto do fluxo em PDF. Data: { label, content, documentName, saveUrlToVariable } onde content e documentName aceitam {{variavel}}. A URL do PDF volta em {{saveUrlToVariable}} (padrao "pdf_url"), para ser enviada num content-block do tipo document
 
 11. "action-flow" - Iniciar outro fluxo. Data: { label, flowId, flowName }
 
@@ -144,6 +145,7 @@ IMPORTANTE:
       "start", "content-block", "message-buttons", "message-list",
       "ai-handoff", "action-tag", "action-pipeline", "action-transfer",
       "action-delay", "action-webhook", "action-flow", "action-department", "action-contact-field",
+      "action-generate-pdf",
       "action-document", "action-workspace", "condition", "user-input",
       "randomizer", "smart-delay"
     ];
