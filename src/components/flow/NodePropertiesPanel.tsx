@@ -1752,6 +1752,37 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 placeholder='{"key": "value"}'
                 className="min-h-[80px] font-mono text-xs"
               />
+              <p className="text-xs text-muted-foreground">
+                Se ficar vazio, mandamos o corpo padrão (contato, conversa e todas as variáveis).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webhookHeaders">Headers (JSON)</Label>
+              <VariableTextarea
+                id="webhookHeaders"
+                value={(localData.headers as string) || ''}
+                onValueChange={(value) => handleChange('headers', value)}
+                variables={availableVariables}
+                placeholder='{"Authorization": "Bearer ..."}'
+                className="min-h-[60px] font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional. O Content-Type application/json já vai sozinho.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="responsePrefix">Prefixo das variáveis de resposta</Label>
+              <Input
+                id="responsePrefix"
+                value={(localData.responsePrefix as string) || ''}
+                onChange={(e) => handleChange('responsePrefix', e.target.value)}
+                placeholder="ex: contrato_"
+              />
+              <p className="text-xs text-muted-foreground">
+                A resposta JSON vira variável do fluxo. Com "contrato_", o campo id da API
+                vira {'{{contrato_id}}'} em vez de {'{{id}}'}. O código HTTP volta sempre
+                em {'{{webhook_status}}'}.
+              </p>
             </div>
           </div>
         );

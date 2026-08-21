@@ -154,13 +154,16 @@ export function getAvailableVariables(
     });
   }
 
-  // 4. Aviso: webhooks anteriores geram variáveis dinâmicas que não dá para listar.
+  // 4. Webhook anterior: o código HTTP é fixo e dá para listar; os campos da
+  // resposta são dinâmicos (e podem levar prefixo), então viram só um aviso.
   const hasWebhookUpstream = upstreamNodes.some((n) => n.type === 'action-webhook');
   if (hasWebhookUpstream) {
     groups.push({
       label: 'Do webhook',
-      hint: 'A resposta (JSON) de um webhook anterior vira variáveis com o mesmo nome de cada campo retornado.',
-      variables: [],
+      hint: 'A resposta (JSON) de um webhook anterior vira variáveis com o mesmo nome de cada campo retornado (com o prefixo configurado no nó, se houver).',
+      variables: [
+        { name: 'webhook_status', description: 'Código HTTP da última chamada (200, 404...; 0 se nem saiu)' },
+      ],
     });
   }
 

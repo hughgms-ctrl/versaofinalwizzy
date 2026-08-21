@@ -2880,7 +2880,53 @@ async function executeCondition(data: Record<string, unknown>, context: Executio
   return { success: true, outputHandle: result ? 'true' : 'false' };
 }
 
+// Troca {{variavel}} dentro de um JSON escrito à mão no painel. O
+// replaceVariables normal não serve aqui: um lead chamado Ze "Grande" Silva
+// viraria {"nome": "Ze "Grande" Silva"} e o JSON morre antes de sair. O
+// JSON.stringify escapa aspas, barra invertida e quebra de linha; o slice tira
+// as aspas que ele põe em volta, porque elas já estão escritas no template.
+// Vale só para o body do webhook — mensagem continua com replaceVariables.
+function replaceVariablesInJson(text: string, variables: Record<string, unknown>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_match, varName) => {
+    const value = lookupVariable(variables, varName);
+    if (value === undefined) return '';
+    return JSON.stringify(String(value)).slice(1, -1);
+  });
+}
+
+// Headers extras do nó: aceita objeto ou JSON em texto. Valor passa pelo
+// replaceVariables comum (header não é JSON, não precisa de escape).
+function buildWebhookHeaders(raw: unknown, variables: Record<string, unknown>): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return headers;
+    try {
+      parsed = JSON.parse(replaceVariablesInJson(trimmed, variables));
+    } catch {
+      console.error('[FLOW EXECUTE] Webhook headers inválidos, ignorando:', trimmed);
+      return headers;
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return headers;
+
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!key || value === null || value === undefined) continue;
+    headers[key] = replaceVariables(String(value), variables);
+  }
+  return headers;
+}
+
 async function executeWebhook(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
+  const responsePrefix = String(data.responsePrefix || '');
+  const prefixed = (values: Record<string, unknown>): Record<string, unknown> => {
+    if (!responsePrefix) return values;
+    return Object.fromEntries(Object.entries(values).map(([k, v]) => [`${responsePrefix}${k}`, v]));
+  };
+
   try {
     const url = String(data.webhookUrl || data.url || '');
     const method = String(data.method || 'POST');
@@ -2889,37 +2935,56 @@ async function executeWebhook(data: Record<string, unknown>, context: ExecutionC
       return { success: true };
     }
 
-    const body = {
-      conversationId: context.conversationId,
-      contactPhone: context.contactPhone,
-      contactId: context.contactId,
-      variables: context.variables,
-      timestamp: new Date().toISOString(),
-    };
+    // Body do nó tem prioridade; vazio mantém o corpo padrão de sempre, para
+    // nenhum fluxo que já roda mudar de comportamento.
+    const rawBody = typeof data.body === 'string' ? data.body.trim() : '';
+    let payload: unknown;
+
+    if (rawBody) {
+      const rendered = replaceVariablesInJson(rawBody, context.variables);
+      try {
+        payload = JSON.parse(rendered);
+      } catch (parseError) {
+        // Rede de segurança para JSON escrito errado no painel: não manda nada.
+        console.error('[FLOW EXECUTE] Webhook body inválido depois das variáveis:', rendered, parseError);
+        return { success: true, variables: { webhook_status: '0', webhook_error: 'body inválido' } };
+      }
+    } else {
+      payload = {
+        conversationId: context.conversationId,
+        contactPhone: context.contactPhone,
+        contactId: context.contactId,
+        variables: context.variables,
+        timestamp: new Date().toISOString(),
+      };
+    }
 
     const response = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: method !== 'GET' ? JSON.stringify(body) : undefined,
+      headers: buildWebhookHeaders(data.headers, context.variables),
+      body: method !== 'GET' ? JSON.stringify(payload) : undefined,
     });
 
     if (!response.ok) {
       console.error('Webhook failed:', response.status);
     }
 
+    // webhook_status sempre volta: é por ele que o fluxo ramifica quando dá erro.
+    const statusVars: Record<string, unknown> = { webhook_status: String(response.status) };
+
     try {
       const responseData = await response.json();
-      if (responseData && typeof responseData === 'object') {
-        return { success: true, variables: responseData };
+      if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
+        return { success: true, variables: { ...prefixed(responseData as Record<string, unknown>), ...statusVars } };
       }
     } catch {
       // Response is not JSON
     }
 
-    return { success: true };
+    return { success: true, variables: statusVars };
   } catch (error) {
     console.error('Webhook error:', error);
-    return { success: true };
+    return { success: true, variables: { webhook_status: '0', webhook_error: String(error) } };
   }
 }
 
