@@ -198,7 +198,19 @@ Deno.serve(async (req) => {
     // não pausa a execução — ela é fechada e outra nasce no nó de retomada. Sem
     // esse elo, a passagem do contato pelo fluxo fica quebrada em N linhas soltas
     // e o histórico não consegue remontar a jornada.
-    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables, resumedFromExecutionId } = await req.json();
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage: triggerMessageBody, variables: initialVariables, resumedFromExecutionId } = await req.json();
+
+    // Disparo por webhook/campanha nao tem mensagem do contato: quem escreve e o
+    // sistema. Sem triggerMessage, um no de IA no meio do fluxo apenas PAUSA e
+    // fica esperando o contato falar — e num relatorio interno ninguem vai falar,
+    // entao o agente nunca roda. A variavel trigger_message do payload serve como
+    // essa primeira fala, e vale para qualquer campanha de webhook com no de IA.
+    const triggerMessage: string | undefined =
+      (typeof triggerMessageBody === 'string' && triggerMessageBody.trim() ? triggerMessageBody : undefined)
+      ?? (() => {
+        const fromVars = (initialVariables as Record<string, unknown> | undefined)?.trigger_message;
+        return typeof fromVars === 'string' && fromVars.trim() ? fromVars : undefined;
+      })();
     console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}, resumedFrom=${resumedFromExecutionId || '-'}`);
 
     if (!flowId || !conversationId) {
@@ -1739,9 +1751,17 @@ async function executeWhatsAppGroupMessage(
         text = replaceVariables(item.content, context.variables);
         type = 'text';
       } else if (['image', 'video', 'audio', 'document'].includes(item.type)) {
-        if (!item.mediaUrl) continue;
+        // Interpolado como o texto e a legenda. Sem isso, um {{pdf_url}} vindo do
+        // no de gerar PDF sairia literal para o provedor.
+        const resolvedUrl = item.mediaUrl ? replaceVariables(item.mediaUrl, context.variables).trim() : '';
+        if (!resolvedUrl) {
+          if (item.mediaUrl) {
+            console.log(`[FLOW EXECUTE] group ${item.type}: mediaUrl "${item.mediaUrl}" ficou vazia apos interpolacao, item ignorado`);
+          }
+          continue;
+        }
         type = item.type as typeof type;
-        mediaUrl = item.mediaUrl;
+        mediaUrl = resolvedUrl;
         caption = item.caption ? replaceVariables(item.caption, context.variables) : null;
       } else {
         continue;
@@ -1801,6 +1821,16 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
         }
       }
 
+      // A legenda e o texto sempre passaram pelo replaceVariables, a URL nao:
+      // um {{pdf_url}} configurado no bloco de Documento ia LITERAL para o
+      // provedor. Interpolado aqui, antes da guarda, para que variavel sem valor
+      // (URL vazia) pule o item em vez de mandar um anexo quebrado.
+      const rawMediaUrl = item.mediaUrl;
+      const mediaUrl = rawMediaUrl ? replaceVariables(rawMediaUrl, context.variables).trim() : '';
+      if (rawMediaUrl && !mediaUrl) {
+        console.log(`[FLOW EXECUTE] content ${item.type}: mediaUrl "${rawMediaUrl}" ficou vazia apos interpolacao, item ignorado`);
+      }
+
       switch (item.type) {
         case 'text':
           if (item.content) {
@@ -1812,29 +1842,29 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           break;
 
         case 'image':
-          if (item.mediaUrl) {
+          if (mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('image', item.mediaUrl, item.caption, context, supabase, node?.id);
+            await sendMediaItem('image', mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
         case 'video':
-          if (item.mediaUrl) {
+          if (mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('video', item.mediaUrl, item.caption, context, supabase, node?.id);
+            await sendMediaItem('video', mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
         case 'audio':
-          if (item.mediaUrl) {
+          if (mediaUrl) {
             // Send RECORDING presence before audio to simulate recording
             await sendPresence('recording', context);
             await new Promise(resolve => setTimeout(resolve, 2000));
             await sendMediaItem(
               'audio',
-              item.mediaUrl,
+              mediaUrl,
               undefined,
               context,
               supabase,
@@ -1845,10 +1875,10 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           break;
 
         case 'document':
-          if (item.mediaUrl) {
+          if (mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('document', item.mediaUrl, item.caption, context, supabase, node?.id);
+            await sendMediaItem('document', mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
