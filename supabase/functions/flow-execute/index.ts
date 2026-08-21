@@ -1141,6 +1141,32 @@ const QUERY_CONTACTS_LIST_CAP = 200;
 // fatias sao somadas, entao nao corta resposta nenhuma.
 const QUERY_CONTACTS_URL_ID_CAP = 300;
 
+// Operadores que o filtro de campo personalizado sabe montar. Fora desta lista o
+// no FALHA. Operador ignorado nao estreita a consulta: o total volta MAIOR, com
+// cara de resposta certa.
+const QUERY_CONTACTS_OPERATORS = new Set([
+  'equals',
+  'not_equals',
+  'contains',
+  'is_empty',
+  'is_not_empty',
+]);
+
+const QUERY_CONTACTS_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * O que apareceu no lugar do id, para a mensagem de erro. Variavel que nao
+ * resolveu volta como {{nome}} literal -- dizer isso e a diferenca entre
+ * "arrume o fluxo" e "por que nao funciona?".
+ */
+function queryFilterHint(raw: unknown, resolved: string): string {
+  const before = String(raw ?? '').trim();
+  if (!resolved) return before ? ` (veio vazio de "${before}")` : ' (nao foi preenchido)';
+  if (resolved.includes('{{')) return ` (a variavel de "${before}" nao tinha valor)`;
+  return ` (veio "${resolved}")`;
+}
+
 interface ContactQueryFilter {
   id?: string;
   type: string;
@@ -1241,7 +1267,17 @@ async function executeQueryContacts(
   // seria gravado e nunca mais lido.
   const outputVariable = /^\w+$/.test(rawVariable) ? rawVariable : 'consulta_resultado';
 
-  const filters = (Array.isArray(data.filters) ? data.filters : []) as ContactQueryFilter[];
+  // Tag, etapa e campo personalizado tambem aceitam {{variavel}}, nao so o
+  // valor -- e o que permite o fluxo perguntar sobre a tag que ele mesmo acabou
+  // de decidir, em vez de exigir um id escrito na tela. A interpolacao vem ANTES
+  // de qualquer validacao: quem precisa ter forma de uuid e o texto ja resolvido.
+  const rawFilters = (Array.isArray(data.filters) ? data.filters : []) as ContactQueryFilter[];
+  const filters: ContactQueryFilter[] = rawFilters.map((f) => ({
+    ...f,
+    tagId: f.tagId === undefined ? undefined : replaceVariables(String(f.tagId), context.variables).trim(),
+    columnId: f.columnId === undefined ? undefined : replaceVariables(String(f.columnId), context.variables).trim(),
+    fieldKey: f.fieldKey === undefined ? undefined : replaceVariables(String(f.fieldKey), context.variables).trim(),
+  }));
 
   try {
     // Catalogo dos campos personalizados da org. Filtro que aponte para chave
@@ -1254,6 +1290,53 @@ async function executeQueryContacts(
 
     if (fieldsError) throw new Error(`contact_custom_fields: ${fieldsError.message}`);
     const knownKeys = new Set((fieldRows || []).map((r: { key: string }) => r.key));
+
+    // Nenhum filtro pode ser descartado em silencio. Filtro que some deixa a
+    // consulta MAIS LARGA -- no limite, a base inteira -- e o numero volta com
+    // cara de resposta certa. E o mesmo raciocinio do teto de ids: nao devolver
+    // e melhor do que devolver errado.
+    for (let i = 0; i < filters.length; i++) {
+      const filter = filters[i];
+      const raw = rawFilters[i];
+
+      if (filter.type === 'tag') {
+        if (!QUERY_CONTACTS_UUID_RE.test(filter.tagId ?? '')) {
+          return {
+            success: false,
+            error: `Consultar contatos: o filtro de tag nao aponta para uma tag valida${queryFilterHint(raw?.tagId, filter.tagId ?? '')}.`,
+          };
+        }
+      } else if (filter.type === 'pipeline') {
+        if (!QUERY_CONTACTS_UUID_RE.test(filter.columnId ?? '')) {
+          return {
+            success: false,
+            error: `Consultar contatos: o filtro de etapa nao aponta para uma etapa valida${queryFilterHint(raw?.columnId, filter.columnId ?? '')}.`,
+          };
+        }
+      } else if (filter.type === 'custom_field') {
+        const key = filter.fieldKey ?? '';
+        // A chave vira parte de um caminho jsonb: formato valido nao basta, tem
+        // que existir nesta organizacao.
+        if (!/^\w+$/.test(key) || !knownKeys.has(key)) {
+          return {
+            success: false,
+            error: `Consultar contatos: o campo personalizado do filtro nao existe nesta organizacao${queryFilterHint(raw?.fieldKey, key)}.`,
+          };
+        }
+        const operator = filter.operator ?? 'equals';
+        if (!QUERY_CONTACTS_OPERATORS.has(operator)) {
+          return {
+            success: false,
+            error: `Consultar contatos: operador desconhecido "${operator}" no filtro do campo "${key}".`,
+          };
+        }
+      } else {
+        return {
+          success: false,
+          error: `Consultar contatos: tipo de filtro desconhecido "${filter.type}".`,
+        };
+      }
+    }
 
     // 1) Filtros que viram conjunto de ids (tag, pipeline).
     let candidateIds: Set<string> | null = null;
@@ -1270,8 +1353,8 @@ async function executeQueryContacts(
     };
 
     for (const filter of filters) {
-      if (filter.type === 'tag' && filter.tagId) {
-        const ids = await contactIdsWithTag(supabase, filter.tagId);
+      if (filter.type === 'tag') {
+        const ids = await contactIdsWithTag(supabase, filter.tagId as string);
         if (ids === null) {
           return {
             success: false,
@@ -1280,8 +1363,8 @@ async function executeQueryContacts(
         }
         if (filter.negate) ids.forEach((id) => excludedIds.add(id));
         else intersect(ids);
-      } else if (filter.type === 'pipeline' && filter.columnId) {
-        const ids = await contactIdsInPipelineColumn(supabase, context.organizationId, filter.columnId);
+      } else if (filter.type === 'pipeline') {
+        const ids = await contactIdsInPipelineColumn(supabase, context.organizationId, filter.columnId as string);
         if (ids === null) {
           return {
             success: false,
@@ -1346,9 +1429,9 @@ async function executeQueryContacts(
 
       for (const filter of filters) {
         if (filter.type !== 'custom_field') continue;
+        // Chave e operador ja passaram pela validacao la em cima; aqui nao
+        // existe mais caminho que descarte filtro.
         const key = String(filter.fieldKey || '');
-        if (!/^\w+$/.test(key) || !knownKeys.has(key)) continue;
-
         const path = `metadata->custom_fields->>${key}`;
         const value = replaceVariables(String(filter.value ?? ''), context.variables).trim();
 
@@ -1372,7 +1455,10 @@ async function executeQueryContacts(
             q = q.not(path, 'is', null).neq(path, '');
             break;
           default:
-            console.warn(`[FLOW EXECUTE] query-contacts: operador desconhecido "${filter.operator}" — ignorado`);
+            // Inalcancavel: a validacao la em cima ja recusou. Fica como rede --
+            // e joga, em vez de avisar, porque um console.warn aqui seria filtro
+            // silenciosamente ignorado de novo.
+            throw new Error(`operador desconhecido "${filter.operator}" no filtro do campo "${key}"`);
         }
       }
 

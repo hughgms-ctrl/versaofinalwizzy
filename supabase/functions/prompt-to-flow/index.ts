@@ -92,7 +92,8 @@ TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
     - Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro, conta a organizacao inteira.
     - queryMode "count" grava o numero em {{outputVariable}}; "list" grava um texto com uma linha por contato. Nos dois casos {{outputVariable}_total} traz o total exato.
     - Use quando o pedido for "quantos", "quem sao", "avise se passar de N", "liste quem tem a tag X e nao respondeu Y". Ligue um no "condition" comparando {{outputVariable}_total} para ramificar por quantidade.
-    - negate vale para tag e pipeline. value aceita {{variavel}}.
+    - negate vale para tag e pipeline. value, tagId, columnId e fieldKey aceitam {{variavel}} (resolvida no disparo).
+    - Fora isso, tagId/columnId precisam ser IDs REAIS e fieldKey uma chave que exista: id inventado faz o no FALHAR, nao ser ignorado.
 
 11. "action-flow" - Iniciar outro fluxo. Data: { label, flowId, flowName }
 

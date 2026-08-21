@@ -150,6 +150,12 @@ export interface ContactQueryFilter {
   columnId?: string;
   /** Só para custom_field: a `key` do campo personalizado. */
   fieldKey?: string;
+  /**
+   * A tela troca o seletor por um campo de texto: o id da tag/etapa ou a chave
+   * do campo vem de {{variavel}}, resolvida na execução. O motor interpola os
+   * três sempre, então isto aqui é só a afordância da tela.
+   */
+  useVariable?: boolean;
   operator?: ContactQueryOperator;
   value?: string;
 }

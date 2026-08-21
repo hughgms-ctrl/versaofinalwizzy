@@ -5,7 +5,7 @@ import {
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
   Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown, DatabaseZap,
-  AlertTriangle
+  AlertTriangle, Braces
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2753,6 +2753,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </div>
               <p className="text-[10px] text-muted-foreground mb-2">
                 Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro nenhum, conta a base inteira da organizacao.
+                O botao <Braces className="inline h-3 w-3 align-[-2px]" /> troca a lista por uma variavel, resolvida na hora do
+                disparo — se ela vier vazia, o no falha em vez de ignorar o filtro e devolver um numero maior.
               </p>
 
               <div className="space-y-2">
@@ -2767,6 +2769,15 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                           <SelectItem value="custom_field">Campo personalizado</SelectItem>
                         </SelectContent>
                       </Select>
+                      <Button
+                        variant={f.useVariable ? 'secondary' : 'ghost'}
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        title={f.useVariable ? 'Voltar a escolher na lista' : 'Escolher por variavel'}
+                        onClick={() => updateQueryFilter(f.id, { useVariable: !f.useVariable })}
+                      >
+                        <Braces className={f.useVariable ? 'h-3.5 w-3.5 text-indigo-600' : 'h-3.5 w-3.5 text-muted-foreground'} />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeQueryFilter(f.id)}>
                         <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                       </Button>
@@ -2778,19 +2789,29 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                           <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
                           <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao tem a tag' : 'Tem a tag'}</span>
                         </div>
-                        <Select value={f.tagId || ''} onValueChange={(v) => updateQueryFilter(f.id, { tagId: v })}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione tag..." /></SelectTrigger>
-                          <SelectContent>
-                            {tags.map((tag) => (
-                              <SelectItem key={tag.id} value={tag.id}>
-                                <div className="flex items-center gap-2">
-                                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                                  {tag.name}
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {f.useVariable ? (
+                          <VariableInput
+                            value={f.tagId || ''}
+                            onValueChange={(v) => updateQueryFilter(f.id, { tagId: v })}
+                            variables={availableVariables}
+                            placeholder="Variavel com o id da tag"
+                            className="h-8 text-xs font-mono"
+                          />
+                        ) : (
+                          <Select value={f.tagId || ''} onValueChange={(v) => updateQueryFilter(f.id, { tagId: v })}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione tag..." /></SelectTrigger>
+                            <SelectContent>
+                              {tags.map((tag) => (
+                                <SelectItem key={tag.id} value={tag.id}>
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                                    {tag.name}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </>
                     )}
 
@@ -2800,39 +2821,63 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                           <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
                           <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao esta na etapa' : 'Esta na etapa'}</span>
                         </div>
-                        <Select
-                          value={f.pipelineId || ''}
-                          onValueChange={(v) => updateQueryFilter(f.id, { pipelineId: v, columnId: undefined })}
-                        >
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pipeline..." /></SelectTrigger>
-                          <SelectContent>
-                            {pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        {f.pipelineId && (
-                          <Select value={f.columnId || ''} onValueChange={(v) => updateQueryFilter(f.id, { columnId: v })}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Etapa..." /></SelectTrigger>
-                            <SelectContent>
-                              {pipelineColumns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                        {f.useVariable ? (
+                          // Quem filtra e o columnId; o pipelineId so existe para
+                          // popular o segundo seletor do modo lista.
+                          <VariableInput
+                            value={f.columnId || ''}
+                            onValueChange={(v) => updateQueryFilter(f.id, { columnId: v })}
+                            variables={availableVariables}
+                            placeholder="Variavel com o id da etapa"
+                            className="h-8 text-xs font-mono"
+                          />
+                        ) : (
+                          <>
+                            <Select
+                              value={f.pipelineId || ''}
+                              onValueChange={(v) => updateQueryFilter(f.id, { pipelineId: v, columnId: undefined })}
+                            >
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pipeline..." /></SelectTrigger>
+                              <SelectContent>
+                                {pipelines.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {f.pipelineId && (
+                              <Select value={f.columnId || ''} onValueChange={(v) => updateQueryFilter(f.id, { columnId: v })}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Etapa..." /></SelectTrigger>
+                                <SelectContent>
+                                  {pipelineColumns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </>
                         )}
                       </>
                     )}
 
                     {f.type === 'custom_field' && (
                       <>
-                        <Select value={f.fieldKey || ''} onValueChange={(v) => updateQueryFilter(f.id, { fieldKey: v })}>
-                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qual campo..." /></SelectTrigger>
-                          <SelectContent>
-                            {contactCustomFields.map((cf) => (
-                              <SelectItem key={cf.id} value={cf.key}>{cf.label}</SelectItem>
-                            ))}
-                            {!contactCustomFields.length && (
-                              <SelectItem value="none" disabled>Nenhum campo personalizado criado</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
+                        {f.useVariable ? (
+                          <VariableInput
+                            value={f.fieldKey || ''}
+                            onValueChange={(v) => updateQueryFilter(f.id, { fieldKey: v })}
+                            variables={availableVariables}
+                            placeholder="Variavel com a chave do campo"
+                            className="h-8 text-xs font-mono"
+                          />
+                        ) : (
+                          <Select value={f.fieldKey || ''} onValueChange={(v) => updateQueryFilter(f.id, { fieldKey: v })}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qual campo..." /></SelectTrigger>
+                            <SelectContent>
+                              {contactCustomFields.map((cf) => (
+                                <SelectItem key={cf.id} value={cf.key}>{cf.label}</SelectItem>
+                              ))}
+                              {!contactCustomFields.length && (
+                                <SelectItem value="none" disabled>Nenhum campo personalizado criado</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
                         <Select
                           value={f.operator || 'equals'}
                           onValueChange={(v) => updateQueryFilter(f.id, { operator: v as ContactQueryOperator })}
@@ -2847,10 +2892,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                           </SelectContent>
                         </Select>
                         {f.operator !== 'is_empty' && f.operator !== 'is_not_empty' && (
-                          <Input
+                          <VariableInput
                             value={f.value || ''}
-                            onChange={(e) => updateQueryFilter(f.id, { value: e.target.value })}
-                            placeholder="Valor (aceita {{variavel}})"
+                            onValueChange={(v) => updateQueryFilter(f.id, { value: v })}
+                            variables={availableVariables}
+                            placeholder="Valor (aceita variavel)"
                             className="h-8 text-xs"
                           />
                         )}
