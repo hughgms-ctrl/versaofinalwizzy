@@ -15,6 +15,7 @@ import {
   Settings,
   Upload,
   Loader2,
+  Tag as TagIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ import { ContactListItem } from '@/components/contacts/ContactListItem';
 import { ContactBulkActionsBar } from '@/components/contacts/ContactBulkActionsBar';
 import { NewContactDialog } from '@/components/contacts/NewContactDialog';
 import { ImportContactsDialog } from '@/components/contacts/ImportContactsDialog';
+import { BulkTagByPhoneDialog } from '@/components/contacts/BulkTagByPhoneDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
 function matchesCondition(contact: Contact, condition: FilterCondition, joins?: ContactFilterJoins): boolean {
@@ -107,6 +109,7 @@ const ContactsPage = () => {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showBulkTagDialog, setShowBulkTagDialog] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Filter contacts
@@ -272,6 +275,20 @@ const ContactsPage = () => {
         >
           <Upload className="mr-2 h-3.5 w-3.5" />
           Importar
+        </Button>
+
+        {/* A barra de ações em massa age sobre o que está SELECIONADO na lista,
+            que serve para dez contatos já achados. Marcar cinquenta presenças
+            depois de um evento é outro problema: a lista de telefones está na
+            mão e não dá para caçar cada um na tela. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={() => setShowBulkTagDialog(true)}
+        >
+          <TagIcon className="mr-2 h-3.5 w-3.5" />
+          Tag por lista
         </Button>
       </div>
 
@@ -448,6 +465,12 @@ const ContactsPage = () => {
       <ImportContactsDialog
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
+      />
+
+      {/* Aplicar tag colando uma lista de telefones (check-in, reengajamento) */}
+      <BulkTagByPhoneDialog
+        open={showBulkTagDialog}
+        onOpenChange={setShowBulkTagDialog}
       />
     </MainLayout>
   );
