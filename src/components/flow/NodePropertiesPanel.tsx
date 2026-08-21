@@ -615,6 +615,52 @@ function ContentItemEditor({
   );
 }
 
+/**
+ * Etapas de UM funil escolhido ali na linha.
+ *
+ * O painel tem um `usePipelineColumns` so, amarrado ao `pipelineId` do proprio
+ * no. Isso serve para o no "Mover no funil", onde o funil e do no. Mas na REGRA
+ * do no de condicao e no FILTRO do "Consultar Contatos" o funil e escolhido por
+ * LINHA -- e ali aquele hook nunca tinha pipelineId nenhum, entao a lista de
+ * etapas vinha sempre vazia e nao dava para escolher etapa nenhuma. Cada linha
+ * carrega as suas.
+ */
+function PipelineColumnSelect({
+  pipelineId,
+  value,
+  onChange,
+  placeholder,
+  anyOption,
+}: {
+  pipelineId: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  /** Item fixo no topo, tipo "Qualquer etapa". */
+  anyOption?: { value: string; label: string };
+}) {
+  const { data: cols = [] } = usePipelineColumns(pipelineId);
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectContent>
+        {anyOption && <SelectItem value={anyOption.value}>{anyOption.label}</SelectItem>}
+        {cols.map((c) => (
+          <SelectItem key={c.id} value={c.id}>
+            <div className="flex items-center gap-2">
+              <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+              {c.name || 'Sem nome'}
+            </div>
+          </SelectItem>
+        ))}
+        {!cols.length && !anyOption && (
+          <SelectItem value="_none" disabled>Este funil nao tem etapas</SelectItem>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: string; value: string; onChange: (v: string) => void }) {
   const { data: cols = [] } = usePipelineColumns(pipelineId);
   return (
@@ -655,7 +701,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: templates = [] } = useDocumentTemplates();
   const { data: packs = [] } = useDocumentPacks();
   const { data: allPipelines = [] } = usePipelines();
-  const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
+  // Só o nó "Mover no funil" tem funil próprio. Regra de condição e filtro do
+  // "Consultar Contatos" escolhem por linha e usam PipelineColumnSelect.
+  const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string);
 
   // Filter tags by flow's workspace
   const tags = workspaceId
@@ -810,15 +858,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </SelectContent>
             </Select>
             {rule.pipelineId && (
-              <Select value={rule.columnId || '_any'} onValueChange={(v) => updateRule({ ...rule, columnId: v === '_any' ? undefined : v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qualquer etapa..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_any">Qualquer etapa</SelectItem>
-                  {pipelineColumns.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PipelineColumnSelect
+                pipelineId={rule.pipelineId}
+                value={rule.columnId || '_any'}
+                onChange={(v) => updateRule({ ...rule, columnId: v === '_any' ? undefined : v })}
+                placeholder="Qualquer etapa..."
+                anyOption={{ value: '_any', label: 'Qualquer etapa' }}
+              />
             )}
           </div>
         );
@@ -2843,12 +2889,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                               </SelectContent>
                             </Select>
                             {f.pipelineId && (
-                              <Select value={f.columnId || ''} onValueChange={(v) => updateQueryFilter(f.id, { columnId: v })}>
-                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Etapa..." /></SelectTrigger>
-                                <SelectContent>
-                                  {pipelineColumns.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
+                              <PipelineColumnSelect
+                                pipelineId={f.pipelineId}
+                                value={f.columnId || ''}
+                                onChange={(v) => updateQueryFilter(f.id, { columnId: v })}
+                                placeholder="Etapa..."
+                              />
                             )}
                           </>
                         )}
