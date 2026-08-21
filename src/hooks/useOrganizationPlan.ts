@@ -40,7 +40,7 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
   const { profile } = useAuth();
   const organizationId = organizationIdOverride || profile?.organization_id || null;
 
-  const { data: orgPlan, isLoading } = useQuery({
+  const { data: orgPlan, isLoading, error: checkError } = useQuery({
     queryKey: ['org-plan-modules', organizationId, getCurrentUsagePeriod()],
     queryFn: async () => {
       if (!organizationId) return null;
@@ -86,6 +86,13 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
   const whatsappNumberUsagePercent = whatsappNumberLimit > 0 ? Math.round((whatsappNumberCount / whatsappNumberLimit) * 100) : 0;
 
   const canAccessModule = (module: string): boolean => {
+    // Falha em PERGUNTAR nao e negativa. Se a edge `organization-usage` devolve
+    // erro (401, timeout), `allowedModules` vem vazio e daqui sairia false para
+    // TODO modulo: menu inteiro com cadeado e toda rota jogando para /plans, com
+    // o plano ativo e pago. Quem barra falta de pagamento e o gate que le
+    // organization_plans direto, nao esta funcao.
+    if (checkError) return true;
+
     if (!hasActiveAccess) return false;
 
     if (WIZZY_CRM_MODULES.includes(module)) {
@@ -109,6 +116,15 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
   return {
     orgPlan: planRow,
     isLoading,
+    /**
+     * A CHECAGEM falhou (a edge `organization-usage` devolveu erro), que nao e a
+     * mesma coisa que "o plano nao permite". Sem este sinal, um 401 nessa funcao
+     * zera `allowedModules`, `canAccessModule` passa a devolver false para TUDO e
+     * quem chama trata isso como plano bloqueado. Quem consome o gate precisa
+     * saber distinguir "nao pode" de "nao consegui perguntar".
+     */
+    checkFailed: Boolean(checkError),
+    checkError: checkError ? String((checkError as Error)?.message || checkError) : null,
     allowedModules,
     canAccessModule,
     planName: plan?.name || null,

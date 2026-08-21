@@ -78,7 +78,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const activeOrganizationId = selectedOrganizationId || profile?.organization_id || null;
   const routePlanModule = getPlanModuleForPath(location.pathname);
   const routePermissionModule = getPermissionModuleForPath(location.pathname);
-  const { canAccessModule: canAccessPlanModule, isLoading: modulePlanLoading } = useOrganizationPlan(activeOrganizationId);
+  const {
+    canAccessModule: canAccessPlanModule,
+    isLoading: modulePlanLoading,
+    checkFailed: modulePlanCheckFailed,
+    checkError: modulePlanCheckError,
+  } = useOrganizationPlan(activeOrganizationId);
   const { data: userRole, isLoading: roleLoading } = useCurrentUserRole(activeOrganizationId);
   const { data: permissions, isLoading: permissionsLoading } = useUserPermissions();
 
@@ -214,7 +219,24 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // `!modulePlanLoading` é OBRIGATORIO: enquanto a checagem de plano carrega,
   // canAccessPlanModule() retorna false (hasActiveAccess ainda false) e redirecionaria
   // todo mundo pra /plans no flash inicial. So barra depois que o dado chega.
-  if (routePlanModule && !isAllowedOnboardingPath && !modulePlanLoading && !canAccessPlanModule(routePlanModule)) {
+  //
+  // `!modulePlanCheckFailed` existe pelo mesmo motivo, um passo adiante: se a edge
+  // `organization-usage` responde erro (401, timeout), `allowedModules` vem vazio e
+  // canAccessModule() diz false para TODO modulo -- ou seja, uma falha em PERGUNTAR
+  // vira bloqueio de TUDO, em toda rota, e a pessoa fica presa num vaivem para
+  // /plans com o plano ativo e pago. Falha de checagem nao pode virar negativa. O
+  // gate de pagamento acima continua valendo: ele le organization_plans direto, nao
+  // depende desta funcao.
+  if (routePlanModule && modulePlanCheckFailed) {
+    console.warn('[PLANO] a checagem de modulo falhou — rota liberada (o gate de pagamento continua valendo)', {
+      rota: location.pathname,
+      modulo: routePlanModule,
+      organizationId: activeOrganizationId,
+      erro: modulePlanCheckError,
+    });
+  }
+
+  if (routePlanModule && !isAllowedOnboardingPath && !modulePlanLoading && !modulePlanCheckFailed && !canAccessPlanModule(routePlanModule)) {
     logPlanRedirect('modulo fora do plano', { modulo: routePlanModule });
     return <Navigate to="/plans" replace state={{ from: location, reason: 'module_locked', module: routePlanModule }} />;
   }

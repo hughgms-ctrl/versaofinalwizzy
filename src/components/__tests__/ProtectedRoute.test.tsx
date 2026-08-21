@@ -28,11 +28,14 @@ vi.mock('@/contexts/WorkspaceContext', () => ({
   useWorkspaceContext: () => mockUseWorkspaceContext(),
 }));
 
+const mockUseOrganizationPlan = vi.fn(() => ({
+  canAccessModule: (_module: string): boolean => true,
+  isLoading: false,
+  checkFailed: false,
+  checkError: null as string | null,
+}));
 vi.mock('@/hooks/useOrganizationPlan', () => ({
-  useOrganizationPlan: () => ({
-    canAccessModule: () => true,
-    isLoading: false,
-  }),
+  useOrganizationPlan: () => mockUseOrganizationPlan(),
 }));
 
 vi.mock('@/hooks/useUserPermissions', () => ({
@@ -51,6 +54,12 @@ import { ProtectedRoute } from '../ProtectedRoute';
 
 describe('ProtectedRoute', () => {
   beforeEach(() => {
+    mockUseOrganizationPlan.mockReturnValue({
+      canAccessModule: () => true,
+      isLoading: false,
+      checkFailed: false,
+      checkError: null,
+    });
     mockUseWorkspaceContext.mockReturnValue({
       selectedOrganization: null,
       selectedOrganizationId: null,
@@ -82,6 +91,49 @@ describe('ProtectedRoute', () => {
     });
     render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
     expect(screen.getByText('Protected')).toBeInTheDocument();
+  });
+
+  it('manda para /plans quando o modulo nao esta no plano', () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: '1' },
+      profile: { organization_id: 'org-1' },
+      loading: false,
+    });
+    mockUseOrganizationPlan.mockReturnValue({
+      canAccessModule: () => false,
+      isLoading: false,
+      checkFailed: false,
+      checkError: null,
+    });
+
+    render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
+
+    expect(screen.getByTestId('navigate')).toHaveAttribute('data-to', '/plans');
+  });
+
+  // Uma falha em PERGUNTAR nao pode virar bloqueio. Quando a edge
+  // `organization-usage` responde erro, allowedModules vem vazio e
+  // canAccessModule() diz false para tudo -- sem este caso, a pessoa com plano
+  // ativo fica presa num vaivem para /plans em toda rota.
+  it('nao manda para /plans quando a CHECAGEM de modulo falhou', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockUseAuth.mockReturnValue({
+      user: { id: '1' },
+      profile: { organization_id: 'org-1' },
+      loading: false,
+    });
+    mockUseOrganizationPlan.mockReturnValue({
+      canAccessModule: () => false,
+      isLoading: false,
+      checkFailed: true,
+      checkError: 'Edge Function returned a non-2xx status code',
+    });
+
+    render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
+
+    expect(screen.getByText('Protected')).toBeInTheDocument();
+    expect(screen.queryByTestId('navigate')).not.toBeInTheDocument();
+    warn.mockRestore();
   });
 
   it('shows admin contact message for external member without workspace', () => {
