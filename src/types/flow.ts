@@ -118,10 +118,14 @@ export interface ConditionRule {
   variable?: string;
   operator?: ConditionOperator;
   value?: string;
-  // For contact_field
-  contactField?: 'name' | 'email' | 'phone';
-  // For service_mode
-  serviceMode?: 'pending' | 'bot' | 'human';
+  // For contact_field: 'name' | 'email' | 'phone' são colunas de contacts;
+  // qualquer outra string é a `key` de um campo personalizado da org, lido de
+  // contacts.metadata.custom_fields.
+  contactField?: string;
+  // For service_mode: os quatro primeiros são o enum service_mode do banco.
+  // pending/bot/human são o que a tela gravava antes de bater com o enum —
+  // ficam aceitos porque há fluxo salvo com eles.
+  serviceMode?: 'pendente' | 'ia' | 'ativo' | 'arquivado' | 'pending' | 'bot' | 'human';
 }
 
 export interface AdvancedConditionConfig {

@@ -2817,13 +2817,139 @@ async function executePipelineAction(
   }
 }
 
+// Operadores do nó de condição. A tela sempre ofereceu oito; o motor
+// implementava cinco, e os três que faltavam (not_contains, exists,
+// not_exists) caíam fora do switch e viravam FALSO em silêncio — o fluxo
+// pegava o ramo errado sem sinal nenhum de erro. Centralizado aqui para que
+// regra de variável, campo do contato e a condição legada usem a mesma tabela.
+//
+// `exists` é sobre valor PREENCHIDO, não sobre a chave existir: variável
+// gravada como "" é, para quem monta o fluxo, o mesmo que não ter resposta.
+// is_empty/is_not_empty entram como apelido porque é o nome que o editor de
+// quiz usa, e fluxo montado a partir de lá não pode chegar aqui e morrer.
+function compareWithOperator(actual: string, operator: string, compareValue: string): boolean {
+  const a = actual ?? '';
+  const b = compareValue ?? '';
+
+  switch (operator) {
+    case 'equals': return a === b;
+    case 'not_equals': return a !== b;
+    case 'contains': return a.includes(b);
+    case 'not_contains': return !a.includes(b);
+    case 'greater_than': return Number(a) > Number(b);
+    case 'less_than': return Number(a) < Number(b);
+    case 'exists':
+    case 'is_set':
+    case 'is_not_empty': return a.trim() !== '';
+    case 'not_exists':
+    case 'is_empty': return a.trim() === '';
+    default:
+      // Operador que o motor não conhece cai em equals, não em false. Um falso
+      // silencioso é justamente o que essa função existe para acabar.
+      console.warn(`[FLOW EXECUTE] Operador desconhecido "${operator}" na condição — tratando como equals`);
+      return a === b;
+  }
+}
+
+// A tela grava pending|bot|human; o enum service_mode do banco é
+// ia|ativo|pendente|arquivado. Nunca bateu — a regra só podia dar falso.
+// Aceita os dois lados para não depender de migrar fluxo já salvo.
+const SERVICE_MODE_ALIASES: Record<string, string> = {
+  pending: 'pendente',
+  pendente: 'pendente',
+  bot: 'ia',
+  ia: 'ia',
+  human: 'ativo',
+  ativo: 'ativo',
+  archived: 'arquivado',
+  arquivado: 'arquivado',
+};
+
+// Lê um campo do contato pelo nome usado na regra. name/email/phone são colunas
+// da tabela; qualquer outra chave é campo personalizado e mora em
+// contacts.metadata.custom_fields — o mesmo lugar que save_contact_field grava
+// e que o seed de variáveis lê no início da execução. metadata é jsonb, mas
+// algum caminho antigo pode ter gravado string JSON, então parseia defensivo
+// (mesma defesa do seed lá em cima e da merge_contact_custom_fields).
+function readContactFieldValue(contact: Record<string, unknown> | null, field: string): string {
+  if (!contact) return '';
+
+  if (field === 'name' || field === 'email' || field === 'phone') {
+    const value = contact[field];
+    return value === undefined || value === null ? '' : String(value);
+  }
+
+  let metadata = contact.metadata as unknown;
+  if (typeof metadata === 'string') {
+    try {
+      metadata = JSON.parse(metadata);
+    } catch {
+      metadata = null;
+    }
+  }
+
+  const custom = (metadata as Record<string, unknown> | null)?.custom_fields;
+  if (!custom || typeof custom !== 'object' || Array.isArray(custom)) return '';
+
+  const value = (custom as Record<string, unknown>)[field];
+  return value === undefined || value === null ? '' : String(value);
+}
+
+interface ConditionRuleData {
+  id: string;
+  type: string;
+  negate?: boolean;
+  tagId?: string;
+  pipelineId?: string;
+  // A tela grava `columnId`; versões antigas do nó gravavam
+  // `pipelineColumnId`. O motor lia SÓ a antiga, então regra de pipeline
+  // montada pela tela atual nunca casava. Mesmo fallback que executePipeline
+  // já fazia logo acima.
+  columnId?: string;
+  pipelineColumnId?: string;
+  userId?: string;
+  variable?: string;
+  operator?: string;
+  value?: string;
+  contactField?: string;
+  serviceMode?: string;
+}
+
 async function executeCondition(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
   // Support rules-based conditions (tag checks, pipeline checks, etc.)
-  const rules = data.rules as Array<{ id: string; type: string; tagId?: string; negate?: boolean; pipelineColumnId?: string; variable?: string; operator?: string; value?: string }> | undefined;
+  const rules = data.rules as ConditionRuleData[] | undefined;
   const matchType = String(data.matchType || 'all'); // 'all' or 'any'
 
   if (rules && rules.length > 0) {
     console.log(`[FLOW EXECUTE] Condition with ${rules.length} rules, matchType=${matchType}`);
+
+    // Regras de conversa e de contato precisam das linhas inteiras. Carrega uma
+    // vez por nó, e só se alguma regra pedir: condição só de tag/variável
+    // continua sem query extra nenhuma.
+    const needsConversation = rules.some((r) => r.type === 'assigned' || r.type === 'service_mode');
+    const needsContact = rules.some((r) => r.type === 'contact_field');
+
+    let conversationRow: Record<string, unknown> | null = null;
+    let contactRow: Record<string, unknown> | null = null;
+
+    if (needsConversation) {
+      const { data: row } = await supabase
+        .from('conversations')
+        .select('assigned_to, service_mode')
+        .eq('id', context.conversationId)
+        .maybeSingle();
+      conversationRow = row ?? null;
+    }
+
+    if (needsContact) {
+      const { data: row } = await supabase
+        .from('contacts')
+        .select('name, email, phone, metadata')
+        .eq('id', context.contactId)
+        .maybeSingle();
+      contactRow = row ?? null;
+    }
+
     const results: boolean[] = [];
 
     for (const rule of rules) {
@@ -2840,31 +2966,76 @@ async function executeCondition(data: Record<string, unknown>, context: Executio
 
         ruleResult = !!existingTag;
         console.log(`[FLOW EXECUTE] Tag rule: tagId=${rule.tagId}, exists=${ruleResult}, negate=${rule.negate}`);
-      } else if (rule.type === 'pipeline' && rule.pipelineColumnId) {
-        // Check if conversation is in a specific pipeline column
-        const { data: position } = await supabase
-          .from('conversation_pipeline_positions')
-          .select('id')
-          .eq('conversation_id', context.conversationId)
-          .eq('column_id', rule.pipelineColumnId)
-          .maybeSingle();
+      } else if (rule.type === 'pipeline') {
+        const columnId = rule.columnId || rule.pipelineColumnId || '';
 
-        ruleResult = !!position;
-        console.log(`[FLOW EXECUTE] Pipeline rule: columnId=${rule.pipelineColumnId}, match=${ruleResult}`);
+        if (columnId) {
+          const { data: position } = await supabase
+            .from('conversation_pipeline_positions')
+            .select('id')
+            .eq('conversation_id', context.conversationId)
+            .eq('column_id', columnId)
+            .maybeSingle();
+
+          ruleResult = !!position;
+          console.log(`[FLOW EXECUTE] Pipeline rule: columnId=${columnId}, match=${ruleResult}`);
+        } else if (rule.pipelineId) {
+          // "Qualquer etapa" na tela: basta a conversa estar no funil, em
+          // qualquer coluna. Não existia no motor — sem coluna escolhida a
+          // regra caía fora e dava falso.
+          const { data: position } = await supabase
+            .from('conversation_pipeline_positions')
+            .select('id')
+            .eq('conversation_id', context.conversationId)
+            .eq('pipeline_id', rule.pipelineId)
+            .limit(1)
+            .maybeSingle();
+
+          ruleResult = !!position;
+          console.log(`[FLOW EXECUTE] Pipeline rule: pipelineId=${rule.pipelineId} (qualquer etapa), match=${ruleResult}`);
+        } else {
+          console.warn('[FLOW EXECUTE] Pipeline rule sem pipeline nem coluna — ignorada (falso)');
+        }
+      } else if (rule.type === 'assigned') {
+        const assignedTo = (conversationRow?.assigned_to as string | null) ?? null;
+
+        // Sempre avalia na forma POSITIVA ("tem responsável" / "é fulano") e
+        // deixa o negate lá embaixo inverter — senão a inversão aconteceria
+        // duas vezes. Quando negate está ligado a tela esconde o seletor de
+        // usuário e promete "sem responsável", então aqui o userId guardado de
+        // uma edição anterior é ignorado de propósito.
+        if (rule.negate || !rule.userId) {
+          ruleResult = assignedTo !== null;
+        } else {
+          ruleResult = assignedTo === rule.userId;
+        }
+        console.log(`[FLOW EXECUTE] Assigned rule: userId=${rule.userId}, assigned_to=${assignedTo}, match=${ruleResult}, negate=${rule.negate}`);
+      } else if (rule.type === 'service_mode') {
+        const expected = SERVICE_MODE_ALIASES[String(rule.serviceMode || '').toLowerCase()] || '';
+        const actual = String(conversationRow?.service_mode ?? '');
+
+        ruleResult = !!expected && actual === expected;
+        console.log(`[FLOW EXECUTE] Service mode rule: expected=${expected}, actual=${actual}, match=${ruleResult}, negate=${rule.negate}`);
+      } else if (rule.type === 'contact_field') {
+        const field = String(rule.contactField || '');
+        const actualValue = readContactFieldValue(contactRow, field);
+        const operator = rule.operator || 'equals';
+
+        ruleResult = compareWithOperator(actualValue, operator, String(rule.value || ''));
+        console.log(`[FLOW EXECUTE] Contact field rule: ${field} ${operator} ${rule.value} (atual="${actualValue}") => ${ruleResult}`);
       } else if (rule.type === 'variable') {
         // Variable comparison
-        const actualValue = String(context.variables[rule.variable || ''] || '');
+        const actualValue = String(context.variables[rule.variable || ''] ?? '');
         const compareValue = String(rule.value || '');
         const operator = rule.operator || 'equals';
 
-        switch (operator) {
-          case 'equals': ruleResult = actualValue === compareValue; break;
-          case 'not_equals': ruleResult = actualValue !== compareValue; break;
-          case 'contains': ruleResult = actualValue.includes(compareValue); break;
-          case 'greater_than': ruleResult = Number(actualValue) > Number(compareValue); break;
-          case 'less_than': ruleResult = Number(actualValue) < Number(compareValue); break;
-        }
+        ruleResult = compareWithOperator(actualValue, operator, compareValue);
         console.log(`[FLOW EXECUTE] Variable rule: ${rule.variable} ${operator} ${compareValue} => ${ruleResult}`);
+      } else {
+        // Tipo de regra que o motor não conhece. Antes caía aqui em silêncio
+        // junto com assigned/contact_field/service_mode; agora pelo menos
+        // aparece no log em vez de virar um ramo falso inexplicável.
+        console.warn(`[FLOW EXECUTE] Tipo de regra desconhecido "${rule.type}" — avaliada como falso`);
       }
 
       // Apply negate
@@ -2885,26 +3056,8 @@ async function executeCondition(data: Record<string, unknown>, context: Executio
   const operator = String(data.operator || 'equals');
   const compareValue = String(data.value || '');
 
-  const actualValue = String(context.variables[variable] || '');
-  let result = false;
-
-  switch (operator) {
-    case 'equals':
-      result = actualValue === compareValue;
-      break;
-    case 'not_equals':
-      result = actualValue !== compareValue;
-      break;
-    case 'contains':
-      result = actualValue.includes(compareValue);
-      break;
-    case 'greater_than':
-      result = Number(actualValue) > Number(compareValue);
-      break;
-    case 'less_than':
-      result = Number(actualValue) < Number(compareValue);
-      break;
-  }
+  const actualValue = String(context.variables[variable] ?? '');
+  const result = compareWithOperator(actualValue, operator, compareValue);
 
   console.log(`[FLOW EXECUTE] Legacy condition: ${variable} ${operator} ${compareValue} => ${result}`);
   return { success: true, outputHandle: result ? 'true' : 'false' };

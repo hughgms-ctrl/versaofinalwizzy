@@ -97,7 +97,11 @@ TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
 
 14. "action-workspace" - Atribuir workspace. Data: { label, workspaceName }
 
-15. "condition" - Condição/ramificação. Data: { label, conditionLabel, rules: [{ id, type: "tag"|"pipeline"|"assigned"|"variable"|"contact_field"|"service_mode", tagId?, pipelineId?, columnId?, variable?, operator?: "equals"|"not_equals"|"contains", value? }], matchType: "all"|"any" }
+15. "condition" - Condição/ramificação. Data: { label, conditionLabel, rules: [{ id, type: "tag"|"pipeline"|"assigned"|"variable"|"contact_field"|"service_mode", negate?, tagId?, pipelineId?, columnId?, userId?, variable?, contactField?, serviceMode?: "pendente"|"ia"|"ativo"|"arquivado", operator?: "equals"|"not_equals"|"contains"|"not_contains"|"greater_than"|"less_than"|"exists"|"not_exists", value? }], matchType: "all"|"any" }
+    - operator vale para type "variable" e "contact_field". "exists"/"not_exists" são sobre valor PREENCHIDO (string vazia conta como vazia) e dispensam value.
+    - contactField aceita "name"/"email"/"phone" ou a key de um campo personalizado da org (o mesmo que save_contact_field grava). Prefira contact_field a comparar variável quando o dado mora no contato.
+    - negate inverte a regra e vale para "tag", "pipeline", "assigned" e "service_mode". Em "assigned" com negate:true não mande userId — significa "sem responsável".
+    - Em "pipeline", columnId de fora significa uma etapa específica; só pipelineId significa "está no funil, em qualquer etapa".
     - Saídas: sourceHandle "true" (Sim) e "false" (Não)
 
 16. "user-input" - Pergunta ao usuário. Data: { label, variableName, inputType: "text"|"number"|"email"|"phone"|"cpf" }

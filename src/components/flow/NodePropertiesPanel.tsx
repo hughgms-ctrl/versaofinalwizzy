@@ -856,8 +856,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectItem value="not_contains">Não contém</SelectItem>
                 <SelectItem value="greater_than">Maior que</SelectItem>
                 <SelectItem value="less_than">Menor que</SelectItem>
-                <SelectItem value="exists">Existe</SelectItem>
-                <SelectItem value="not_exists">Não existe</SelectItem>
+                {/* "Existe"/"Não existe" davam a entender que era sobre a chave
+                    estar definida. É sobre valor: variável gravada como ""
+                    conta como vazia. O rótulo agora diz isso. */}
+                <SelectItem value="exists">Está preenchido</SelectItem>
+                <SelectItem value="not_exists">Está vazio</SelectItem>
               </SelectContent>
             </Select>
             {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
@@ -877,9 +880,24 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             <Select value={rule.contactField || 'name'} onValueChange={(v) => updateRule({ ...rule, contactField: v as any })}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="name">Nome</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="phone">Telefone</SelectItem>
+                <SelectGroup>
+                  <SelectLabel className="text-[11px]">Cadastro</SelectLabel>
+                  <SelectItem value="name">Nome</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="phone">Telefone</SelectItem>
+                </SelectGroup>
+                {/* Campos personalizados da org. É o que a IA grava com
+                    save_contact_field e o que a importação por planilha traz —
+                    até agora não dava para ramificar por eles, e a saída era
+                    testar a variável com "contém". */}
+                {contactCustomFields.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[11px]">Campos personalizados</SelectLabel>
+                    {contactCustomFields.map((f) => (
+                      <SelectItem key={f.id} value={f.key}>{f.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
             <Select value={rule.operator || 'equals'} onValueChange={(v) => updateRule({ ...rule, operator: v as any })}>
@@ -888,8 +906,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectItem value="equals">Igual a</SelectItem>
                 <SelectItem value="not_equals">Diferente de</SelectItem>
                 <SelectItem value="contains">Contém</SelectItem>
-                <SelectItem value="exists">Existe</SelectItem>
-                <SelectItem value="not_exists">Não existe</SelectItem>
+                <SelectItem value="not_contains">Não contém</SelectItem>
+                <SelectItem value="exists">Está preenchido</SelectItem>
+                <SelectItem value="not_exists">Está vazio</SelectItem>
               </SelectContent>
             </Select>
             {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
@@ -905,12 +924,17 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
       case 'service_mode':
         return (
-          <Select value={rule.serviceMode || 'pending'} onValueChange={(v) => updateRule({ ...rule, serviceMode: v as any })}>
+          // Os valores gravados aqui (pending/bot/human) não são os do enum
+          // service_mode do banco (pendente/ia/ativo/arquivado). O motor
+          // traduz os dois lados, então fluxo antigo continua valendo; novos
+          // já saem com o nome de verdade.
+          <Select value={rule.serviceMode || 'pendente'} onValueChange={(v) => updateRule({ ...rule, serviceMode: v as any })}>
             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="pending">Pendente</SelectItem>
-              <SelectItem value="bot">Bot / IA</SelectItem>
-              <SelectItem value="human">Humano</SelectItem>
+              <SelectItem value="pendente">Pendente</SelectItem>
+              <SelectItem value="ia">Bot / IA</SelectItem>
+              <SelectItem value="ativo">Humano</SelectItem>
+              <SelectItem value="arquivado">Arquivado</SelectItem>
             </SelectContent>
           </Select>
         );
