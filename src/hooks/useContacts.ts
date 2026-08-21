@@ -14,7 +14,12 @@ export interface Contact {
   workspace_id?: string | null;
   created_at: string;
   updated_at: string;
-  metadata: { note?: string; description?: string } | null;
+  metadata: {
+    note?: string;
+    description?: string;
+    /** Campos personalizados da org: gravados pela IA (save_contact_field), pela importação e pelo fluxo. */
+    custom_fields?: Record<string, string | number | boolean | null>;
+  } | null;
   tags?: {
     id: string;
     tag: {
@@ -55,16 +60,75 @@ function escapeSearchTerm(term: string): string {
 }
 
 /**
+ * Filtro por valor de campo personalizado, aplicado NO SERVIDOR.
+ *
+ * Os outros filtros avançados rodam no cliente, sobre as páginas já carregadas
+ * -- é o que a própria tela avisa. Para campo personalizado isso não serve: a
+ * pergunta é justamente "quem, na base inteira, respondeu X", e a resposta não
+ * pode depender de quanto a pessoa rolou a lista.
+ *
+ * O valor mora em contacts.metadata.custom_fields, então dá para filtrar em SQL
+ * pelo caminho jsonb -- que é o que faz a diferença entre alcançar a base
+ * inteira e alcançar as 100 primeiras linhas.
+ */
+export interface CustomFieldFilter {
+  key: string;
+  operator: 'is' | 'is_not' | 'contains' | 'is_empty' | 'is_not_empty';
+  value: string;
+}
+
+/** Aspas para um valor dentro de `or(...)`: vírgula e parêntese são separadores lá. */
+function quoteForOr(value: string): string {
+  return `"${value.replace(/["\\]/g, (m) => `\\${m}`)}"`;
+}
+
+function applyCustomFieldFilters<T>(query: T, filters: CustomFieldFilter[]): T {
+  let q = query as any;
+
+  for (const f of filters) {
+    // A chave já passou pelo CHECK de contact_custom_fields.key (\w+) na
+    // criação, mas quem monta o path aqui é este código -- confere de novo em
+    // vez de confiar, senão uma chave torta viraria um path quebrado.
+    if (!/^\w+$/.test(f.key)) continue;
+    const path = `metadata->custom_fields->>${f.key}`;
+
+    switch (f.operator) {
+      case 'is':
+        q = q.eq(path, f.value);
+        break;
+      case 'is_not':
+        // Quem NÃO tem o campo preenchido também "não é X" -- é o que a pessoa
+        // quer dizer ao perguntar quem não respondeu tal coisa. Um neq puro
+        // deixaria esses de fora, porque NULL <> 'x' é NULL, não true.
+        q = q.or(`${path}.is.null,${path}.neq.${quoteForOr(f.value)}`);
+        break;
+      case 'contains':
+        q = q.ilike(path, `%${f.value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+        break;
+      case 'is_empty':
+        q = q.or(`${path}.is.null,${path}.eq.${quoteForOr('')}`);
+        break;
+      case 'is_not_empty':
+        q = q.not(path, 'is', null).neq(path, '');
+        break;
+    }
+  }
+
+  return q as T;
+}
+
+/**
  * Lista paginada de contatos (scroll infinito). A busca por texto roda no
  * servidor pra alcançar a base inteira, não só as páginas já carregadas.
  */
-export function useInfiniteContacts(searchTerm?: string) {
+export function useInfiniteContacts(searchTerm?: string, customFieldFilters: CustomFieldFilter[] = []) {
   const { session } = useAuth();
   const { selectedWorkspaceId } = useWorkspaceContext();
   const search = (searchTerm || '').trim();
+  const cfKey = JSON.stringify(customFieldFilters);
 
   return useInfiniteQuery({
-    queryKey: ['contacts', 'infinite', selectedWorkspaceId, search],
+    queryKey: ['contacts', 'infinite', selectedWorkspaceId, search, cfKey],
     initialPageParam: 0,
     queryFn: async ({ pageParam }): Promise<Contact[]> => {
       const from = (pageParam as number) * CONTACTS_PAGE_SIZE;
@@ -77,6 +141,7 @@ export function useInfiniteContacts(searchTerm?: string) {
         .range(from, to);
 
       query = applyWorkspaceFilter(query as any, selectedWorkspaceId) as any;
+      query = applyCustomFieldFilters(query as any, customFieldFilters) as any;
 
       if (search) {
         const term = escapeSearchTerm(search);
@@ -103,19 +168,21 @@ export function useInfiniteContacts(searchTerm?: string) {
 }
 
 /** Contagem total de contatos (respeita o workspace e a busca ativa). */
-export function useContactsCount(searchTerm?: string) {
+export function useContactsCount(searchTerm?: string, customFieldFilters: CustomFieldFilter[] = []) {
   const { session } = useAuth();
   const { selectedWorkspaceId } = useWorkspaceContext();
   const search = (searchTerm || '').trim();
+  const cfKey = JSON.stringify(customFieldFilters);
 
   return useQuery({
-    queryKey: ['contacts', 'count', selectedWorkspaceId, search],
+    queryKey: ['contacts', 'count', selectedWorkspaceId, search, cfKey],
     queryFn: async (): Promise<number> => {
       let query = supabase
         .from('contacts')
         .select('id', { count: 'exact', head: true });
 
       query = applyWorkspaceFilter(query as any, selectedWorkspaceId) as any;
+      query = applyCustomFieldFilters(query as any, customFieldFilters) as any;
 
       if (search) {
         const term = escapeSearchTerm(search);

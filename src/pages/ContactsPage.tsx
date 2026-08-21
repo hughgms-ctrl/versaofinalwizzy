@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useInfiniteContacts, useContactsCount, Contact } from '@/hooks/useContacts';
+import { useInfiniteContacts, useContactsCount, Contact, CustomFieldFilter } from '@/hooks/useContacts';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useContactFilterJoins, ContactFilterJoins } from '@/hooks/useContactFilterJoins';
@@ -74,6 +74,24 @@ function matchesCondition(contact: Contact, condition: FilterCondition, joins?: 
     return matches === wantMatch;
   }
 
+  if (condition.field === 'custom_field') {
+    // Mesma avaliação que o servidor faz em SQL. Roda também aqui porque no
+    // modo "qualquer uma" (OU) o filtro NÃO é empurrado para o servidor -- lá,
+    // empurrar uma condição de um OU excluiria linhas que outra condição
+    // aprovaria. No modo "todas", esta passada é redundante e inofensiva.
+    const raw = contact.metadata?.custom_fields?.[condition.fieldKey || ''];
+    const value = raw === undefined || raw === null ? '' : String(raw);
+
+    switch (condition.operator) {
+      case 'is': return value === condition.value;
+      case 'is_not': return value !== condition.value;
+      case 'contains': return value.toLowerCase().includes(condition.value.toLowerCase());
+      case 'is_empty': return value.trim() === '';
+      case 'is_not_empty': return value.trim() !== '';
+      default: return true;
+    }
+  }
+
   return true;
 }
 
@@ -88,14 +106,31 @@ const ContactsPage = () => {
     return () => clearTimeout(t);
   }, [searchQuery]);
 
+  const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
+
+  // Campo personalizado é o único filtro avançado que vai para o SERVIDOR: a
+  // pergunta ("quem respondeu X") não pode depender de quanto a pessoa rolou a
+  // lista. Só no modo "todas as condições" (E) -- empurrar uma condição de um
+  // OU excluiria linhas que outra condição do mesmo OU aprovaria.
+  const customFieldFilters = useMemo(() => {
+    if (filters.matchMode !== 'all') return [];
+    return filters.conditions
+      .filter((c) => c.field === 'custom_field' && c.fieldKey)
+      .map((c) => ({
+        key: c.fieldKey!,
+        operator: c.operator as CustomFieldFilter['operator'],
+        value: c.value,
+      }));
+  }, [filters]);
+
   const {
     data: contactsPages,
     isLoading,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteContacts(debouncedSearch);
-  const { data: totalCount } = useContactsCount(debouncedSearch);
+  } = useInfiniteContacts(debouncedSearch, customFieldFilters);
+  const { data: totalCount } = useContactsCount(debouncedSearch, customFieldFilters);
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
   const { data: filterJoins } = useContactFilterJoins();
@@ -105,7 +140,6 @@ const ContactsPage = () => {
     [contactsPages]
   );
 
-  const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -306,8 +340,17 @@ const ContactsPage = () => {
           {typeof totalCount === 'number' && contacts.length < totalCount
             ? `Mostrando ${filteredContacts.length.toLocaleString('pt-BR')} de ${totalCount.toLocaleString('pt-BR')} contatos — role para carregar mais.`
             : `${filteredContacts.length.toLocaleString('pt-BR')} contato(s)`}
-          {filters.conditions.length > 0 && hasNextPage && (
-            <span className="ml-1">Os filtros avançados se aplicam aos contatos já carregados.</span>
+          {/* Campo personalizado vai para o servidor no modo "todas" — a
+              contagem acima já é da base inteira. Os outros filtros continuam
+              client-side, e o aviso precisa dizer qual é qual. */}
+          {filters.conditions.some((c) => c.field !== 'custom_field') && hasNextPage && (
+            <span className="ml-1">Tag, workspace, pipeline, responsável e data se aplicam aos contatos já carregados.</span>
+          )}
+          {customFieldFilters.length === 0
+            && filters.matchMode === 'any'
+            && filters.conditions.some((c) => c.field === 'custom_field')
+            && hasNextPage && (
+            <span className="ml-1">No modo "qualquer uma", o filtro de campo personalizado também só vê os já carregados.</span>
           )}
         </div>
       )}

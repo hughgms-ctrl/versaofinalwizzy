@@ -15,20 +15,29 @@ import { useTags } from '@/hooks/useTags';
 import { useVisibleWorkspaces } from '@/hooks/useWorkspaces';
 import { useAllPipelineColumns } from '@/hooks/usePipelines';
 import { useProfiles } from '@/hooks/useConversations';
+import { useContactCustomFields } from '@/hooks/useContactCustomFields';
+import { Input } from '@/components/ui/input';
 
-export type FilterField = 'tag' | 'workspace' | 'pipeline' | 'created_at' | 'assigned_to';
+export type FilterField = 'tag' | 'workspace' | 'pipeline' | 'created_at' | 'assigned_to' | 'custom_field';
 export type EqualityOperator = 'is' | 'is_not';
 export type DateOperator = 'before' | 'after' | 'on';
-export type FilterOperator = EqualityOperator | DateOperator;
+export type TextOperator = 'is' | 'is_not' | 'contains' | 'is_empty' | 'is_not_empty';
+export type FilterOperator = EqualityOperator | DateOperator | TextOperator;
 
 export interface FilterCondition {
   id: string;
   field: FilterField;
   operator: FilterOperator;
   // Significado depende de `field`: id da tag, id do workspace (ou 'unassigned'),
-  // id da coluna de pipeline, id do usuário responsável, ou data ISO.
+  // id da coluna de pipeline, id do usuário responsável, data ISO, ou — para
+  // custom_field — o texto digitado (vazio nos operadores is_empty/is_not_empty).
   value: string;
+  /** Só para custom_field: a `key` do campo personalizado sendo filtrado. */
+  fieldKey?: string;
 }
+
+/** Operadores de custom_field que não pedem valor digitado. */
+export const VALUELESS_OPERATORS: FilterOperator[] = ['is_empty', 'is_not_empty'];
 
 export type FilterMatchMode = 'all' | 'any';
 
@@ -46,14 +55,23 @@ const FIELD_LABELS: Record<FilterField, string> = {
   pipeline: 'Pipeline',
   created_at: 'Data de criação',
   assigned_to: 'Responsável',
+  custom_field: 'Campo personalizado',
 };
 
-const FIELD_ORDER: FilterField[] = ['tag', 'workspace', 'pipeline', 'created_at', 'assigned_to'];
+const FIELD_ORDER: FilterField[] = ['tag', 'workspace', 'pipeline', 'created_at', 'assigned_to', 'custom_field'];
 
 const DATE_OPERATOR_LABELS: Record<DateOperator, string> = {
   before: 'Antes de',
   after: 'Depois de',
   on: 'Em',
+};
+
+const TEXT_OPERATOR_LABELS: Record<TextOperator, string> = {
+  is: 'É',
+  is_not: 'Não é',
+  contains: 'Contém',
+  is_empty: 'Está vazio',
+  is_not_empty: 'Está preenchido',
 };
 
 function isDateField(field: FilterField) {
@@ -83,19 +101,28 @@ export function ContactFilters({
   const { data: workspaces } = useVisibleWorkspaces();
   const { data: pipelinesWithColumns } = useAllPipelineColumns();
   const { data: profiles } = useProfiles();
+  const { data: customFields = [] } = useContactCustomFields();
 
   // Estado da condição em construção (colunas 1/2/3), ainda não adicionada à lista.
   const [builderField, setBuilderField] = useState<FilterField | null>(null);
   const [builderOperator, setBuilderOperator] = useState<FilterOperator | null>(null);
+  // Campo personalizado tem um passo a mais que os outros: além do operador,
+  // precisa saber QUAL campo. Ocupa a coluna 2, e o operador+valor vão na 3.
+  const [builderFieldKey, setBuilderFieldKey] = useState<string | null>(null);
+  const [builderText, setBuilderText] = useState('');
 
   const resetBuilder = () => {
     setBuilderField(null);
     setBuilderOperator(null);
+    setBuilderFieldKey(null);
+    setBuilderText('');
   };
 
   const selectField = (field: FilterField) => {
     setBuilderField(field);
     setBuilderOperator(null);
+    setBuilderFieldKey(null);
+    setBuilderText('');
   };
 
   const commitCondition = (value: string) => {
@@ -105,9 +132,17 @@ export function ContactFilters({
       field: builderField,
       operator: builderOperator,
       value,
+      ...(builderField === 'custom_field' ? { fieldKey: builderFieldKey ?? undefined } : {}),
     };
     onFiltersChange({ ...filters, conditions: [...filters.conditions, condition] });
     resetBuilder();
+  };
+
+  const commitCustomFieldCondition = () => {
+    if (!builderFieldKey || !builderOperator) return;
+    const needsValue = !VALUELESS_OPERATORS.includes(builderOperator);
+    if (needsValue && !builderText.trim()) return;
+    commitCondition(needsValue ? builderText.trim() : '');
   };
 
   const removeCondition = (id: string) => {
@@ -125,6 +160,13 @@ export function ContactFilters({
 
   const describeCondition = (condition: FilterCondition): string => {
     const fieldLabel = FIELD_LABELS[condition.field];
+
+    if (condition.field === 'custom_field') {
+      const label = customFields.find((f) => f.key === condition.fieldKey)?.label || condition.fieldKey || 'campo';
+      const opLabel = TEXT_OPERATOR_LABELS[condition.operator as TextOperator]?.toLowerCase() ?? 'é';
+      if (VALUELESS_OPERATORS.includes(condition.operator)) return `${label} ${opLabel}`;
+      return `${label} ${opLabel} ${condition.value}`;
+    }
 
     if (condition.field === 'created_at') {
       const opLabel = DATE_OPERATOR_LABELS[condition.operator as DateOperator].toLowerCase();
@@ -248,7 +290,28 @@ export function ContactFilters({
               {!builderField && (
                 <p className="text-[11px] text-muted-foreground/60 px-2 py-1.5">Escolha um tipo</p>
               )}
-              {builderField && !isDateField(builderField) && (
+              {/* Campo personalizado: a coluna 2 escolhe QUAL campo, não o
+                  operador -- é a pergunta que vem antes. Operador e valor
+                  ficam na coluna 3. */}
+              {builderField === 'custom_field' && (
+                <>
+                  {customFields.map((field) => (
+                    <button
+                      key={field.id}
+                      type="button"
+                      onClick={() => { setBuilderFieldKey(field.key); setBuilderOperator('is'); setBuilderText(''); }}
+                      className={listButtonClass(builderFieldKey === field.key)}
+                    >
+                      <span className="truncate">{field.label}</span>
+                    </button>
+                  ))}
+                  {!customFields.length && (
+                    <p className="text-[11px] text-muted-foreground/60 px-2 py-1.5">Nenhum campo personalizado criado</p>
+                  )}
+                </>
+              )}
+
+              {builderField && builderField !== 'custom_field' && !isDateField(builderField) && (
                 <>
                   <button
                     type="button"
@@ -284,8 +347,51 @@ export function ContactFilters({
 
             {/* Coluna 3: valor */}
             <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
-              {(!builderField || !builderOperator) && (
+              {builderField === 'custom_field' && !builderFieldKey && (
+                <p className="text-[11px] text-muted-foreground/60 px-2 py-1.5">Escolha o campo</p>
+              )}
+
+              {builderField !== 'custom_field' && (!builderField || !builderOperator) && (
                 <p className="text-[11px] text-muted-foreground/60 px-2 py-1.5">Escolha o operador</p>
+              )}
+
+              {builderField === 'custom_field' && builderFieldKey && (
+                <div className="space-y-2 px-1">
+                  <div className="flex flex-col gap-0.5">
+                    {(Object.keys(TEXT_OPERATOR_LABELS) as TextOperator[]).map((op) => (
+                      <button
+                        key={op}
+                        type="button"
+                        onClick={() => setBuilderOperator(op)}
+                        className={listButtonClass(builderOperator === op)}
+                      >
+                        {TEXT_OPERATOR_LABELS[op]}
+                      </button>
+                    ))}
+                  </div>
+                  {builderOperator && !VALUELESS_OPERATORS.includes(builderOperator) && (
+                    <Input
+                      autoFocus
+                      value={builderText}
+                      onChange={(e) => setBuilderText(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitCustomFieldCondition(); }}
+                      placeholder="Valor..."
+                      className="h-8 text-xs"
+                    />
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full h-7 text-xs"
+                    onClick={commitCustomFieldCondition}
+                    disabled={
+                      !builderOperator ||
+                      (!VALUELESS_OPERATORS.includes(builderOperator) && !builderText.trim())
+                    }
+                  >
+                    Adicionar
+                  </Button>
+                </div>
               )}
 
               {builderField === 'tag' && builderOperator && (
