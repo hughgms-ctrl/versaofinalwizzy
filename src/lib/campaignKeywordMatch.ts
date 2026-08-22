@@ -12,6 +12,25 @@
  * mudar lá, mude aqui: um aviso que discorda do motor é pior que aviso nenhum.
  */
 
+/**
+ * Gatilho "qualquer mensagem": campanha sem texto próprio, avaliada só depois de
+ * todas as outras terem falhado. Mora no mesmo campo match_type, mas nunca é
+ * comparada por texto -- nem no webhook, nem aqui.
+ */
+export const FALLBACK_MATCH_TYPE = 'fallback';
+
+/** Os match_type que a tela mostra dentro do gatilho "Palavra-chave". */
+export const KEYWORD_TRIGGER_MATCH_TYPES = [
+    'exact',
+    'contains',
+    'all_words',
+    'starts_with',
+    FALLBACK_MATCH_TYPE,
+];
+
+/** Os que casam comparando texto -- 'fallback' de propósito fora da lista. */
+const TEXT_MATCH_TYPES = ['exact', 'contains', 'starts_with', 'all_words'];
+
 export function normalizeText(text: string): string {
     return text
         .toLowerCase()
@@ -32,6 +51,10 @@ export interface KeywordMatcher {
 
 /** Uma mensagem hipotética dispararia esta campanha? Mesma regra do webhook. */
 export function messageMatchesCampaign(message: string, campaign: KeywordMatcher): boolean {
+    // "Qualquer mensagem" casaria com tudo, e responder `true` aqui encheria o aviso
+    // de colisão com uma linha que não é colisão: ela perde para toda campanha com
+    // texto, por construção (dois passes no webhook), então nunca disputa nada.
+    if (campaign.match_type === FALLBACK_MATCH_TYPE) return false;
     if (!campaign.trigger_keyword) return false;
 
     const keywords = campaign.trigger_keyword
@@ -98,8 +121,7 @@ export function findKeywordCollisions(
         created_at?: string;
     }>,
 ): CampaignCollision[] {
-    const KEYWORD_TYPES = ['exact', 'contains', 'starts_with', 'all_words'];
-    if (!KEYWORD_TYPES.includes(draft.match_type)) return [];
+    if (!TEXT_MATCH_TYPES.includes(draft.match_type)) return [];
 
     const myKeywords = draft.trigger_keyword
         .split(',')
@@ -112,7 +134,7 @@ export function findKeywordCollisions(
     for (const other of others) {
         if (!other.is_active) continue;
         if (draft.id && other.id === draft.id) continue;
-        if (!KEYWORD_TYPES.includes(other.match_type)) continue;
+        if (!TEXT_MATCH_TYPES.includes(other.match_type)) continue;
 
         const hit = myKeywords.find((kw) => messageMatchesCampaign(kw, other));
         if (!hit) continue;
@@ -127,4 +149,45 @@ export function findKeywordCollisions(
     }
 
     return collisions;
+}
+
+export interface FallbackConflict {
+    id: string;
+    name: string;
+    /** false = está em outro workspace, mas o webhook não filtra por workspace. */
+    sameWorkspace: boolean;
+}
+
+/**
+ * Outras campanhas "qualquer mensagem" ativas que disputariam a mesma mensagem.
+ *
+ * Duas delas ativas é sorteio: as duas casam com tudo, nenhuma tem texto para
+ * desempatar, e o critério que sobra é created_at. Não é erro -- pode ser o passo
+ * intermediário de quem está trocando uma campanha de boas-vindas por outra -- mas
+ * precisa aparecer na tela.
+ *
+ * O webhook busca as campanhas por organização e NÃO filtra por workspace, então
+ * uma campanha de outro workspace disputa igual. A lista que chega aqui vem do
+ * useCampaigns, que já é escopado ao workspace selecionado (+ as sem workspace):
+ * o que ele não carregou, este aviso não tem como ver.
+ */
+export function findFallbackConflicts(
+    draft: { id?: string; match_type: string; workspace_id?: string | null },
+    others: Array<{
+        id: string;
+        name: string;
+        match_type: string;
+        is_active: boolean;
+        workspace_id?: string | null;
+    }>,
+): FallbackConflict[] {
+    if (draft.match_type !== FALLBACK_MATCH_TYPE) return [];
+
+    return others
+        .filter((o) => o.is_active && o.match_type === FALLBACK_MATCH_TYPE && o.id !== draft.id)
+        .map((o) => ({
+            id: o.id,
+            name: o.name,
+            sameWorkspace: (o.workspace_id ?? null) === (draft.workspace_id ?? null),
+        }));
 }

@@ -4,6 +4,11 @@ import { resumeFlow } from '../_shared/flowResume.ts';
 
 declare const EdgeRuntime: any;
 
+// Gatilho "qualquer mensagem": campanha sem texto próprio, que atende quem não casou
+// com nenhuma outra. Vive em campaigns.match_type junto com exact/contains/etc, mas
+// não é comparada como os outros -- ver o segundo passe em checkCampaignTriggers.
+const FALLBACK_MATCH_TYPE = 'fallback';
+
 // Sanitiza identificadores de instância vindos do payload do provedor antes de
 // interpolá-los em filtros PostgREST (.or(`col.eq.${id}`)). Sem isso, um payload
 // com vírgula/ponto (ex.: instanceName "x,zapi_instance_id.neq.__none__") injeta
@@ -2454,7 +2459,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     ]);
     if (isUsefulMediaAnalysis(transcription)) {
       textContent = transcription;
-      console.log(`[WEBHOOK] Using audio transcription as trigger text: "${textContent.substring(0, 80)}"`);
+      console.log(`[WEBHOOK] Using audio transcription as trigger text: "${String(transcription).substring(0, 80)}"`);
     } else {
       console.log('[WEBHOOK] Audio transcription not available before trigger routing; falling back to media placeholder');
     }
@@ -2931,7 +2936,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       // 2. No active flow — check Campaign Triggers (keyword/webhook match starts a new flow).
       // Only reached when there's no flow already running for this conversation.
       if (triggerText) {
-        const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, contact.id, triggerText);
+        // allowFallback só para mensagem de texto de verdade. Áudio e figurinha já não
+        // chegam aqui (não têm textContent, então triggerText é ''), mas imagem, vídeo
+        // e documento COM legenda chegam -- e uma legenda de foto não é alguém pedindo
+        // boas-vindas. As campanhas com palavra-chave continuam valendo para todas
+        // elas: o corte é só do gatilho "qualquer mensagem".
+        const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, contact.id, triggerText, {
+          allowFallback: messageType === 'text',
+        });
 
         if (campaignTrigger) {
           console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
@@ -3456,14 +3468,30 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
   //    consulta ao mesmo lugar, não uma segunda lista de campanhas em memória.
   //    `excludeFlowId` tira da disputa o fluxo que já está rodando: interromper um
   //    fluxo para começar ele mesmo de novo seria laço.
+  //
+  // 4. QUALQUER MENSAGEM (match_type = 'fallback'). Campanha sem texto próprio, para
+  //    quem escreveu algo que nenhuma campanha reconheceu -- o lead que apagou a
+  //    mensagem pronta do anúncio e digitou outra coisa caía no vazio: sem campanha,
+  //    sem fluxo, sem aviso. Ela é avaliada num SEGUNDO PASSE sobre a mesma lista, só
+  //    depois de o primeiro terminar sem nenhum casamento. Isso é o que garante que
+  //    ela nunca ganhe de uma palavra-chave específica -- não depende de
+  //    trigger_priority, que ela nem consulta. Duas restrições vêm junto:
+  //      - `allowFallback` só é ligado para mensagem de TEXTO. Áudio, figurinha e
+  //        mídia não acionam boas-vindas (mídia com legenda tem triggerText e chegaria
+  //        aqui; é o chamador que corta pelo messageType).
+  //      - nunca no modo interruptor. "Casa com tudo" + "interrompe fluxo" tiraria a
+  //        base inteira de dentro dos fluxos com qualquer mensagem.
   async function checkCampaignTriggers(
     supabase: any,
     organizationId: string,
     contactId: string,
     messageContent: string,
-    options?: { onlyInterruptors?: boolean; excludeFlowId?: string | null },
+    options?: { onlyInterruptors?: boolean; excludeFlowId?: string | null; allowFallback?: boolean },
   ): Promise<{ flowId: string, campaignId: string } | null> {
     const onlyInterruptors = options?.onlyInterruptors === true;
+    // A recusa no modo interruptor é aqui, e não só na tela: a coluna é texto livre e
+    // um INSERT direto no banco chegaria com as duas coisas marcadas.
+    const allowFallback = options?.allowFallback === true && !onlyInterruptors;
 
     // interrompe_fluxo só entra no SELECT no modo interruptor. Enquanto a migration
     // não estiver aplicada, coluna inexistente derruba o SELECT INTEIRO no PostgREST
@@ -3523,15 +3551,15 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     const msgLower = messageContent.toLowerCase().trim();
     console.log(`Comparing message "${msgLower}" against campaigns...`);
 
-    for (const campaign of campaigns) {
-      if (!campaign.trigger_keyword) continue;
+    const msgNormalized = normalizeText(msgLower);
+
+    // Casamento por TEXTO. Devolve o termo que casou (serve de log) ou null.
+    const matchedKeywordOf = (campaign: any): string | null => {
+      if (!campaign.trigger_keyword) return null;
 
       // words might be comma separated "sim, quero, gosto"
       const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
       console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
-
-      const msgNormalized = normalizeText(msgLower);
-      let matchedKeyword: string | null = null;
 
       // "all_words": E lógico -- todos os termos da lista precisam aparecer na
       // mensagem, em qualquer ordem. Ignora pontuação e espaço extra dos dois
@@ -3542,52 +3570,80 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
           .map((k: string) => stripPunctuation(normalizeText(k)))
           .filter(Boolean);
 
-        if (terms.length && terms.every((t: string) => msgWords.includes(t))) {
-          matchedKeyword = terms.join(' + ');
-        }
-      } else {
-        for (const kw of keywords) {
-          let matched = false;
-          const kwNormalized = normalizeText(kw);
-          switch (campaign.match_type) {
-            case 'exact':
-              matched = msgNormalized === kwNormalized;
-              break;
-            case 'contains':
-              matched = msgNormalized.includes(kwNormalized);
-              break;
-            case 'starts_with':
-              matched = msgNormalized.startsWith(kwNormalized);
-              break;
-            default:
-              matched = msgNormalized === kwNormalized;
-          }
-
-          if (matched) {
-            matchedKeyword = kw;
-            break;
-          }
-        }
+        return terms.length && terms.every((t: string) => msgWords.includes(t))
+          ? terms.join(' + ')
+          : null;
       }
 
-      if (!matchedKeyword) continue;
+      for (const kw of keywords) {
+        let matched = false;
+        const kwNormalized = normalizeText(kw);
+        switch (campaign.match_type) {
+          case 'exact':
+            matched = msgNormalized === kwNormalized;
+            break;
+          case 'contains':
+            matched = msgNormalized.includes(kwNormalized);
+            break;
+          case 'starts_with':
+            matched = msgNormalized.startsWith(kwNormalized);
+            break;
+          default:
+            matched = msgNormalized === kwNormalized;
+        }
 
+        if (matched) return kw;
+      }
+
+      return null;
+    };
+
+    // Tudo que NÃO é texto: laço de fluxo e público. Vale igual para os dois passes --
+    // a campanha "qualquer mensagem" respeita trigger_tag_ids exatamente como as
+    // outras, e é disso que depende o uso normal dela (match 'none' com uma etiqueta,
+    // para pegar só quem ainda não foi identificado).
+    const campaignIsEligible = async (campaign: any, matchedLabel: string): Promise<boolean> => {
       // O fluxo que já está rodando não pode ser reiniciado por ele mesmo.
       if (options?.excludeFlowId && campaign.flow_id === options.excludeFlowId) {
-        console.log(`[WEBHOOK] Campaign ${campaign.id} casou com "${matchedKeyword}" mas aponta para o fluxo que já está ativo (${campaign.flow_id}) — ignorando para não virar laço`);
-        continue;
+        console.log(`[WEBHOOK] Campaign ${campaign.id} casou com "${matchedLabel}" mas aponta para o fluxo que já está ativo (${campaign.flow_id}) — ignorando para não virar laço`);
+        return false;
       }
 
       if (!(await audienceAllows(campaign))) {
-        console.log(`[WEBHOOK] Campaign ${campaign.id} casou com "${matchedKeyword}" mas o contato ${contactId} está fora do público (match=${campaign.trigger_tag_match}) — seguindo para a próxima`);
-        continue;
+        console.log(`[WEBHOOK] Campaign ${campaign.id} casou com "${matchedLabel}" mas o contato ${contactId} está fora do público (match=${campaign.trigger_tag_match}) — seguindo para a próxima`);
+        return false;
       }
+
+      return true;
+    };
+
+    // PASSE 1 -- campanhas com texto próprio, na ordem trigger_priority DESC /
+    // created_at ASC. As 'fallback' ficam de fora deste passe inteiro: é aqui, e não
+    // na prioridade, que mora a garantia de que elas nunca ganham de uma palavra-chave.
+    for (const campaign of campaigns) {
+      if (campaign.match_type === FALLBACK_MATCH_TYPE) continue;
+
+      const matchedKeyword = matchedKeywordOf(campaign);
+      if (!matchedKeyword) continue;
+      if (!(await campaignIsEligible(campaign, matchedKeyword))) continue;
 
       console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${matchedKeyword}, priority: ${campaign.trigger_priority}`);
       return { flowId: campaign.flow_id, campaignId: campaign.id };
     }
 
-    console.log('[WEBHOOK] No campaign match found for message:', msgLower);
+    // PASSE 2 -- "qualquer mensagem". Só chega aqui quem passou por todas as campanhas
+    // acima sem casar com nenhuma. Sem consulta nova: é a mesma lista já carregada.
+    if (allowFallback) {
+      for (const campaign of campaigns) {
+        if (campaign.match_type !== FALLBACK_MATCH_TYPE) continue;
+        if (!(await campaignIsEligible(campaign, '(qualquer mensagem)'))) continue;
+
+        console.log(`[WEBHOOK] Nenhuma campanha reconheceu "${msgLower}" — caindo na campanha "qualquer mensagem" ${campaign.id}`);
+        return { flowId: campaign.flow_id, campaignId: campaign.id };
+      }
+    }
+
+    console.log(`[WEBHOOK] No campaign match found for message: ${msgLower}${allowFallback ? '' : ' (gatilho "qualquer mensagem" não consultado nesta mensagem)'}`);
     return null;
   }
 

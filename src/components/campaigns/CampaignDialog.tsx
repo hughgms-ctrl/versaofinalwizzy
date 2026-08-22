@@ -31,7 +31,12 @@ import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 import { useTags } from "@/hooks/useTags";
 import { enforceEntryCreationLimit } from "@/lib/entryFlow";
-import { findKeywordCollisions } from "@/lib/campaignKeywordMatch";
+import {
+    FALLBACK_MATCH_TYPE,
+    KEYWORD_TRIGGER_MATCH_TYPES,
+    findFallbackConflicts,
+    findKeywordCollisions,
+} from "@/lib/campaignKeywordMatch";
 import { CampaignTriggerFields } from "./CampaignTriggerFields";
 
 interface CampaignDialogProps {
@@ -79,7 +84,7 @@ export function CampaignDialog({
             setFlowId(campaignToEdit.flow_id);
 
             // Infer triggerType from match_type
-            if (['exact', 'contains', 'all_words', 'starts_with'].includes(campaignToEdit.match_type)) {
+            if (KEYWORD_TRIGGER_MATCH_TYPES.includes(campaignToEdit.match_type)) {
                 setTriggerType("keyword");
                 setTriggerKeyword(campaignToEdit.trigger_keyword);
                 setMatchType(campaignToEdit.match_type);
@@ -128,16 +133,22 @@ export function CampaignDialog({
         updateCampaign.mutate({ id: campaignToEdit.id, webhook_token: newToken } as any);
     };
 
+    // "Qualquer mensagem" é um match_type dentro do gatilho de palavra-chave, mas sem
+    // texto próprio: não tem palavra para escrever, para validar nem para gravar.
+    const isFallback = triggerType === 'keyword' && matchType === FALLBACK_MATCH_TYPE;
+
     const handleSubmit = () => {
         if (!name.trim() || !flowId) return;
         if (!campaignToEdit && !enforceEntryCreationLimit('max_campaigns', campaigns.length, 'campanhas')) return;
 
         // Validate keyword if it's keyword type
-        if (triggerType === 'keyword' && !triggerKeyword.trim()) return;
+        if (triggerType === 'keyword' && !isFallback && !triggerKeyword.trim()) return;
 
         const payload: any = {
             name: name.trim(),
-            trigger_keyword: (triggerType === 'keyword' || triggerType === 'tag_added') ? triggerKeyword.trim() : "*",
+            trigger_keyword: isFallback
+                ? "*"
+                : (triggerType === 'keyword' || triggerType === 'tag_added') ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
             start_time: startTime,
@@ -148,10 +159,15 @@ export function CampaignDialog({
             // trocar o gatilho deixaria um filtro invisível para trás.
             trigger_tag_ids: triggerType === 'keyword' ? triggerTagIds : [],
             trigger_tag_match: triggerType === 'keyword' ? triggerTagMatch : 'any',
-            trigger_priority: triggerType === 'keyword' ? triggerPriority : 0,
+            // "Qualquer mensagem" não usa prioridade: o webhook a avalia num segundo
+            // passe, depois de todas as outras. Grava 0 para não deixar um número
+            // sobrando que sugira uma disputa que não existe.
+            trigger_priority: (triggerType === 'keyword' && !isFallback) ? triggerPriority : 0,
             // Só o gatilho de palavra-chave passa pelo ramo de fluxo ativo no
             // webhook; em tag/webhook a coluna não seria lida por ninguém.
-            interrompe_fluxo: triggerType === 'keyword' ? interrompeFluxo : false,
+            // Fallback + interromper é a combinação que tira a base inteira de dentro
+            // dos fluxos: a tela não oferece, o webhook recusa e o banco tem CHECK.
+            interrompe_fluxo: (triggerType === 'keyword' && !isFallback) ? interrompeFluxo : false,
         };
 
         if (campaignToEdit) {
@@ -182,8 +198,19 @@ export function CampaignDialog({
         );
     }, [triggerType, triggerKeyword, matchType, triggerPriority, campaigns, campaignToEdit?.id]);
 
+    // Outra campanha "qualquer mensagem" ativa = sorteio entre as duas.
+    const fallbackConflicts = useMemo(() => {
+        if (!isFallback) return [];
+        return findFallbackConflicts(
+            { id: campaignToEdit?.id, match_type: FALLBACK_MATCH_TYPE, workspace_id: workspaceId || null },
+            campaigns,
+        );
+    }, [isFallback, workspaceId, campaigns, campaignToEdit?.id]);
+
     const isSaving = createCampaign.isPending || updateCampaign.isPending;
-    const isFormValid = name.trim() && flowId && ((triggerType !== 'keyword' && triggerType !== 'tag_added') || triggerKeyword.trim());
+    const isFormValid = name.trim() && flowId && (
+        isFallback || (triggerType !== 'keyword' && triggerType !== 'tag_added') || triggerKeyword.trim()
+    );
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,7 +259,13 @@ export function CampaignDialog({
                         triggerKeyword={triggerKeyword}
                         onTriggerKeywordChange={setTriggerKeyword}
                         matchType={matchType}
-                        onMatchTypeChange={setMatchType}
+                        onMatchTypeChange={(value) => {
+                            setMatchType(value);
+                            // Trocar para "qualquer mensagem" com "interromper" já marcado
+                            // deixaria o estado guardando a combinação proibida -- e ela
+                            // voltaria sozinha se a pessoa trocasse o tipo de novo.
+                            if (value === FALLBACK_MATCH_TYPE) setInterrompeFluxo(false);
+                        }}
                         tags={tags}
                         triggerTagIds={triggerTagIds}
                         onTriggerTagIdsChange={setTriggerTagIds}
@@ -243,6 +276,7 @@ export function CampaignDialog({
                         interrompeFluxo={interrompeFluxo}
                         onInterrompeFluxoChange={setInterrompeFluxo}
                         collisions={collisions}
+                        fallbackConflicts={fallbackConflicts}
                         webhookUrl={webhookUrl}
                         onCopyWebhookUrl={handleCopyUrl}
                         copied={copied}

@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageSquareText, Tag, Webhook, Copy, Check, RefreshCw, AlertTriangle, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CampaignCollision } from "@/lib/campaignKeywordMatch";
+import { FALLBACK_MATCH_TYPE } from "@/lib/campaignKeywordMatch";
+import type { CampaignCollision, FallbackConflict } from "@/lib/campaignKeywordMatch";
 
 interface TagOption {
     id: string;
@@ -43,6 +44,8 @@ interface CampaignTriggerFieldsProps {
     onInterrompeFluxoChange?: (value: boolean) => void;
     /** Campanhas ativas que a mesma mensagem também dispararia. */
     collisions?: CampaignCollision[];
+    /** Outras campanhas "qualquer mensagem" ativas -- duas seriam sorteio. */
+    fallbackConflicts?: FallbackConflict[];
     /** Vazio até a campanha existir de verdade -- mostra o placeholder "salve primeiro". */
     webhookUrl: string;
     onCopyWebhookUrl: () => void;
@@ -73,6 +76,7 @@ export function CampaignTriggerFields({
     interrompeFluxo = false,
     onInterrompeFluxoChange,
     collisions = [],
+    fallbackConflicts = [],
     webhookUrl,
     onCopyWebhookUrl,
     copied,
@@ -87,6 +91,15 @@ export function CampaignTriggerFields({
                 : [...triggerTagIds, tagId],
         );
     };
+
+    const isFallback = matchType === FALLBACK_MATCH_TYPE;
+
+    // "Qualquer mensagem" só aparece onde a tela sabe guardar o público. Ela é o
+    // único tipo que casa com TODA mensagem: sem o filtro de "Quem pode disparar"
+    // ela responderia a qualquer contato, inclusive quem está no meio de uma conversa
+    // com o time. A criação guiada de orquestração usa este mesmo componente e não
+    // passa os handlers de público -- lá o tipo fica de fora.
+    const canUseFallback = Boolean(onTriggerTagIdsChange);
 
     const AUDIENCE_MATCH_LABELS: Record<string, string> = {
         any: 'Tem pelo menos uma das tags',
@@ -154,6 +167,10 @@ export function CampaignTriggerFields({
                             {/* Mostrar opções extras se for Palavra Chave */}
                             {isSelected && option.id === 'keyword' && (
                                 <div className="mt-4 ml-14 space-y-4 p-4 rounded-lg border bg-muted/10">
+                                    {/* "Qualquer mensagem" não tem texto para escrever: é
+                                        justamente a campanha de quem não casou com nenhuma
+                                        palavra. O campo some em vez de ficar vazio e ignorado. */}
+                                    {!isFallback && (
                                     <div className="grid gap-2">
                                         <Label htmlFor="keyword" className="text-xs">Palavras-chave</Label>
                                         <Textarea
@@ -169,6 +186,7 @@ export function CampaignTriggerFields({
                                                 : 'Separe as palavras por vírgula. Qualquer uma delas já dispara a campanha.'}
                                         </p>
                                     </div>
+                                    )}
 
                                     <div className="grid gap-2">
                                         <Label className="text-xs">Regra</Label>
@@ -181,9 +199,49 @@ export function CampaignTriggerFields({
                                                 <SelectItem value="contains">Contém qualquer uma das palavras</SelectItem>
                                                 <SelectItem value="all_words">Contém todas as palavras (em qualquer ordem)</SelectItem>
                                                 <SelectItem value="starts_with">Frase começa com a palavra</SelectItem>
+                                                {(canUseFallback || isFallback) && (
+                                                    <SelectItem value={FALLBACK_MATCH_TYPE}>
+                                                        Qualquer mensagem (nenhuma outra campanha reconheceu)
+                                                    </SelectItem>
+                                                )}
                                             </SelectContent>
                                         </Select>
+                                        {isFallback && (
+                                            <p className="text-[10px] text-muted-foreground">
+                                                Dispara quando nenhuma outra campanha reconhecer a mensagem. É sempre a última a ser
+                                                consultada: qualquer campanha com palavra-chave ganha desta, mesmo com prioridade menor.
+                                                Só vale para mensagem de texto — áudio, figurinha e mídia não disparam.
+                                            </p>
+                                        )}
                                     </div>
+
+                                    {/* Duas campanhas "qualquer mensagem" ativas é sorteio: as
+                                        duas casam com tudo e não há texto para desempatar. */}
+                                    {isFallback && fallbackConflicts.length > 0 && (
+                                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                                            <div className="flex items-start gap-2">
+                                                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                                <div className="space-y-1">
+                                                    <p className="text-xs font-medium text-foreground">
+                                                        Já existe {fallbackConflicts.length === 1 ? 'outra campanha' : `outras ${fallbackConflicts.length} campanhas`} de "qualquer mensagem" ativa
+                                                    </p>
+                                                    <p className="text-[11px] text-muted-foreground">
+                                                        Qual delas atende cada mensagem vira sorteio — as duas casam com tudo e não há
+                                                        palavra-chave para desempatar. Desative {fallbackConflicts.length === 1 ? 'a outra' : 'as outras'} ou
+                                                        separe o público em <strong>Quem pode disparar</strong>.
+                                                    </p>
+                                                    <ul className="space-y-0.5">
+                                                        {fallbackConflicts.map((c) => (
+                                                            <li key={c.id} className="text-[11px] text-muted-foreground">
+                                                                <strong className="text-foreground">{c.name}</strong>
+                                                                {!c.sameWorkspace && ' — em outro workspace (o gatilho não olha workspace: disputa igual)'}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Aviso de colisão. Duas campanhas com textos que se
                                         sobrepõem sempre foram permitidas e nunca deram erro --
@@ -267,13 +325,20 @@ export function CampaignTriggerFields({
                                         )}
                                         <p className="text-[10px] text-muted-foreground">
                                             {triggerTagIds.length === 0
-                                                ? 'Nenhuma tag marcada: qualquer contato que mandar a palavra-chave dispara a campanha.'
+                                                ? (isFallback
+                                                    ? 'Nenhuma tag marcada: qualquer contato que escrever qualquer coisa cai nesta campanha, sempre. Normalmente se usa "Não tem nenhuma das tags" com a etiqueta de quem já foi identificado.'
+                                                    : 'Nenhuma tag marcada: qualquer contato que mandar a palavra-chave dispara a campanha.')
                                                 : `${AUDIENCE_MATCH_LABELS[triggerTagMatch] ?? ''}. Quem estiver fora não dispara — a mensagem segue como conversa normal.`}
                                         </p>
                                     </div>
                                     )}
 
-                                    {onTriggerPriorityChange && (
+                                    {/* Prioridade não existe para "qualquer mensagem": ela é
+                                        avaliada num segundo passe, depois de todas as outras,
+                                        então perde de qualquer campanha com texto por
+                                        construção. Um número aqui só faria acreditar no
+                                        contrário. */}
+                                    {onTriggerPriorityChange && !isFallback && (
                                     <div className="grid gap-2">
                                         <Label htmlFor="trigger_priority" className="text-xs">Prioridade</Label>
                                         <Input
@@ -297,9 +362,13 @@ export function CampaignTriggerFields({
                                         sabe guardar o valor. */}
                                     {onInterrompeFluxoChange && (
                                     <div className="grid gap-2">
-                                        <label className="flex items-start gap-2.5 cursor-pointer">
+                                        <label className={cn(
+                                            "flex items-start gap-2.5",
+                                            isFallback ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+                                        )}>
                                             <Checkbox
-                                                checked={interrompeFluxo}
+                                                checked={interrompeFluxo && !isFallback}
+                                                disabled={isFallback}
                                                 onCheckedChange={(checked) => onInterrompeFluxoChange(checked === true)}
                                                 className="mt-0.5"
                                             />
@@ -313,7 +382,19 @@ export function CampaignTriggerFields({
                                             </span>
                                         </label>
 
-                                        {interrompeFluxo && (
+                                        {/* Casar com tudo + interromper tudo tiraria a base inteira
+                                            de dentro dos fluxos com qualquer mensagem. O webhook
+                                            também recusa a combinação, e o banco tem CHECK -- aqui
+                                            é só onde ela deixa de ser oferecida. */}
+                                        {isFallback && (
+                                            <p className="text-[10px] text-muted-foreground pl-6">
+                                                Indisponível para "qualquer mensagem": como ela casa com tudo, interromper tiraria
+                                                qualquer contato de dentro do fluxo dele à primeira mensagem. Quem já está num fluxo
+                                                continua nele.
+                                            </p>
+                                        )}
+
+                                        {interrompeFluxo && !isFallback && (
                                             <p className="text-[10px] text-muted-foreground pl-6">
                                                 O fluxo em andamento não é cancelado: fica parado onde estava e continua depois que esta campanha terminar.
                                             </p>
@@ -322,7 +403,7 @@ export function CampaignTriggerFields({
                                         {/* Interromper + público aberto = qualquer lead pausa o
                                             próprio atendimento escrevendo a palavra. Avisa, não
                                             bloqueia: pode ser exatamente o que a pessoa quer. */}
-                                        {interrompeFluxo && triggerTagIds.length === 0 && (
+                                        {interrompeFluxo && !isFallback && triggerTagIds.length === 0 && (
                                             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
                                                 <div className="flex items-start gap-2">
                                                     <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />

@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { CampaignDialog } from "@/components/campaigns/CampaignDialog";
 import { confirmDialog } from "@/lib/confirmDialog";
+import { FALLBACK_MATCH_TYPE } from "@/lib/campaignKeywordMatch";
 import { toast } from "sonner";
 import {
     useCampaigns,
@@ -78,6 +79,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 
 const triggerLabel = (campaign: Campaign) => {
+    // Sem texto próprio: mostrar trigger_keyword aqui exibiria o "*" que a campanha
+    // grava só para não deixar a coluna vazia.
+    if (campaign.match_type === FALLBACK_MATCH_TYPE) {
+        return {
+            value: "Qualquer mensagem",
+            sub: "Se nenhuma outra casar",
+            isKeyword: true,
+        };
+    }
     if (["exact", "contains", "all_words", "starts_with"].includes(campaign.match_type)) {
         return {
             value: campaign.trigger_keyword,
