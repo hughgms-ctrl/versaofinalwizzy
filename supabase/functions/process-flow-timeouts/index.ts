@@ -22,6 +22,23 @@ const corsHeaders = {
 const DEFAULT_FINAL_WAIT_MINUTES = 1440; // 24h
 
 /**
+ * Rede de proteção: por quanto tempo uma execução pode ficar em 'running'.
+ *
+ * 'running' não é um estado de espera -- significa "o motor está executando
+ * ISTO agora". O motor é o promise de background do flow-execute, e um isolate
+ * de edge function não vive mais que poucos minutos: passado esse teto, uma
+ * linha ainda em 'running' está provavelmente morta. Por isso o corte pode ser
+ * generoso e mesmo assim nunca matar execução viva.
+ *
+ * A conta é assimétrica de propósito. Fechar uma execução que ainda estava viva
+ * custa um fluxo interrompido no meio. Deixar uma zumbi aberta custa a conversa
+ * INTEIRA daquele lead muda para sempre -- o webhook trata 'running' como fluxo
+ * ativo, e nem campanha nem agente independente são consultados. O segundo é
+ * muito pior, então na dúvida a gente fecha.
+ */
+const RUNNING_STUCK_MINUTES = Number(Deno.env.get('FLOW_RUNNING_STUCK_MINUTES') || '15');
+
+/**
  * CRITICAL SAFETY: Check if a contact responded AFTER the last follow-up message.
  * This MUST check after the LAST follow-up, NOT after execution start.
  * Reason: contacts often send messages BEFORE follow-ups begin (initial flow interaction),
@@ -429,6 +446,72 @@ Deno.serve(async (req) => {
     const connectionSettings = await loadConnectionSettings(supabase);
 
     console.log('[FLOW TIMEOUTS] Checking for timed-out flow executions...');
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PHASE 0: REDE DE PROTEÇÃO — execuções presas em 'running'
+    //
+    // Independe de causa. O bug conhecido era o zapi-webhook fechar a execução
+    // anterior como 'running' antes de retomar (corrigido), mas qualquer update
+    // perdido produz o mesmo estrago: isolate morto no meio do fluxo, deploy que
+    // derruba o worker, exceção fora do try. O sintoma é sempre o mesmo e é o
+    // pior possível -- a conversa do lead fica muda, sem erro em lugar nenhum.
+    //
+    // Fechamos como 'failed' (não 'completed'): 'completed' mentiria dizendo que
+    // o fluxo chegou ao fim, e o motivo em error_message é o que permite achar
+    // essas linhas depois e distinguir zumbi de fim normal.
+    //
+    // NÃO mexemos em service_mode/ai_agent_id da conversa: não sabemos onde o
+    // fluxo morreu nem o que ele já tinha configurado, e devolver a conversa
+    // para 'ativo' na marra derrubaria um handoff de IA legítimo. Fechar a
+    // execução já basta para destravar campanhas e agente independente.
+    // ═══════════════════════════════════════════════════════════════════
+    const runningCutoff = new Date(Date.now() - RUNNING_STUCK_MINUTES * 60 * 1000).toISOString();
+
+    const { data: zombieExecs, error: zombieErr } = await supabase
+      .from('flow_executions')
+      .select('id, flow_id, conversation_id, current_node_id, started_at')
+      .eq('status', 'running')
+      .lt('started_at', runningCutoff)
+      .limit(200);
+
+    if (zombieErr) {
+      // Não aborta o cron: as outras fases continuam valendo.
+      console.error('[FLOW TIMEOUTS] Zombie sweep query error:', zombieErr);
+    }
+
+    let zombiesClosed = 0;
+    if (zombieExecs?.length) {
+      for (const exec of zombieExecs) {
+        const ageMin = Math.round((Date.now() - new Date(exec.started_at).getTime()) / 60000);
+        console.warn(
+          `[FLOW TIMEOUTS] Zumbi: execução ${exec.id} em 'running' há ${ageMin}min ` +
+          `(flow=${exec.flow_id} conversa=${exec.conversation_id} nó=${exec.current_node_id || '-'}) — fechando como failed.`
+        );
+      }
+
+      // Um update só para o lote. O filtro por status repete de propósito: se
+      // alguma dessas linhas voltou a mexer entre o select e agora (execução
+      // viva que acabou de terminar), ela não está mais em 'running' e o update
+      // não a alcança -- em vez de sobrescrever um 'completed' legítimo.
+      const { data: closed, error: closeErr } = await supabase
+        .from('flow_executions')
+        .update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+          timeout_at: null,
+          error_message: `Execução presa em 'running' por mais de ${RUNNING_STUCK_MINUTES}min — fechada pela rede de proteção do process-flow-timeouts.`,
+        })
+        .in('id', zombieExecs.map((e: any) => e.id))
+        .eq('status', 'running')
+        .select('id');
+
+      if (closeErr) {
+        console.error('[FLOW TIMEOUTS] Zombie sweep update error:', closeErr);
+      } else {
+        zombiesClosed = closed?.length || 0;
+        console.log(`[FLOW TIMEOUTS] Rede de proteção fechou ${zombiesClosed} execução(ões) zumbi.`);
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // PHASE 1: AUTO-FIX — Find stuck executions (waiting_input, no timeout, step 0)
@@ -1013,9 +1096,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}, delays resumed ${delaysResumed}.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}, delays resumed ${delaysResumed}, zombies closed ${zombiesClosed}.`);
 
-    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug, delaysResumed }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug, delaysResumed, zombiesClosed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

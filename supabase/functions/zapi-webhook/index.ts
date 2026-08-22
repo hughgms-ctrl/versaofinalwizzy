@@ -2588,7 +2588,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (respondedTarget) {
           // Clear timeout and remarketing, advance to responded node
           await supabase.from('flow_executions').update({
-            status: 'running',
+            // 'running' aqui era o zumbi: quem escreveu isto contava que o
+            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
+            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
+            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
+            // rodando, e como o webhook trata 'running' como fluxo ativo, a
+            // conversa emudecia assim que a execucao de verdade terminasse.
+            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
+            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+            status: 'completed',
+            completed_at: new Date().toISOString(),
             current_node_id: respondedTarget,
             timeout_at: null,
             remarketing_step: 0,
@@ -2600,6 +2609,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             startNodeId: respondedTarget,
             variables: (activeFlowExec as any).variables || {},
             triggerMessage: triggerText || '[mídia]',
+            // As duas linhas sao a MESMA passagem do contato pelo fluxo,
+            // so fatiada pela resposta dele. Sem este elo o historico
+            // vira N execucoes soltas e root_execution_id se perde.
+            resumedFromExecutionId: activeFlowExec.id,
             reason: 'action-flow respondido',
           }));
         } else {
@@ -2639,7 +2652,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         if (nextNodeId) {
           await supabase.from('flow_executions').update({
-            status: 'running',
+            // 'running' aqui era o zumbi: quem escreveu isto contava que o
+            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
+            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
+            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
+            // rodando, e como o webhook trata 'running' como fluxo ativo, a
+            // conversa emudecia assim que a execucao de verdade terminasse.
+            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
+            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+            status: 'completed',
+            completed_at: new Date().toISOString(),
             current_node_id: nextNodeId,
             variables: existingVars,
             timeout_at: null,
@@ -2652,6 +2674,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             startNodeId: nextNodeId,
             variables: existingVars,
             triggerMessage: triggerText || '[mídia]',
+            // As duas linhas sao a MESMA passagem do contato pelo fluxo,
+            // so fatiada pela resposta dele. Sem este elo o historico
+            // vira N execucoes soltas e root_execution_id se perde.
+            resumedFromExecutionId: activeFlowExec.id,
             reason: 'bloco de conteudo respondido',
           }));
         } else {
@@ -2752,7 +2778,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           existingVars._lastChoiceHandle = matchedHandle || 'none';
 
           await supabase.from('flow_executions').update({
-            status: 'running',
+            // 'running' aqui era o zumbi: quem escreveu isto contava que o
+            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
+            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
+            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
+            // rodando, e como o webhook trata 'running' como fluxo ativo, a
+            // conversa emudecia assim que a execucao de verdade terminasse.
+            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
+            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+            status: 'completed',
+            completed_at: new Date().toISOString(),
             current_node_id: nextNodeId,
             variables: existingVars,
             timeout_at: null,
@@ -2765,6 +2800,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             startNodeId: nextNodeId,
             variables: existingVars,
             triggerMessage: triggerText || '[mídia]',
+            // As duas linhas sao a MESMA passagem do contato pelo fluxo,
+            // so fatiada pela resposta dele. Sem este elo o historico
+            // vira N execucoes soltas e root_execution_id se perde.
+            resumedFromExecutionId: activeFlowExec.id,
             reason: 'botao/lista escolhido',
           }));
         } else {
@@ -2798,7 +2837,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           if (inputVariable && triggerText) varsWithChoice[String(inputVariable)] = triggerText;
 
           await supabase.from('flow_executions').update({
-            status: 'running',
+            // 'running' aqui era o zumbi: quem escreveu isto contava que o
+            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
+            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
+            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
+            // rodando, e como o webhook trata 'running' como fluxo ativo, a
+            // conversa emudecia assim que a execucao de verdade terminasse.
+            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
+            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+            status: 'completed',
+            completed_at: new Date().toISOString(),
             current_node_id: followUpEdge.target,
             variables: varsWithChoice,
             timeout_at: null,
@@ -2811,6 +2859,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             startNodeId: followUpEdge.target,
             variables: varsWithChoice,
             triggerMessage: triggerText || '[mídia]',
+            // As duas linhas sao a MESMA passagem do contato pelo fluxo,
+            // so fatiada pela resposta dele. Sem este elo o historico
+            // vira N execucoes soltas e root_execution_id se perde.
+            resumedFromExecutionId: activeFlowExec.id,
             reason: 'botao de follow-up',
           }));
         } else if (!hasOutgoingEdge) {
@@ -2831,17 +2883,49 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           }).eq('id', conversation.id);
         } else {
           console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
+
+          // Este ramo nao fechava a execucao de jeito nenhum: reexecuta o MESMO
+          // no, entao a linha antiga ficava em waiting_input enquanto a nova
+          // nascia e parava no mesmo lugar. Duas linhas vivas no mesmo no, uma
+          // a mais por mensagem -- a busca por started_at DESC escondia isso
+          // enquanto a de cima fosse a certa. Fecha antes de chamar, como os
+          // outros ramos.
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            timeout_at: null,
+            remarketing_step: 0,
+          }).eq('id', activeFlowExec.id);
+
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,
             conversationId: conversation.id,
             startNodeId: activeFlowExec.current_node_id,
             variables: (activeFlowExec as any).variables || {},
             triggerMessage: triggerText || '[mídia]',
+            resumedFromExecutionId: activeFlowExec.id,
             reason: 'waiting_input generico',
           }));
         }
       } else {
-        console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);
+        // Cai aqui todo status que nao e 'waiting_input': 'running' e
+        // 'waiting_delay'. O log dizia "Flow is running" para os dois, o que
+        // escondeu por completo o caso do atraso inteligente -- e escondeu os
+        // zumbis, que apareciam em log exatamente como um fluxo saudavel.
+        //
+        // Sao situacoes diferentes, e so uma delas justifica descartar:
+        //  - 'running': o motor esta executando agora, e questao de segundos.
+        //    Descartar e certo -- a mensagem chegou no meio de um passo.
+        //  - 'waiting_delay': o fluxo esta parado num atraso que pode durar
+        //    horas. Nao espera o contato falar nada, mas a mensagem dele e
+        //    engolida do mesmo jeito: nem campanha, nem agente independente.
+        //    Ver a analise no final -- a mudanca de comportamento aqui e
+        //    decisao de negocio, nao foi feita junto com a correcao do zumbi.
+        console.log(
+          `[WEBHOOK] Execução ${activeFlowExec.id} em '${activeFlowExec.status}' ` +
+          `(nó=${activeFlowExec.current_node_id || '-'}) — mensagem não consumida por ela ` +
+          `e gatilhos independentes não consultados.`
+        );
       }
     } else {
       // 2. No active flow — check Campaign Triggers (keyword/webhook match starts a new flow).
