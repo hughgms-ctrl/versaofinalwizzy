@@ -878,7 +878,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
             [variable]: mode === 'group'
               ? groupText
               : mode === 'list'
-                ? 'Fulano — 5511999999999\nCiclana — 5521988888888'
+                ? 'Fulano\nTelefone: 5511999999999\n\nCiclana\nTelefone: 5521988888888'
                 : '2',
             [`${variable}_total`]: mode === 'group' ? String(groupTotal) : '2',
           },

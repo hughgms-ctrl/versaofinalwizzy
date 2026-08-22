@@ -1282,6 +1282,67 @@ function readCustomFieldFromMetadata(metadata: unknown, key: string): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+// Nome amigavel dos campos que sao coluna da tabela, e nao campo personalizado.
+// Os personalizados trazem o label da propria contact_custom_fields.
+const QUERY_CONTACTS_BUILTIN_LABELS: Record<string, string> = {
+  name: 'Nome',
+  phone: 'Telefone',
+  email: 'E-mail',
+};
+
+function readListFieldValue(row: Record<string, unknown>, field: string): string {
+  const raw = field === 'name'
+    ? String(row.name ?? '')
+    : field === 'phone'
+      ? String(row.phone ?? '')
+      : field === 'email'
+        ? String(row.email ?? '')
+        : readCustomFieldFromMetadata(row.metadata, field);
+  // Quebra de linha dentro do valor abriria uma linha sem rotulo, e o proximo
+  // leitor nao teria como saber de que campo ela e -- que e exatamente o
+  // problema que este formato veio resolver.
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Um contato por bloco, um campo por linha, cada valor com o nome do campo.
+ *
+ * O formato antigo era so os valores separados por travessao, e OMITIA os
+ * vazios: dois contatos de preenchimento desigual saiam com 11 e 5 valores, e
+ * os 5 nao eram os 5 primeiros. Nao existia leitura posicional possivel -- nem
+ * para uma pessoa nem para um modelo, e quem lia essa lista para escrever um
+ * relatorio preenchia o buraco inventando.
+ *
+ * O vazio continua fora: sem rotulo ele nao teria como ser lido, com rotulo e
+ * so ruido. O que muda e que o que aparece esta nomeado.
+ */
+function formatContactEntry(
+  row: Record<string, unknown>,
+  listFields: string[],
+  fieldLabels: Map<string, string>,
+): string {
+  const lines: string[] = [];
+
+  // O nome e o titulo do bloco, sem rotulo: e o que identifica de quem e o
+  // resto, e "Nome: Joao" antes de tudo so gastaria uma linha.
+  if (listFields.includes('name')) {
+    lines.push(readListFieldValue(row, 'name') || 'Sem nome');
+  }
+
+  for (const field of listFields) {
+    if (field === 'name') continue;
+    const value = readListFieldValue(row, field);
+    if (value === '') continue;
+    const label = fieldLabels.get(field) || QUERY_CONTACTS_BUILTIN_LABELS[field] || field;
+    // Label que ja termina em ":" (acontece, e nomeacao da propria org) nao pode
+    // virar "Gargalo:: gestao". Dois-pontos NO MEIO ficam como foram escritos:
+    // reescrever o nome que a org deu ao campo seria pior que a ambiguidade.
+    lines.push(`${label.replace(/:+$/, '')}: ${value}`);
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * O valor agrupado vira uma linha "rotulo | contagem" -- o formato que o
  * gerador de PDF le dentro de um bloco de grafico. Quebra de linha partiria o
@@ -1430,11 +1491,18 @@ async function executeQueryContacts(
     // valido" nao e o mesmo que "existe aqui".
     const { data: fieldRows, error: fieldsError } = await supabase
       .from('contact_custom_fields')
-      .select('key')
+      .select('key, label')
       .eq('organization_id', context.organizationId);
 
     if (fieldsError) throw new Error(`contact_custom_fields: ${fieldsError.message}`);
     const knownKeys = new Set((fieldRows || []).map((r: { key: string }) => r.key));
+    // O label serve a listagem: "Fim: o que pode impedir" diz mais a quem le do
+    // que "obstaculo_declarado". Campo sem label cai na propria chave.
+    const fieldLabels = new Map<string, string>();
+    for (const row of (fieldRows || []) as Array<{ key: string; label: string | null }>) {
+      const label = String(row.label ?? '').trim();
+      if (label !== '') fieldLabels.set(row.key, label);
+    }
 
     // O campo de agrupamento passa pela mesma porta que o fieldKey dos filtros:
     // ele vira um caminho jsonb, e "formato valido" nao e o mesmo que "existe
@@ -1751,17 +1819,13 @@ async function executeQueryContacts(
       .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
       .slice(0, limit);
 
-    const lines = (rows || []).map((row: Record<string, unknown>) => {
-      const parts = listFields.map((field) => {
-        if (field === 'name') return String(row.name || 'Sem nome');
-        if (field === 'phone') return String(row.phone || '');
-        if (field === 'email') return String(row.email || '');
-        return readCustomFieldFromMetadata(row.metadata, field);
-      });
-      return parts.filter((p) => p !== '').join(' — ');
-    }).filter((line: string) => line !== '');
+    const lines = (rows || [])
+      .map((row: Record<string, unknown>) => formatContactEntry(row, listFields, fieldLabels))
+      .filter((entry: string) => entry !== '');
 
-    let text = lines.length > 0 ? lines.join('\n') : 'Nenhum contato encontrado.';
+    // Linha em branco entre contatos: e o que separa um bloco do seguinte quando
+    // cada contato ocupa varias linhas.
+    let text = lines.length > 0 ? lines.join('\n\n') : 'Nenhum contato encontrado.';
     if (total > lines.length) {
       // O teto aparece no texto. Lista cortada que se apresenta como completa e
       // pior que erro: quem le acha que viu tudo.

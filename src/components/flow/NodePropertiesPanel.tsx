@@ -3092,7 +3092,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             {queryMode === 'list' && (
               <>
                 <div>
-                  <Label className="text-xs">Campos em cada linha</Label>
+                  <Label className="text-xs">Campos de cada contato</Label>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Cada contato sai num bloco proprio: o nome como titulo e um campo por linha, no formato
+                    <span className="font-mono"> campo: valor</span>. Campo vazio nao vira linha.
+                  </p>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
                     {[
                       { key: 'name', label: 'Nome' },
@@ -3118,7 +3122,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 </div>
 
                 <div>
-                  <Label className="text-xs">Maximo de linhas</Label>
+                  <Label className="text-xs">Maximo de contatos</Label>
                   <Input
                     type="number"
                     value={Number(localData.listLimit) || 20}
@@ -3127,7 +3131,19 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">
                     Teto duro de 200, independente do que estiver aqui — o texto vai para uma mensagem de WhatsApp. Se
-                    cortar, a propria mensagem diz "mostrando X de Y".
+                    cortar, a propria mensagem diz "mostrando X de Y". Conta CONTATOS: com varios campos escolhidos,
+                    cada um ocupa varias linhas.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 flex gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground">O formato mudou.</span> Antes era so os valores
+                    numa linha so, separados por travessao, e o campo vazio simplesmente sumia — dois contatos de
+                    preenchimento desigual saiam com quantidades diferentes de valores, sem como saber qual era qual.
+                    Se voce tem um fluxo que le esse texto (uma mensagem pronta, um no de IA), confira o resultado uma
+                    vez antes de confiar.
                   </p>
                 </div>
               </>

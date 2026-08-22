@@ -47,7 +47,9 @@ function nodeProducedVariables(node: Node): FlowVariable[] {
       const name = asTrimmedString(data.outputVariable) || 'consulta_resultado';
       const mode = asTrimmedString(data.queryMode);
       const describe = () => {
-        if (mode === 'list') return `Texto da listagem${label ? ` da consulta "${label}"` : ''}`;
+        if (mode === 'list') {
+          return `Um bloco por contato, com os campos nomeados${label ? ` da consulta "${label}"` : ''}`;
+        }
         if (mode === 'group') {
           return `Linhas "valor | contagem"${label ? ` da consulta "${label}"` : ''} — cabem direto num bloco [[GRAFICO]]`;
         }
