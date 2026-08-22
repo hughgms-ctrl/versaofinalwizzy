@@ -24,6 +24,8 @@ export interface Campaign {
     trigger_tag_match?: string;
     /** Desempate entre campanhas com palavras-chave sobrepostas. Maior ganha. */
     trigger_priority?: number;
+    /** Palavra-chave dispara mesmo com fluxo ativo na conversa (comando interno). */
+    interrompe_fluxo?: boolean;
     folder_id?: string | null;
     position?: number;
     created_at: string;

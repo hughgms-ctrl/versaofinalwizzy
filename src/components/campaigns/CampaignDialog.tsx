@@ -62,6 +62,7 @@ export function CampaignDialog({
     const [triggerTagIds, setTriggerTagIds] = useState<string[]>([]);
     const [triggerTagMatch, setTriggerTagMatch] = useState("any");
     const [triggerPriority, setTriggerPriority] = useState(0);
+    const [interrompeFluxo, setInterrompeFluxo] = useState(false);
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
@@ -93,6 +94,7 @@ export function CampaignDialog({
             setTriggerTagIds(campaignToEdit.trigger_tag_ids ?? []);
             setTriggerTagMatch(campaignToEdit.trigger_tag_match ?? "any");
             setTriggerPriority(campaignToEdit.trigger_priority ?? 0);
+            setInterrompeFluxo(campaignToEdit.interrompe_fluxo ?? false);
         } else if (open) {
             setName("");
             setTriggerKeyword("");
@@ -104,6 +106,7 @@ export function CampaignDialog({
             setTriggerTagIds([]);
             setTriggerTagMatch("any");
             setTriggerPriority(0);
+            setInterrompeFluxo(false);
         }
     }, [campaignToEdit, open, flows, selectedWorkspaceId, workspaces]);
 
@@ -146,6 +149,9 @@ export function CampaignDialog({
             trigger_tag_ids: triggerType === 'keyword' ? triggerTagIds : [],
             trigger_tag_match: triggerType === 'keyword' ? triggerTagMatch : 'any',
             trigger_priority: triggerType === 'keyword' ? triggerPriority : 0,
+            // Só o gatilho de palavra-chave passa pelo ramo de fluxo ativo no
+            // webhook; em tag/webhook a coluna não seria lida por ninguém.
+            interrompe_fluxo: triggerType === 'keyword' ? interrompeFluxo : false,
         };
 
         if (campaignToEdit) {
@@ -234,6 +240,8 @@ export function CampaignDialog({
                         onTriggerTagMatchChange={setTriggerTagMatch}
                         triggerPriority={triggerPriority}
                         onTriggerPriorityChange={setTriggerPriority}
+                        interrompeFluxo={interrompeFluxo}
+                        onInterrompeFluxoChange={setInterrompeFluxo}
                         collisions={collisions}
                         webhookUrl={webhookUrl}
                         onCopyWebhookUrl={handleCopyUrl}

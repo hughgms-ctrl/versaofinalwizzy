@@ -7,6 +7,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,9 @@ interface CampaignTriggerFieldsProps {
     /** Desempate quando o texto colide com outra campanha. Maior ganha. */
     triggerPriority?: number;
     onTriggerPriorityChange?: (value: number) => void;
+    /** Dispara mesmo com fluxo em andamento na conversa (comando interno). */
+    interrompeFluxo?: boolean;
+    onInterrompeFluxoChange?: (value: boolean) => void;
     /** Campanhas ativas que a mesma mensagem também dispararia. */
     collisions?: CampaignCollision[];
     /** Vazio até a campanha existir de verdade -- mostra o placeholder "salve primeiro". */
@@ -66,6 +70,8 @@ export function CampaignTriggerFields({
     onTriggerTagMatchChange,
     triggerPriority = 0,
     onTriggerPriorityChange,
+    interrompeFluxo = false,
+    onInterrompeFluxoChange,
     collisions = [],
     webhookUrl,
     onCopyWebhookUrl,
@@ -280,6 +286,57 @@ export function CampaignTriggerFields({
                                         <p className="text-[10px] text-muted-foreground">
                                             Quando o texto cai em mais de uma campanha, a de maior prioridade ganha. Empate: a campanha mais antiga.
                                         </p>
+                                    </div>
+                                    )}
+
+                                    {/* Comando interno. Por padrão, conversa com fluxo em
+                                        andamento pertence ao fluxo: a mensagem é lida como
+                                        resposta dele e nenhuma campanha é consultada. Marcar
+                                        isto abre a exceção só para esta campanha.
+                                        Igual ao público e à prioridade, só aparece onde o pai
+                                        sabe guardar o valor. */}
+                                    {onInterrompeFluxoChange && (
+                                    <div className="grid gap-2">
+                                        <label className="flex items-start gap-2.5 cursor-pointer">
+                                            <Checkbox
+                                                checked={interrompeFluxo}
+                                                onCheckedChange={(checked) => onInterrompeFluxoChange(checked === true)}
+                                                className="mt-0.5"
+                                            />
+                                            <span className="grid gap-0.5">
+                                                <span className="text-xs font-medium text-foreground">
+                                                    Interromper conversa em andamento
+                                                </span>
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    Para comandos internos, como pedir um relatório. Sem isto, quem já está no meio de um fluxo não consegue disparar a palavra-chave — a mensagem vira resposta do fluxo.
+                                                </span>
+                                            </span>
+                                        </label>
+
+                                        {interrompeFluxo && (
+                                            <p className="text-[10px] text-muted-foreground pl-6">
+                                                O fluxo em andamento não é cancelado: fica parado onde estava e continua depois que esta campanha terminar.
+                                            </p>
+                                        )}
+
+                                        {/* Interromper + público aberto = qualquer lead pausa o
+                                            próprio atendimento escrevendo a palavra. Avisa, não
+                                            bloqueia: pode ser exatamente o que a pessoa quer. */}
+                                        {interrompeFluxo && triggerTagIds.length === 0 && (
+                                            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                                                <div className="flex items-start gap-2">
+                                                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                                    <div className="space-y-1">
+                                                        <p className="text-xs font-medium text-foreground">
+                                                            Qualquer contato vai poder interromper o próprio atendimento
+                                                        </p>
+                                                        <p className="text-[11px] text-muted-foreground">
+                                                            Como nenhuma tag está marcada em <strong>Quem pode disparar</strong>, um lead no meio de um fluxo que escrever esta palavra-chave sai dele e cai nesta campanha. Restrinja o público acima se isto for um comando interno.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                     )}
                                 </div>

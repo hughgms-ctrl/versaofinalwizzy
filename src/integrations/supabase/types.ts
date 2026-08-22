@@ -1382,6 +1382,7 @@ export type Database = {
           flow_id: string
           folder_id: string | null
           id: string
+          interrompe_fluxo: boolean
           is_active: boolean | null
           match_type: string
           name: string
@@ -1403,6 +1404,7 @@ export type Database = {
           flow_id: string
           folder_id?: string | null
           id?: string
+          interrompe_fluxo?: boolean
           is_active?: boolean | null
           match_type?: string
           name: string
@@ -1424,6 +1426,7 @@ export type Database = {
           flow_id?: string
           folder_id?: string | null
           id?: string
+          interrompe_fluxo?: boolean
           is_active?: boolean | null
           match_type?: string
           name?: string
