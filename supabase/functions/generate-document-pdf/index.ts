@@ -106,7 +106,13 @@ type Block =
   | { type: "li"; ordered: boolean; index: number; runs: InlineRun[] }
   | { type: "spacer"; height: number }
   | { type: "hr" }
-  | { type: "bars"; title?: string; items: Array<{ label: string; value: number }> };
+  | { type: "bars"; title?: string; items: Array<{ label: string; value: number }> }
+  // Numeros grandes lado a lado. `display` guarda o texto como foi escrito
+  // ("8.7", "8,7") -- o numero so e parseado para VALIDAR a linha; reescrever
+  // trocaria a virgula de quem digitou por um ponto sem motivo.
+  | { type: "numbers"; items: Array<{ label: string; display: string }> }
+  | { type: "progress"; title?: string; value: number; total: number }
+  | { type: "line"; title?: string; items: Array<{ label: string; value: number }> };
 
 function parseFontSizeFromStyle(style: string | null | undefined): number | undefined {
   if (!style) return undefined;
@@ -277,25 +283,135 @@ function parseHtmlToBlocks(html: string): Block[] {
 // Grupo 1 = titulo (pode vir vazio), grupo 2 = as linhas "rotulo | numero".
 // A extracao tem que acontecer ANTES do escape de HTML: se a diretiva passar
 // pelo replace de "<" ela vira texto literal no PDF.
-const RE_GRAFICO = /\[\[GRAFICO([^\]]*)\]\]\s*([\s\S]*?)\[\[\/GRAFICO\]\]/g;
+// As tres diretivas novas -- [[NUMEROS]], [[PROGRESSO t]], [[LINHA t]] -- entram
+// pela MESMA porta: uma so varredura, com o nome capturado e o fechamento casado
+// por retrovisor (\1). Duas varreduras separadas perderiam a ordem entre
+// diretivas de tipos diferentes dentro do mesmo texto.
+const RE_DIRETIVA = /\[\[(GRAFICO|NUMEROS|PROGRESSO|LINHA)([^\]]*)\]\]\s*([\s\S]*?)\[\[\/\1\]\]/g;
 
-function parseBarsDirective(title: string, body: string): Block | null {
-  const items: Array<{ label: string; value: number }> = [];
+type DirectiveKind = "GRAFICO" | "NUMEROS" | "PROGRESSO" | "LINHA";
+
+/** Linhas "rotulo | valor" de um corpo de diretiva. Linha torta e descartada com aviso. */
+function parseLabeledLines(
+  kind: string,
+  body: string,
+): Array<{ label: string; display: string; value: number }> {
+  const items: Array<{ label: string; display: string; value: number }> = [];
   for (const rawLine of body.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     const sep = line.lastIndexOf("|");
-    if (sep < 0) continue; // linha sem "|" nao e item
+    if (sep < 0) {
+      console.warn(`[PDF] ${kind}: linha sem "|" ignorada: ${line.slice(0, 80)}`);
+      continue;
+    }
     const label = sanitizeWinAnsi(decodeHtmlEntities(line.slice(0, sep).trim()));
-    const value = parseFloat(line.slice(sep + 1).trim().replace(",", "."));
-    // Linha malformada e ignorada em silencio: uma diretiva torta nao pode
-    // derrubar o PDF inteiro.
-    if (!label || !Number.isFinite(value)) continue;
-    items.push({ label, value: Math.max(0, value) });
+    const display = sanitizeWinAnsi(decodeHtmlEntities(line.slice(sep + 1).trim()));
+    const value = parseFloat(display.replace(",", "."));
+    // Uma diretiva torta nao pode derrubar o PDF inteiro -- mas tambem nao pode
+    // sumir sem deixar rastro, senao o relatorio sai com um item a menos e
+    // ninguem descobre por que.
+    if (!label || !Number.isFinite(value)) {
+      console.warn(`[PDF] ${kind}: linha ignorada (rotulo ou numero invalido): ${line.slice(0, 80)}`);
+      continue;
+    }
+    items.push({ label, display, value });
   }
-  if (items.length === 0) return null;
-  const cleanTitle = sanitizeWinAnsi(decodeHtmlEntities(title.trim()));
-  return { type: "bars", title: cleanTitle || undefined, items };
+  return items;
+}
+
+function cleanDirectiveTitle(title: string): string | undefined {
+  return sanitizeWinAnsi(decodeHtmlEntities(title.trim())) || undefined;
+}
+
+function parseBarsDirective(title: string, body: string): Block | null {
+  const items = parseLabeledLines("GRAFICO", body).map((it) => ({
+    label: it.label,
+    value: Math.max(0, it.value),
+  }));
+  if (items.length === 0) {
+    console.warn("[PDF] GRAFICO: nenhum item valido, bloco removido.");
+    return null;
+  }
+  return { type: "bars", title: cleanDirectiveTitle(title), items };
+}
+
+function parseNumbersDirective(body: string): Block | null {
+  const items = parseLabeledLines("NUMEROS", body).map((it) => ({
+    label: it.label,
+    display: it.display,
+  }));
+  if (items.length === 0) {
+    console.warn("[PDF] NUMEROS: nenhum item valido, bloco removido.");
+    return null;
+  }
+  return { type: "numbers", items };
+}
+
+function parseProgressDirective(title: string, body: string): Block | null {
+  // Aqui o formato e "parte | todo", nao "rotulo | numero": as duas metades sao
+  // numero, e quem nomeia a barra e o titulo da diretiva.
+  const lines = body.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== "");
+  if (lines.length === 0) {
+    console.warn("[PDF] PROGRESSO: bloco sem dados, removido.");
+    return null;
+  }
+  if (lines.length > 1) {
+    console.warn(`[PDF] PROGRESSO: ${lines.length} linhas no bloco, so a primeira e usada.`);
+  }
+  const sep = lines[0].lastIndexOf("|");
+  if (sep < 0) {
+    console.warn(`[PDF] PROGRESSO: linha sem "|", bloco removido: ${lines[0].slice(0, 80)}`);
+    return null;
+  }
+  const value = parseFloat(lines[0].slice(0, sep).trim().replace(",", "."));
+  const total = parseFloat(lines[0].slice(sep + 1).trim().replace(",", "."));
+  // Todo zero ou negativo nao e "0%": e uma pergunta sem denominador. Melhor o
+  // bloco sumir com aviso do que desenhar uma barra que nao quer dizer nada.
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {
+    console.warn(`[PDF] PROGRESSO: numeros invalidos, bloco removido: ${lines[0].slice(0, 80)}`);
+    return null;
+  }
+  return { type: "progress", title: cleanDirectiveTitle(title), value: Math.max(0, value), total };
+}
+
+function parseLineDirective(title: string, body: string): Block | null {
+  // ORDEM PRESERVADA de proposito: no grafico de linha a ordem E o eixo x.
+  const items = parseLabeledLines("LINHA", body).map((it) => ({
+    label: it.label,
+    value: it.value,
+  }));
+  if (items.length === 0) {
+    console.warn("[PDF] LINHA: nenhum item valido, bloco removido.");
+    return null;
+  }
+  return { type: "line", title: cleanDirectiveTitle(title), items };
+}
+
+function parseChartDirective(kind: DirectiveKind, title: string, body: string): Block | null {
+  if (kind === "NUMEROS") return parseNumbersDirective(body);
+  if (kind === "PROGRESSO") return parseProgressDirective(title, body);
+  if (kind === "LINHA") return parseLineDirective(title, body);
+  return parseBarsDirective(title, body);
+}
+
+/**
+ * Maximo do eixo y arredondado para cima num numero redondo. Sem isso o topo do
+ * grafico cai exatamente no maior valor e o ponto mais alto encosta na borda.
+ */
+function niceCeil(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const step of [1, 2, 2.5, 5, 10]) {
+    const candidate = step * magnitude;
+    if (candidate >= value - 1e-9) return candidate;
+  }
+  return magnitude * 10;
+}
+
+/** O numero ao lado de uma marca: inteiro fica inteiro, resto com uma casa. */
+function formatChartValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
 }
 
 function truncateToWidth(font: PDFFont, text: string, size: number, maxWidth: number): string {
@@ -476,6 +592,37 @@ function drawTextLine(
   ctx.y -= lineHeight;
 }
 
+// Uma cor so, em todos os graficos. Cada grafico daqui tem UMA serie: cor
+// variando por marca sugere uma categoria que nao existe. O texto nunca sai na
+// cor da marca -- rotulo colorido vira legenda de um agrupamento inexistente.
+const CHART_ACCENT = rgb(0.15, 0.35, 0.65);
+const CHART_TRACK = rgb(0.91, 0.91, 0.93);
+const CHART_TEXT = rgb(0.1, 0.1, 0.1);
+const CHART_VALUE = rgb(0.25, 0.25, 0.25);
+const CHART_MUTED = rgb(0.45, 0.45, 0.45);
+const CHART_RULE = rgb(0.8, 0.8, 0.8);
+
+/**
+ * Titulo de diretiva de grafico. Igual nos quatro tipos, por isso mora aqui.
+ *
+ * `keepWith` e a altura do primeiro pedaco desenhavel do grafico, e entra no
+ * ensureSpace junto com o titulo: sem isso o titulo cabe no rodape, o grafico
+ * nao, e a pagina termina com um titulo sozinho anunciando algo que so aparece
+ * na pagina seguinte.
+ */
+function drawChartTitle(ctx: RenderCtx, title: string | undefined, keepWith = 0): void {
+  if (!title) return;
+  ensureSpace(ctx, 20 + keepWith);
+  ctx.page.drawText(title, {
+    x: ctx.margin,
+    y: ctx.y - 12,
+    size: 12,
+    font: ctx.fontBold,
+    color: CHART_TEXT,
+  });
+  ctx.y -= 20;
+}
+
 function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
   const baseSize = 11;
   const baseLine = baseSize * 1.5;
@@ -490,17 +637,9 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
       const items = block.items;
       if (items.length === 0) continue;
 
-      if (block.title) {
-        ensureSpace(ctx, 20);
-        ctx.page.drawText(block.title, {
-          x: ctx.margin,
-          y: ctx.y - 12,
-          size: 12,
-          font: ctx.fontBold,
-          color: rgb(0.1, 0.1, 0.1),
-        });
-        ctx.y -= 20;
-      }
+      // 18 e a altura de uma barra: o titulo so e escrito se a primeira barra
+      // couber junto com ele.
+      drawChartTitle(ctx, block.title, 18);
 
       // Coluna de rotulos: o maior rotulo, com teto de 40% da largura util.
       const labelSize = 9;
@@ -532,7 +671,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
           y: barY,
           width: trackWidth,
           height: 12,
-          color: rgb(0.91, 0.91, 0.93),
+          color: CHART_TRACK,
         });
         // Minimo de 2pt: barra de largura zero some e parece bug, e a diferenca
         // entre "ninguem" e "um" precisa ficar visivel.
@@ -542,20 +681,191 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
           y: barY,
           width: filled,
           height: 12,
-          color: rgb(0.15, 0.35, 0.65),
+          color: CHART_ACCENT,
         });
-        const value = items[i].value;
-        const valueLabel = Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
-        ctx.page.drawText(valueLabel, {
+        ctx.page.drawText(formatChartValue(items[i].value), {
           x: barX + filled + 5,
           y: barY + 3,
           size: labelSize,
           font: ctx.font,
-          color: rgb(0.25, 0.25, 0.25),
+          color: CHART_VALUE,
         });
         ctx.y -= 18;
       }
       ctx.y -= 6;
+      continue;
+    }
+    if (block.type === "numbers") {
+      const items = block.items;
+      if (items.length === 0) continue;
+
+      // Ate 4 por fileira. Acima disso quebra em fileiras EQUILIBRADAS -- sete
+      // itens viram 4+3, nao 4+4 com um sozinho embaixo, que parece erro de
+      // diagramacao em vez de decisao.
+      const rows = Math.ceil(items.length / 4);
+      const perRow = Math.ceil(items.length / rows);
+      const numberSize = 24;
+      const labelSize = 9;
+      const rowHeight = numberSize + labelSize + 14;
+
+      for (let r = 0; r < rows; r++) {
+        const slice = items.slice(r * perRow, (r + 1) * perRow);
+        if (slice.length === 0) continue;
+        // ensureSpace por FILEIRA: a fileira e a unidade que nao pode ser
+        // partida. Numero numa pagina e rotulo na seguinte nao e um numero
+        // grande, e um numero sem legenda.
+        ensureSpace(ctx, rowHeight);
+        const colWidth = ctx.contentWidth / perRow;
+
+        for (let c = 0; c < slice.length; c++) {
+          const x = ctx.margin + c * colWidth;
+          const inner = Math.max(20, colWidth - 10);
+          ctx.page.drawText(truncateToWidth(ctx.fontBold, slice[c].display, numberSize, inner), {
+            x,
+            y: ctx.y - numberSize,
+            size: numberSize,
+            font: ctx.fontBold,
+            color: CHART_TEXT,
+          });
+          ctx.page.drawText(truncateToWidth(ctx.font, slice[c].label, labelSize, inner), {
+            x,
+            y: ctx.y - numberSize - labelSize - 4,
+            size: labelSize,
+            font: ctx.font,
+            color: CHART_MUTED,
+          });
+        }
+        ctx.y -= rowHeight;
+      }
+      ctx.y -= 6;
+      continue;
+    }
+    if (block.type === "progress") {
+      drawChartTitle(ctx, block.title, 24);
+      ensureSpace(ctx, 24);
+
+      const labelSize = 9;
+      const ratio = block.value / block.total;
+      const caption = `${formatChartValue(block.value)} de ${formatChartValue(block.total)} (${Math.round(ratio * 100)}%)`;
+      const captionWidth = ctx.font.widthOfTextAtSize(caption, labelSize);
+      const trackWidth = Math.max(20, ctx.contentWidth - captionWidth - 8);
+      const barY = ctx.y - 12;
+
+      ctx.page.drawRectangle({
+        x: ctx.margin, y: barY, width: trackWidth, height: 12, color: CHART_TRACK,
+      });
+      // A barra e limitada ao trilho mesmo quando a parte passa do todo, mas a
+      // legenda continua dizendo a porcentagem real -- barra estourando a
+      // margem esconderia o dado torto em vez de mostra-lo. O minimo de 2pt e o
+      // mesmo das barras: zero precisa continuar visivel.
+      ctx.page.drawRectangle({
+        x: ctx.margin,
+        y: barY,
+        width: Math.max(2, Math.min(1, ratio) * trackWidth),
+        height: 12,
+        color: CHART_ACCENT,
+      });
+      ctx.page.drawText(caption, {
+        x: ctx.margin + trackWidth + 8,
+        y: barY + 3,
+        size: labelSize,
+        font: ctx.font,
+        color: CHART_VALUE,
+      });
+      ctx.y -= 24;
+      continue;
+    }
+    if (block.type === "line") {
+      const items = block.items;
+      if (items.length === 0) continue;
+
+      const labelSize = 8;
+      const valueSize = 9;
+      const plotHeight = 90;
+      const chartHeight = plotHeight + labelSize + 10;
+      // Aqui o ensureSpace e do GRAFICO INTEIRO, e nao por item como nas barras.
+      // Barra partida entre paginas continua legivel porque cada barra e um item
+      // fechado em si; meia linha nao e meia linha, e uma linha errada.
+      drawChartTitle(ctx, block.title, chartHeight + 6);
+      ensureSpace(ctx, chartHeight + 6);
+
+      const lastValue = formatChartValue(items[items.length - 1].value);
+      // Folga a direita para o valor do ultimo ponto nao sair pela margem.
+      const rightPad = ctx.fontBold.widthOfTextAtSize(lastValue, valueSize) + 8;
+      const plotWidth = Math.max(20, ctx.contentWidth - rightPad);
+      const baselineY = ctx.y - plotHeight;
+      const topValue = niceCeil(Math.max(...items.map((i) => i.value), 0));
+      const pointX = (i: number) =>
+        items.length === 1 ? ctx.margin + plotWidth / 2 : ctx.margin + (i / (items.length - 1)) * plotWidth;
+      const pointY = (v: number) => baselineY + (Math.max(0, v) / topValue) * plotHeight;
+
+      // Sem grade: so a linha de base, fina e clara, marcando o zero.
+      ctx.page.drawLine({
+        start: { x: ctx.margin, y: baselineY },
+        end: { x: ctx.margin + ctx.contentWidth, y: baselineY },
+        thickness: 0.5,
+        color: CHART_RULE,
+      });
+
+      for (let i = 1; i < items.length; i++) {
+        ctx.page.drawLine({
+          start: { x: pointX(i - 1), y: pointY(items[i - 1].value) },
+          end: { x: pointX(i), y: pointY(items[i].value) },
+          thickness: 1.2,
+          color: CHART_ACCENT,
+        });
+      }
+      // O ponto e desenhado na posicao REAL. Um valor zero fica sobre a linha de
+      // base e continua visivel porque a marca tem raio proprio -- empurra-lo
+      // 2pt para cima, como se faz com a barra, mentiria sobre onde ele esta.
+      for (let i = 0; i < items.length; i++) {
+        ctx.page.drawCircle({ x: pointX(i), y: pointY(items[i].value), size: 2.2, color: CHART_ACCENT });
+      }
+
+      // Rotulos do eixo x. Com muitos pontos eles nao cabem todos, e escrever um
+      // por ponto vira tarja ilegivel. A saida NAO e apertar todos: e escrever
+      // menos rotulos, cada um com a largura que sobra dos vizinhos pulados.
+      // Trinta pontos com "Edica..." trinta vezes nao dizem nada; seis rotulos
+      // inteiros, salteados, dizem onde a linha comeca e termina.
+      const slotWidth = items.length > 1 ? plotWidth / (items.length - 1) : plotWidth;
+      const widest = items.reduce((m, it) => Math.max(m, ctx.font.widthOfTextAtSize(it.label, labelSize)), 0);
+      const fitCount = Math.max(2, Math.floor(plotWidth / Math.max(1, widest + 10)));
+      const step = items.length > 1 ? Math.max(1, Math.ceil((items.length - 1) / (fitCount - 1))) : 1;
+      // As duas pontas entram sempre: numa linha do tempo, o comeco e o fim sao
+      // os dois rotulos que alguem realmente procura.
+      const wanted = new Set<number>([0, items.length - 1]);
+      for (let i = 0; i < items.length; i += step) wanted.add(i);
+
+      let lastRight = -Infinity;
+      for (let i = 0; i < items.length; i++) {
+        if (!wanted.has(i)) continue;
+        const text = truncateToWidth(ctx.font, items[i].label, labelSize, Math.max(28, slotWidth * step));
+        const width = ctx.font.widthOfTextAtSize(text, labelSize);
+        let x = pointX(i) - width / 2;
+        if (x < ctx.margin) x = ctx.margin;
+        if (x + width > ctx.margin + ctx.contentWidth) x = ctx.margin + ctx.contentWidth - width;
+        if (x < lastRight + 4) continue;
+        ctx.page.drawText(text, {
+          x, y: baselineY - labelSize - 4, size: labelSize, font: ctx.font, color: CHART_MUTED,
+        });
+        lastRight = x + width;
+      }
+
+      // O valor escrito so no ultimo ponto: o grafico responde "como esta
+      // mudando", e o numero de hoje e o unico que alguem vai querer citar.
+      const lastIdx = items.length - 1;
+      ctx.page.drawText(lastValue, {
+        x: Math.min(
+          pointX(lastIdx) + 5,
+          ctx.margin + ctx.contentWidth - ctx.fontBold.widthOfTextAtSize(lastValue, valueSize),
+        ),
+        y: pointY(items[lastIdx].value) - 3,
+        size: valueSize,
+        font: ctx.fontBold,
+        color: CHART_TEXT,
+      });
+
+      ctx.y -= chartHeight + 6;
       continue;
     }
     if (block.type === "hr") {
@@ -709,7 +1019,9 @@ serve(async (req) => {
     // Fonte do conteudo: prefere o HTML rico e cai para o texto puro em <p>.
     // No caminho do texto puro, as diretivas [[GRAFICO]] sao extraidas ANTES do
     // escape de "<": se passassem por ele virariam texto literal no PDF.
-    type Segment = { kind: "text"; text: string } | { kind: "bars"; title: string; body: string };
+    type Segment =
+      | { kind: "text"; text: string }
+      | { kind: "chart"; directive: DirectiveKind; title: string; body: string };
     const segments: Segment[] = [];
     let richHtml: string | null = null;
 
@@ -717,12 +1029,17 @@ serve(async (req) => {
       richHtml = String(template_content_html);
     } else if (template_content && String(template_content).trim()) {
       const plain = String(template_content);
-      RE_GRAFICO.lastIndex = 0;
+      RE_DIRETIVA.lastIndex = 0;
       let cursor = 0;
       let m: RegExpExecArray | null;
-      while ((m = RE_GRAFICO.exec(plain)) !== null) {
+      while ((m = RE_DIRETIVA.exec(plain)) !== null) {
         if (m.index > cursor) segments.push({ kind: "text", text: plain.slice(cursor, m.index) });
-        segments.push({ kind: "bars", title: m[1] || "", body: m[2] || "" });
+        segments.push({
+          kind: "chart",
+          directive: m[1] as DirectiveKind,
+          title: m[2] || "",
+          body: m[3] || "",
+        });
         cursor = m.index + m[0].length;
       }
       if (cursor < plain.length) segments.push({ kind: "text", text: plain.slice(cursor) });
@@ -741,9 +1058,9 @@ serve(async (req) => {
       blocks.push(...parseHtmlToBlocks(fill(richHtml)));
     } else {
       for (const seg of segments) {
-        if (seg.kind === "bars") {
-          const bars = parseBarsDirective(fill(seg.title), fill(seg.body));
-          if (bars) blocks.push(bars);
+        if (seg.kind === "chart") {
+          const chart = parseChartDirective(seg.directive, fill(seg.title), fill(seg.body));
+          if (chart) blocks.push(chart);
           continue;
         }
         const html = seg.text
