@@ -45,17 +45,21 @@ function nodeProducedVariables(node: Node): FlowVariable[] {
     }
     case 'action-query-contacts': {
       const name = asTrimmedString(data.outputVariable) || 'consulta_resultado';
-      const isList = asTrimmedString(data.queryMode) === 'list';
+      const mode = asTrimmedString(data.queryMode);
+      const describe = () => {
+        if (mode === 'list') return `Texto da listagem${label ? ` da consulta "${label}"` : ''}`;
+        if (mode === 'group') {
+          return `Linhas "valor | contagem"${label ? ` da consulta "${label}"` : ''} — cabem direto num bloco [[GRAFICO]]`;
+        }
+        return `Contagem${label ? ` da consulta "${label}"` : ''}`;
+      };
       return [
-        {
-          name,
-          description: isList
-            ? `Texto da listagem${label ? ` da consulta "${label}"` : ''}`
-            : `Contagem${label ? ` da consulta "${label}"` : ''}`,
-        },
+        { name, description: describe() },
         {
           name: `${name}_total`,
-          description: 'Total exato de contatos que bateram nos filtros (útil num nó de Condição)',
+          description: mode === 'group'
+            ? 'Soma das linhas do agrupamento (útil como denominador de uma porcentagem)'
+            : 'Total exato de contatos que bateram nos filtros (útil num nó de Condição)',
         },
       ];
     }

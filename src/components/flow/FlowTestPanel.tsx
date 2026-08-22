@@ -846,8 +846,21 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       case 'action-query-contacts': {
         const rawOutput = String(d.outputVariable || '').trim();
         const variable = /^\w+$/.test(rawOutput) ? rawOutput : 'consulta_resultado';
-        const isList = String(d.queryMode || 'count') === 'list';
+        const mode = String(d.queryMode || 'count');
         const filterCount = Array.isArray(d.filters) ? (d.filters as unknown[]).length : 0;
+        // No modo agrupar o exemplo respeita os valores esperados configurados:
+        // é o formato da saída que interessa ver aqui, não os números.
+        const expected = (Array.isArray(d.groupExpectedValues) ? d.groupExpectedValues : [])
+          .map((v) => String(v ?? '').trim())
+          .filter((v) => v !== '');
+        const groupLabels = expected.length > 0 ? expected : ['Opcao A', 'Opcao B', 'Opcao C'];
+        const groupLines = groupLabels.map((labelValue, i) => `${labelValue} | ${[7, 4, 2][i] ?? 1}`);
+        if (d.groupIncludeEmpty === true) groupLines.push('(nao respondeu) | 3');
+        const groupText = groupLines.join('\n');
+        const groupTotal = groupLines.reduce(
+          (sum, line) => sum + (Number(line.slice(line.lastIndexOf('|') + 1).trim()) || 0),
+          0,
+        );
 
         // A simulação NÃO consulta a base. Preenche a variável com um valor de
         // exemplo e diz que é exemplo — o simulador é sobre o CAMINHO que o
@@ -855,15 +868,19 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         // desenhar a ramificação em cima de um dado inventado.
         addMsg({
           type: 'action',
-          content: `${isList ? 'Listando' : 'Contando'} contatos (${filterCount} filtro(s)) — resultado simulado`,
+          content: `${mode === 'group' ? `Agrupando contatos por "${String(d.groupByField || '...')}"` : mode === 'list' ? 'Listando contatos' : 'Contando contatos'} (${filterCount} filtro(s)) — resultado simulado`,
           actionIcon: '🔎',
         });
         setSimState(prev => ({
           ...prev,
           variables: {
             ...prev.variables,
-            [variable]: isList ? 'Fulano — 5511999999999\nCiclana — 5521988888888' : '2',
-            [`${variable}_total`]: '2',
+            [variable]: mode === 'group'
+              ? groupText
+              : mode === 'list'
+                ? 'Fulano — 5511999999999\nCiclana — 5521988888888'
+                : '2',
+            [`${variable}_total`]: mode === 'group' ? String(groupTotal) : '2',
           },
         }));
         await wait(700);

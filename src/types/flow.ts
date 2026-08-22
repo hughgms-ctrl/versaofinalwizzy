@@ -161,9 +161,27 @@ export interface ContactQueryFilter {
 }
 
 export interface ContactQueryConfig {
-  /** 'count' devolve um número; 'list' devolve texto com os campos escolhidos. */
-  queryMode: 'count' | 'list';
+  /**
+   * 'count' devolve um número; 'list' devolve texto com os campos escolhidos;
+   * 'group' devolve uma linha "valor | contagem" por valor do campo escolhido —
+   * exatamente o formato que o bloco [[GRAFICO]] do gerador de PDF lê.
+   */
+  queryMode: 'count' | 'list' | 'group';
   filters: ContactQueryFilter[];
+  /** Só para 'group': a `key` do campo personalizado que vira as linhas. */
+  groupByField?: string;
+  /** Afordância da tela: troca o seletor do campo de agrupamento por {{variavel}}. */
+  groupByUseVariable?: boolean;
+  /**
+   * Valores esperados, na ordem em que devem aparecer. Preenchido, a saída
+   * respeita essa ordem e MOSTRA OS ZEROS — opção que ninguém escolheu sumindo
+   * do gráfico parece que a pergunta não foi feita. Valor que apareceu e não
+   * está aqui entra depois, por contagem: é assim que uma opção nova na
+   * pesquisa aparece sozinha em vez de o relatório mentir calado.
+   */
+  groupExpectedValues?: string[];
+  /** Acrescenta uma linha "(nao respondeu) | n" no fim. Fora por padrão. */
+  groupIncludeEmpty?: boolean;
   /** Campos concatenados em cada linha da listagem: 'name' | 'phone' | 'email' | key de campo personalizado. */
   listFields: string[];
   listLimit: number;

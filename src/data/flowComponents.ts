@@ -121,7 +121,7 @@ export const flowComponentCategories: FlowComponentCategory[] = [
       {
         type: 'action-query-contacts',
         label: 'Consultar Contatos',
-        description: 'Conta ou lista contatos da base por tag, etapa e campo',
+        description: 'Conta, lista ou agrupa contatos da base por tag, etapa e campo',
         icon: 'DatabaseZap',
         color: 'bg-indigo-600',
       },

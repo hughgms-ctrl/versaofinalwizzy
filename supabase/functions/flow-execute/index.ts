@@ -1141,6 +1141,33 @@ const QUERY_CONTACTS_LIST_CAP = 200;
 // fatias sao somadas, entao nao corta resposta nenhuma.
 const QUERY_CONTACTS_URL_ID_CAP = 300;
 
+// === Modo "agrupar por" ===
+//
+// O PostgREST nao faz GROUP BY, entao a contagem por valor acontece AQUI, em
+// TypeScript, em cima das mesmas linhas que os outros dois modos alcancam. A
+// alternativa era uma funcao no banco chamada por rpc; ficou de fora por dois
+// motivos praticos. Primeiro, ela teria que reimplementar tag, etapa, negacao e
+// os cinco operadores de campo personalizado em SQL -- duas definicoes do mesmo
+// recorte, que passam a divergir na primeira vez que so uma das duas for
+// alterada. Segundo, migration neste projeto e aplicada a mao: a funcao viveria
+// no repo sem existir no banco ate alguem rodar, e o no responderia com erro de
+// "function does not exist" em producao.
+//
+// Contar aqui tem um custo: o recorte inteiro precisa ser LIDO. Por isso o teto
+// abaixo, e por isso a leitura e conferida contra o total exato que o count ja
+// devolveu -- agrupamento em cima de uma base cortada da um grafico inteiro
+// errado, nao uma linha a menos.
+const QUERY_CONTACTS_GROUP_ROW_CAP = 20000;
+
+// O PostgREST corta em 1000 linhas SEM AVISAR quando nao ha `.range()` -- volta
+// 200 OK com um terco da base. Ler em paginas desse tamanho, com `.order()`
+// deterministico, e o que impede o agrupamento de "dar certo" errado.
+const QUERY_CONTACTS_GROUP_PAGE = 1000;
+
+// Valores distintos numa saida de grafico. Campo de texto livre agrupado geraria
+// centenas de linhas; acima do teto o excedente vira uma linha "Outros".
+const QUERY_CONTACTS_GROUP_VALUE_CAP = 20;
+
 // Operadores que o filtro de campo personalizado sabe montar. Fora desta lista o
 // no FALHA. Operador ignorado nao estreita a consulta: o total volta MAIOR, com
 // cara de resposta certa.
@@ -1255,12 +1282,99 @@ function readCustomFieldFromMetadata(metadata: unknown, key: string): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+/**
+ * O valor agrupado vira uma linha "rotulo | contagem" -- o formato que o
+ * gerador de PDF le dentro de um bloco de grafico. Quebra de linha partiria o
+ * item em dois, e um "|" no meio mudaria onde o outro lado corta (ele usa o
+ * ULTIMO "|"). Achatar aqui e mais barato do que combinar escapes entre os dois.
+ */
+function sanitizeGroupLabel(value: string): string {
+  return value.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+}
+
+/** Ordem preservada, repetido descartado. */
+function dedupeInOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+interface GroupOutput {
+  text: string;
+  /** Soma das linhas emitidas -- o denominador honesto do grafico. */
+  total: number;
+  lineCount: number;
+  /** Quantos valores distintos foram somados dentro de "Outros". */
+  collapsed: number;
+}
+
+/**
+ * Monta o texto do modo "agrupar por" a partir das contagens ja apuradas.
+ * Separado da consulta porque tambem responde pelo caso "nenhum contato bateu
+ * nos filtros": la a resposta certa nao e "nenhum contato encontrado", e o mesmo
+ * grafico com todos os valores esperados em zero.
+ */
+function buildGroupOutput(
+  counts: Map<string, number>,
+  emptyCount: number,
+  expected: string[],
+  includeEmpty: boolean,
+): GroupOutput {
+  const remaining = new Map(counts);
+  const ordered: Array<{ label: string; count: number }> = [];
+
+  // 1) Os valores esperados primeiro, na ordem escrita na tela, INCLUSIVE os que
+  //    ninguem escolheu. "Nao e o meu momento | 0" e informacao; a opcao sumindo
+  //    do grafico parece que a pergunta nao foi feita.
+  for (const value of expected) {
+    ordered.push({ label: value, count: remaining.get(value) ?? 0 });
+    remaining.delete(value);
+  }
+
+  // 2) O que apareceu e NAO estava previsto entra depois, por contagem. Descartar
+  //    seria repetir exatamente o defeito que este modo veio corrigir: opcao nova
+  //    na pesquisa, grafico continua mostrando so as antigas e ninguem fica
+  //    sabendo. O desempate por rotulo mantem a saida estavel entre execucoes.
+  const extras = Array.from(remaining.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
+  ordered.push(...extras);
+
+  // 3) Teto de valores distintos. O excedente nao some: vira uma linha somada, e
+  //    o total continua fechando com o que foi contado.
+  let lines = ordered;
+  let collapsed = 0;
+  if (ordered.length > QUERY_CONTACTS_GROUP_VALUE_CAP) {
+    const keep = ordered.slice(0, QUERY_CONTACTS_GROUP_VALUE_CAP - 1);
+    const rest = ordered.slice(QUERY_CONTACTS_GROUP_VALUE_CAP - 1);
+    collapsed = rest.length;
+    keep.push({ label: 'Outros', count: rest.reduce((s, r) => s + r.count, 0) });
+    lines = keep;
+  }
+
+  const out = lines.map((l) => `${l.label} | ${l.count}`);
+  let total = lines.reduce((s, l) => s + l.count, 0);
+  if (includeEmpty) {
+    out.push(`(nao respondeu) | ${emptyCount}`);
+    total += emptyCount;
+  }
+
+  return { text: out.join('\n'), total, lineCount: out.length, collapsed };
+}
+
 async function executeQueryContacts(
   data: Record<string, unknown>,
   context: ExecutionContext,
   supabase: SupabaseClientType,
 ): Promise<NodeResult> {
-  const mode = String(data.queryMode || 'count') === 'list' ? 'list' : 'count';
+  const rawMode = String(data.queryMode || 'count');
+  const mode: 'count' | 'list' | 'group' =
+    rawMode === 'list' ? 'list' : rawMode === 'group' ? 'group' : 'count';
 
   const rawVariable = String(data.outputVariable ?? '').trim();
   // A variavel volta como {{nome}} e o replace so casa \w+. Nome fora disso
@@ -1279,6 +1393,37 @@ async function executeQueryContacts(
     fieldKey: f.fieldKey === undefined ? undefined : replaceVariables(String(f.fieldKey), context.variables).trim(),
   }));
 
+  // Config do modo "agrupar por". Interpolada aqui pelo mesmo motivo do fieldKey
+  // dos filtros: quem precisa ter forma valida e o texto ja resolvido.
+  const groupByField = replaceVariables(String(data.groupByField ?? ''), context.variables).trim();
+  const groupExpected = dedupeInOrder(
+    (Array.isArray(data.groupExpectedValues) ? data.groupExpectedValues : [])
+      .map((v) => sanitizeGroupLabel(replaceVariables(String(v ?? ''), context.variables)))
+      .filter((v) => v !== ''),
+  );
+  const groupIncludeEmpty = data.groupIncludeEmpty === true;
+
+  // Recorte vazio no modo agrupar nao e "nenhum contato encontrado": e o mesmo
+  // grafico, com os valores esperados em zero.
+  const emptyResult = (): NodeResult => {
+    if (mode === 'group') {
+      const built = buildGroupOutput(new Map(), 0, groupExpected, groupIncludeEmpty);
+      return {
+        success: true,
+        variables: { [outputVariable]: built.text, [`${outputVariable}_total`]: String(built.total) },
+        metadata: { mode, total: 0, grouped: built.lineCount },
+      };
+    }
+    return {
+      success: true,
+      variables: {
+        [outputVariable]: mode === 'count' ? '0' : 'Nenhum contato encontrado.',
+        [`${outputVariable}_total`]: '0',
+      },
+      metadata: { mode, total: 0 },
+    };
+  };
+
   try {
     // Catalogo dos campos personalizados da org. Filtro que aponte para chave
     // inexistente e recusado: a chave entra num caminho jsonb, e "formato
@@ -1290,6 +1435,17 @@ async function executeQueryContacts(
 
     if (fieldsError) throw new Error(`contact_custom_fields: ${fieldsError.message}`);
     const knownKeys = new Set((fieldRows || []).map((r: { key: string }) => r.key));
+
+    // O campo de agrupamento passa pela mesma porta que o fieldKey dos filtros:
+    // ele vira um caminho jsonb, e "formato valido" nao e o mesmo que "existe
+    // aqui". Falhar e obrigatorio -- agrupar por chave inexistente devolveria
+    // "(nao respondeu) | 47", um grafico plausivel e completamente errado.
+    if (mode === 'group' && (!/^\w+$/.test(groupByField) || !knownKeys.has(groupByField))) {
+      return {
+        success: false,
+        error: `Consultar contatos: o campo de agrupamento nao existe nesta organizacao${queryFilterHint(data.groupByField, groupByField)}.`,
+      };
+    }
 
     // Nenhum filtro pode ser descartado em silencio. Filtro que some deixa a
     // consulta MAIS LARGA -- no limite, a base inteira -- e o numero volta com
@@ -1378,12 +1534,7 @@ async function executeQueryContacts(
 
     // Intersecao vazia: acabou aqui, sem ir ao banco de novo.
     if (candidateIds !== null && (candidateIds as Set<string>).size === 0) {
-      const empty = mode === 'count' ? '0' : 'Nenhum contato encontrado.';
-      return {
-        success: true,
-        variables: { [outputVariable]: empty, [`${outputVariable}_total`]: '0' },
-        metadata: { mode, total: 0 },
-      };
+      return emptyResult();
     }
 
     // Exclusao ("nao tem a tag") sai do conjunto de candidatos aqui mesmo,
@@ -1403,12 +1554,7 @@ async function executeQueryContacts(
 
     // Reexamina o vazio: a subtracao acima pode ter zerado o conjunto.
     if (candidateIds !== null && (candidateIds as Set<string>).size === 0) {
-      const empty = mode === 'count' ? '0' : 'Nenhum contato encontrado.';
-      return {
-        success: true,
-        variables: { [outputVariable]: empty, [`${outputVariable}_total`]: '0' },
-        metadata: { mode, total: 0 },
-      };
+      return emptyResult();
     }
 
     // 2) Monta a query de contatos: escopo da org + filtros de campo
@@ -1499,7 +1645,85 @@ async function executeQueryContacts(
       };
     }
 
-    // 4) Listagem.
+    // 4) Agrupamento. Acontece DENTRO do recorte que os filtros definem: as
+    //    linhas lidas aqui sao exatamente as que o count acabou de contar.
+    if (mode === 'group') {
+      if (total > QUERY_CONTACTS_GROUP_ROW_CAP) {
+        return {
+          success: false,
+          error: `Consultar contatos: agrupar exige ler os contatos um a um, e o filtro alcanca ${total} — acima do teto de ${QUERY_CONTACTS_GROUP_ROW_CAP}. Estreite o filtro: um agrupamento em cima de uma base cortada erra TODAS as linhas, nao uma.`,
+        };
+      }
+
+      // So o valor do campo vem do banco, nao o metadata inteiro: sao ate 20 mil
+      // linhas, e o jsonb completo de cada contato aqui seria alguns megabytes
+      // de resposta para extrair uma string de cada uma. A chave ja foi validada
+      // contra contact_custom_fields acima.
+      const valuePath = `valor:metadata->custom_fields->>${groupByField}`;
+      const counts = new Map<string, number>();
+      let emptyCount = 0;
+      let readRows = 0;
+
+      for (const slice of idSlices) {
+        let from = 0;
+        for (;;) {
+          // `.range()` explicito: sem ele o PostgREST devolve no maximo 1000
+          // linhas com status 200, e o agrupamento fecharia "certo" em cima de
+          // um pedaco da base. O `.order('id')` e o que torna as paginas
+          // disjuntas -- sem ordem estavel, paginar e sortear.
+          const { data: pageRows, error: groupError } = await applyFilters(
+            supabase.from('contacts').select(valuePath),
+            slice,
+          )
+            .order('id', { ascending: true })
+            .range(from, from + QUERY_CONTACTS_GROUP_PAGE - 1);
+
+          if (groupError) throw new Error(`contacts (group): ${groupError.message}`);
+          const page = (pageRows || []) as Array<{ valor: string | null }>;
+
+          for (const row of page) {
+            const value = sanitizeGroupLabel(String(row.valor ?? ''));
+            // Campo vazio ou nulo fica FORA da contagem por padrao: quem nao
+            // respondeu nao e uma resposta.
+            if (value === '') emptyCount++;
+            else counts.set(value, (counts.get(value) ?? 0) + 1);
+          }
+
+          readRows += page.length;
+          if (page.length < QUERY_CONTACTS_GROUP_PAGE) break;
+          from += QUERY_CONTACTS_GROUP_PAGE;
+        }
+      }
+
+      // O count exato ja foi feito la em cima; conferir contra ele e o que
+      // transforma "corte silencioso" em erro. Ler A MAIS e so alguem cadastrando
+      // contato durante a consulta -- nao invalida as contagens, entao registra e
+      // segue.
+      if (readRows < total) {
+        return {
+          success: false,
+          error: `Consultar contatos: li ${readRows} dos ${total} contatos do filtro ao agrupar. Alguma coisa cortou a leitura no meio; as contagens estariam erradas, entao o no falha. Tente de novo.`,
+        };
+      }
+      if (readRows > total) {
+        console.warn(`[FLOW EXECUTE] query-contacts: agrupamento leu ${readRows} para um count de ${total} (base mudou durante a consulta).`);
+      }
+
+      const built = buildGroupOutput(counts, emptyCount, groupExpected, groupIncludeEmpty);
+      console.log(
+        `[FLOW EXECUTE] query-contacts: agrupado por "${groupByField}" — ${built.lineCount} linha(s) de ${total} contato(s)` +
+        `${built.collapsed > 0 ? `, ${built.collapsed} valor(es) somados em "Outros"` : ''}` +
+        `${emptyCount > 0 ? `, ${emptyCount} sem resposta` : ''} em {{${outputVariable}}}`,
+      );
+
+      return {
+        success: true,
+        variables: { [outputVariable]: built.text, [`${outputVariable}_total`]: String(built.total) },
+        metadata: { mode, total, grouped: built.lineCount, collapsed: built.collapsed, notAnswered: emptyCount },
+      };
+    }
+
+    // 5) Listagem.
     const requestedLimit = Number(data.listLimit) || 20;
     const limit = Math.max(1, Math.min(requestedLimit, QUERY_CONTACTS_LIST_CAP));
 

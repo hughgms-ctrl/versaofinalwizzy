@@ -5,7 +5,7 @@ import {
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
   Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown, DatabaseZap,
-  AlertTriangle, Braces
+  AlertTriangle, Braces, ChevronUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2742,6 +2742,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         const queryMode = String(localData.queryMode || 'count');
         const queryFilters = (localData.filters as ContactQueryFilter[]) || [];
         const listFields = (localData.listFields as string[]) || ['name', 'phone'];
+        const groupByField = String(localData.groupByField || '');
+        const groupExpected = (localData.groupExpectedValues as string[]) || [];
         const rawOutput = String(localData.outputVariable || '').trim();
         const outputIsValid = rawOutput === '' || /^\w+$/.test(rawOutput);
         const effectiveOutput = outputIsValid && rawOutput ? rawOutput : 'consulta_resultado';
@@ -2759,6 +2761,20 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         };
         const removeQueryFilter = (id: string) => {
           handleChange('filters', queryFilters.filter((f) => f.id !== id));
+        };
+        const updateExpected = (index: number, value: string) => {
+          handleChange('groupExpectedValues', groupExpected.map((v, i) => (i === index ? value : v)));
+        };
+        const addExpected = () => handleChange('groupExpectedValues', [...groupExpected, '']);
+        const removeExpected = (index: number) => {
+          handleChange('groupExpectedValues', groupExpected.filter((_, i) => i !== index));
+        };
+        const moveExpected = (index: number, delta: number) => {
+          const target = index + delta;
+          if (target < 0 || target >= groupExpected.length) return;
+          const next = [...groupExpected];
+          [next[index], next[target]] = [next[target], next[index]];
+          handleChange('groupExpectedValues', next);
         };
         const toggleListField = (field: string) => {
           handleChange(
@@ -2786,6 +2802,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectContent>
                   <SelectItem value="count">Contar — devolve um numero</SelectItem>
                   <SelectItem value="list">Listar — devolve texto com os campos escolhidos</SelectItem>
+                  <SelectItem value="group">Agrupar por — uma linha "valor | contagem" por resposta</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2956,6 +2973,122 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </div>
             </div>
 
+            {queryMode === 'group' && (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-xs">Agrupar por qual campo</Label>
+                    <Button
+                      variant={localData.groupByUseVariable ? 'secondary' : 'ghost'}
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      title={localData.groupByUseVariable ? 'Voltar a escolher na lista' : 'Escolher por variavel'}
+                      onClick={() => handleChange('groupByUseVariable', !localData.groupByUseVariable)}
+                    >
+                      <Braces className={localData.groupByUseVariable ? 'h-3.5 w-3.5 text-indigo-600' : 'h-3.5 w-3.5 text-muted-foreground'} />
+                    </Button>
+                  </div>
+                  {localData.groupByUseVariable ? (
+                    <VariableInput
+                      value={groupByField}
+                      onValueChange={(v) => handleChange('groupByField', v)}
+                      variables={availableVariables}
+                      placeholder="Variavel com a chave do campo"
+                      className="h-8 text-xs font-mono"
+                    />
+                  ) : (
+                    <Select value={groupByField} onValueChange={(v) => handleChange('groupByField', v)}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qual campo..." /></SelectTrigger>
+                      <SelectContent>
+                        {contactCustomFields.map((cf) => (
+                          <SelectItem key={cf.id} value={cf.key}>{cf.label}</SelectItem>
+                        ))}
+                        {!contactCustomFields.length && (
+                          <SelectItem value="none" disabled>Nenhum campo personalizado criado</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Uma linha por valor do campo, dentro do recorte que os filtros acima definem. O campo precisa existir
+                    nesta organizacao — chave errada faz o no falhar, e nao virar um grafico plausivel de zeros.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-xs">Valores esperados (opcional)</Label>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addExpected}>
+                      <Plus className="h-3 w-3 mr-1" /> Valor
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mb-2">
+                    Preenchido, a saida sai NESTA ordem e mostra os zeros — a opcao que ninguem escolheu sumindo do grafico
+                    parece que a pergunta nao foi feita. Vazio, ordena da maior contagem para a menor e traz so o que existe.
+                    Em qualquer um dos dois, valor que aparecer e nao estiver na lista entra depois: e assim que uma opcao
+                    nova na pesquisa aparece sozinha, em vez de o relatorio continuar mostrando so as antigas.
+                  </p>
+                  <div className="space-y-1.5">
+                    {groupExpected.map((value, index) => (
+                      <div key={index} className="flex items-center gap-1">
+                        <Input
+                          value={value}
+                          onChange={(e) => updateExpected(index, e.target.value)}
+                          placeholder={`Opcao ${index + 1}`}
+                          className="h-8 text-xs"
+                        />
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                          title="Subir" disabled={index === 0}
+                          onClick={() => moveExpected(index, -1)}
+                        >
+                          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                          title="Descer" disabled={index === groupExpected.length - 1}
+                          onClick={() => moveExpected(index, 1)}
+                        >
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                          onClick={() => removeExpected(index)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    ))}
+                    {groupExpected.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground italic px-1">
+                        Nenhum valor fixado — ordena por contagem.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={localData.groupIncludeEmpty === true}
+                    onCheckedChange={(c) => handleChange('groupIncludeEmpty', c)}
+                  />
+                  <span className="text-[11px] text-muted-foreground">
+                    Incluir quem nao respondeu — acrescenta{' '}
+                    <span className="font-mono">(nao respondeu) | n</span> no fim
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-lg border border-border bg-muted/40">
+                  <p className="text-[11px] text-muted-foreground">
+                    A saida ja sai no formato que o gerador de PDF le: cole a variavel dentro de um bloco{' '}
+                    <span className="font-mono">[[GRAFICO titulo]]</span> e ela vira o grafico. Acima de 20 valores
+                    distintos, os menores viram uma linha <span className="font-mono">Outros</span> — a soma continua
+                    fechando.
+                  </p>
+                </div>
+              </>
+            )}
+
             {queryMode === 'list' && (
               <>
                 <div>
@@ -3016,9 +3149,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               ) : (
                 <p className="text-[10px] text-muted-foreground mt-1">
                   <span className="font-mono">{`{{${effectiveOutput}}}`}</span> traz{' '}
-                  {queryMode === 'count' ? 'o numero' : 'o texto da lista'}, e{' '}
-                  <span className="font-mono">{`{{${effectiveOutput}_total}}`}</span> traz sempre o total exato — use ele
-                  num no de Condicao para comparar.
+                  {queryMode === 'count' ? 'o numero' : queryMode === 'group' ? 'as linhas do agrupamento' : 'o texto da lista'}, e{' '}
+                  <span className="font-mono">{`{{${effectiveOutput}_total}}`}</span> traz{' '}
+                  {queryMode === 'group'
+                    ? 'a soma das linhas acima — o denominador certo para uma porcentagem'
+                    : 'sempre o total exato'}{' '}
+                  — use ele num no de Condicao para comparar.
                 </p>
               )}
             </div>
@@ -3029,6 +3165,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 Se um filtro de tag ou etapa alcancar mais de 20 mil contatos, o no FALHA em vez de devolver um numero
                 cortado — numero errado seria pior que erro. E um filtro "nao tem" sozinho, sem nenhum filtro positivo
                 junto, so funciona ate algumas centenas de contatos.
+                {queryMode === 'group' && (
+                  <> {' '}Agrupar tambem para em 20 mil: ele le os contatos um a um, e agrupamento sobre base cortada
+                  erra TODAS as linhas, nao uma.</>
+                )}
               </p>
             </div>
           </div>
