@@ -2,6 +2,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage } from "https://esm.sh/pdf-lib@1.17.1";
 import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
+import {
+  drawSafeText,
+  logWinAnsiReport,
+  resetWinAnsiReport,
+  sanitizeWinAnsi,
+} from "../_shared/winAnsi.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,21 +81,6 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&raquo;/g, '"')
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
-}
-
-function sanitizeWinAnsi(text: string): string {
-  return text
-    .replace(/[\u2610]/g, "[ ]")
-    .replace(/[\u2611]/g, "[x]")
-    .replace(/[\u2612]/g, "[x]")
-    .replace(/[\u2013]/g, "-")
-    .replace(/[\u2014]/g, "--")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2022]/g, "*")
-    .replace(/[\u2026]/g, "...")
-    .replace(/[\u00A0]/g, " ")
-    .replace(/[^\x00-\xFF]/g, "");
 }
 
 // ====================== Lightweight HTML → block parser ======================
@@ -414,7 +405,10 @@ function formatChartValue(value: number): string {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10);
 }
 
-function truncateToWidth(font: PDFFont, text: string, size: number, maxWidth: number): string {
+function truncateToWidth(font: PDFFont, rawText: string, size: number, maxWidth: number): string {
+  // Sanitiza ANTES de medir: "->" ocupa duas letras onde a seta ocupava uma, e
+  // cortar pela largura do texto original deixaria a sobra passando da coluna.
+  const text = sanitizeWinAnsi(rawText);
   if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
   let out = text;
   while (out.length > 1 && font.widthOfTextAtSize(out + "...", size) > maxWidth) {
@@ -564,7 +558,7 @@ function drawTextLine(
 
   for (const tok of line) {
     const fontRef = pickFont(ctx, tok.run.bold, tok.run.italic);
-    ctx.page.drawText(tok.run.text, {
+    drawSafeText(ctx.page, tok.run.text, {
       x,
       y: baselineY,
       size: tok.size,
@@ -613,7 +607,7 @@ const CHART_RULE = rgb(0.8, 0.8, 0.8);
 function drawChartTitle(ctx: RenderCtx, title: string | undefined, keepWith = 0): void {
   if (!title) return;
   ensureSpace(ctx, 20 + keepWith);
-  ctx.page.drawText(title, {
+  drawSafeText(ctx.page, title, {
     x: ctx.margin,
     y: ctx.y - 12,
     size: 12,
@@ -659,7 +653,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
         // entao a barra comeca em ctx.y - 12.
         const barY = ctx.y - 12;
         const barX = ctx.margin + labelColumn + 8;
-        ctx.page.drawText(labels[i], {
+        drawSafeText(ctx.page, labels[i], {
           x: ctx.margin,
           y: barY + 3,
           size: labelSize,
@@ -683,7 +677,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
           height: 12,
           color: CHART_ACCENT,
         });
-        ctx.page.drawText(formatChartValue(items[i].value), {
+        drawSafeText(ctx.page, formatChartValue(items[i].value), {
           x: barX + filled + 5,
           y: barY + 3,
           size: labelSize,
@@ -720,14 +714,14 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
         for (let c = 0; c < slice.length; c++) {
           const x = ctx.margin + c * colWidth;
           const inner = Math.max(20, colWidth - 10);
-          ctx.page.drawText(truncateToWidth(ctx.fontBold, slice[c].display, numberSize, inner), {
+          drawSafeText(ctx.page, truncateToWidth(ctx.fontBold, slice[c].display, numberSize, inner), {
             x,
             y: ctx.y - numberSize,
             size: numberSize,
             font: ctx.fontBold,
             color: CHART_TEXT,
           });
-          ctx.page.drawText(truncateToWidth(ctx.font, slice[c].label, labelSize, inner), {
+          drawSafeText(ctx.page, truncateToWidth(ctx.font, slice[c].label, labelSize, inner), {
             x,
             y: ctx.y - numberSize - labelSize - 4,
             size: labelSize,
@@ -765,7 +759,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
         height: 12,
         color: CHART_ACCENT,
       });
-      ctx.page.drawText(caption, {
+      drawSafeText(ctx.page, caption, {
         x: ctx.margin + trackWidth + 8,
         y: barY + 3,
         size: labelSize,
@@ -845,7 +839,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
         if (x < ctx.margin) x = ctx.margin;
         if (x + width > ctx.margin + ctx.contentWidth) x = ctx.margin + ctx.contentWidth - width;
         if (x < lastRight + 4) continue;
-        ctx.page.drawText(text, {
+        drawSafeText(ctx.page, text, {
           x, y: baselineY - labelSize - 4, size: labelSize, font: ctx.font, color: CHART_MUTED,
         });
         lastRight = x + width;
@@ -854,7 +848,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
       // O valor escrito so no ultimo ponto: o grafico responde "como esta
       // mudando", e o numero de hoje e o unico que alguem vai querer citar.
       const lastIdx = items.length - 1;
-      ctx.page.drawText(lastValue, {
+      drawSafeText(ctx.page, lastValue, {
         x: Math.min(
           pointX(lastIdx) + 5,
           ctx.margin + ctx.contentWidth - ctx.fontBold.widthOfTextAtSize(lastValue, valueSize),
@@ -899,7 +893,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
       for (let li = 0; li < lines.length; li++) {
         ensureSpace(ctx, baseLine);
         if (li === 0) {
-          ctx.page.drawText(bullet, {
+          drawSafeText(ctx.page, bullet, {
             x: ctx.margin,
             y: ctx.y - baseSize,
             size: baseSize,
@@ -910,7 +904,7 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
         let x = ctx.margin + indent;
         for (const tok of lines[li]) {
           const fontRef = pickFont(ctx, tok.run.bold, tok.run.italic);
-          ctx.page.drawText(tok.run.text, {
+          drawSafeText(ctx.page, tok.run.text, {
             x, y: ctx.y - baseSize, size: baseSize, font: fontRef, color: rgb(0.1, 0.1, 0.1),
           });
           x += tok.width;
@@ -938,6 +932,9 @@ function renderBlocks(ctx: RenderCtx, blocks: Block[]) {
 // ====================== Main handler ======================
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Os contadores do sanitizador valem por requisicao (ver _shared/winAnsi.ts).
+  resetWinAnsiReport();
 
   try {
     const body = await req.json();
@@ -1150,7 +1147,7 @@ serve(async (req) => {
     ctx.pages.forEach((p, i) => {
       const txt = `${i + 1} / ${total}`;
       const w = font.widthOfTextAtSize(txt, 9);
-      p.drawText(txt, {
+      drawSafeText(p, txt, {
         x: (pageWidth - w) / 2,
         y: margin - 20,
         size: 9, font, color: rgb(0.5, 0.5, 0.5),
@@ -1158,6 +1155,10 @@ serve(async (req) => {
     });
 
     const pdfBytes = await pdfDoc.save();
+
+    // Com tudo ja desenhado: diz o que precisou virar "?" neste PDF. E daqui
+    // que sai a lista de caracteres a acrescentar no MAPA do winAnsi.ts.
+    logWinAnsiReport(`generate-document-pdf ${document_name || "documento"}`);
 
     // Upload (re-uses the supabase client created at the top of the handler)
     const safeName = (document_name || "documento")
@@ -1198,6 +1199,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
+    // Vale tambem quando algo mais derrubou a geracao: se havia caractere
+    // trocado, ele aparece junto do erro em vez de se perder.
+    logWinAnsiReport("generate-document-pdf (falhou)");
     console.error("generate-document-pdf error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
