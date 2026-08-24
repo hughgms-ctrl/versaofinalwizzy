@@ -3,6 +3,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import {
+  contactAppearsInWorkspace,
+  shareContactWithWorkspace,
+  unshareContactFromWorkspace,
+  workspaceVisibilityOrClause,
+} from '@/lib/contactWorkspaces';
 
 export interface Contact {
   id: string;
@@ -12,6 +18,8 @@ export interface Contact {
   avatar_url: string | null;
   organization_id: string;
   workspace_id?: string | null;
+  /** Outros workspaces em que este mesmo contato também aparece. */
+  shared_workspace_ids?: string[] | null;
   created_at: string;
   updated_at: string;
   metadata: {
@@ -46,10 +54,13 @@ const CONTACT_SELECT = `
   )
 `;
 
-function applyWorkspaceFilter<T extends { is: any; eq: any }>(query: T, selectedWorkspaceId: string | null | undefined): T {
+// O contato aparece no workspace de origem E nos workspaces com quem foi
+// compartilhado — por isso `or` em vez do `.eq('workspace_id')` de antes, que
+// escondia da lista todo contato compartilhado (ver src/lib/contactWorkspaces.ts).
+function applyWorkspaceFilter<T extends { is: any; or: any }>(query: T, selectedWorkspaceId: string | null | undefined): T {
   if (!selectedWorkspaceId) return query;
   if (selectedWorkspaceId === 'unassigned') return query.is('workspace_id', null);
-  return query.eq('workspace_id', selectedWorkspaceId);
+  return query.or(workspaceVisibilityOrClause(selectedWorkspaceId));
 }
 
 // Escapa os caracteres que o PostgREST usa como separadores dentro de `or(...)`
@@ -260,7 +271,7 @@ export function useUpdateContact() {
 export function useCreateContact() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
-  const { selectedWorkspaceId } = useWorkspaceContext();
+  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
   return useMutation({
     mutationFn: async (data: Partial<Contact>) => {
@@ -275,21 +286,6 @@ export function useCreateContact() {
         }
       }
 
-      // Check if contact with this phone already exists
-      if (formattedPhone) {
-        const { data: existingContact } = await supabase
-          .from('contacts')
-          .select('id')
-          .eq('phone', formattedPhone)
-          .eq('organization_id', profile.organization_id)
-          .limit(1)
-          .maybeSingle();
-
-        if (existingContact) {
-          throw new Error('Já existe um contato com este telefone.');
-        }
-      }
-
       // Herda o workspace selecionado quando o chamador não informou um. Sem
       // isto o contato nasce com workspace_id null e some da própria lista que
       // acabou de criá-lo (a lista filtra por workspace), além de esbarrar na
@@ -300,6 +296,74 @@ export function useCreateContact() {
           : selectedWorkspaceId && selectedWorkspaceId !== 'unassigned'
             ? selectedWorkspaceId
             : null;
+
+      // O telefone já existe nesta organização?
+      //
+      // O contato é da org, então duplicar a ficha não é opção -- as duas
+      // brigariam pelas mesmas conversas, etiquetas e campos. Mas barrar
+      // também não serve: até agora, quem estava no workspace B ficava sem o
+      // contato (ele só aparecia no A) e sem poder criá-lo. A saída é
+      // reaproveitar a ficha que já existe e fazê-la aparecer aqui também.
+      if (formattedPhone) {
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('id, name, workspace_id, shared_workspace_ids')
+          .eq('phone', formattedPhone)
+          .eq('organization_id', profile.organization_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingContact) {
+          const existing = existingContact as unknown as {
+            id: string;
+            name: string | null;
+            workspace_id: string | null;
+            shared_workspace_ids: string[] | null;
+          };
+
+          if (contactAppearsInWorkspace(existing, workspaceId)) {
+            throw new Error('Já existe um contato com este telefone.');
+          }
+
+          if (!workspaceId) {
+            // Sem workspace de destino não há o que compartilhar (visão geral ou
+            // "Não atribuído"). Diz onde o contato está, em vez do antigo
+            // "já existe" sem pista nenhuma.
+            const origin = workspaces.find((w) => w.id === existing.workspace_id);
+            throw new Error(
+              origin
+                ? `Já existe um contato com este telefone no workspace ${origin.name}. Selecione o workspace em que você quer usá-lo.`
+                : 'Já existe um contato com este telefone.',
+            );
+          }
+
+          await shareContactWithWorkspace(existing.id, workspaceId);
+
+          // Nome digitado agora só preenche buraco -- não sobrescreve o nome que
+          // o outro time já usa para o mesmo contato.
+          const typedName = typeof data.name === 'string' ? data.name.trim() : '';
+          if (typedName && !existing.name) {
+            await supabase.from('contacts').update({ name: typedName }).eq('id', existing.id);
+          }
+
+          const { data: shared, error: sharedError } = await supabase
+            .from('contacts')
+            .select(CONTACT_SELECT)
+            .eq('id', existing.id)
+            .single();
+          if (sharedError) throw sharedError;
+
+          const origin = workspaces.find((w) => w.id === existing.workspace_id);
+          toast({
+            title: 'Contato compartilhado',
+            description: origin
+              ? `Este contato já existia no workspace ${origin.name} e agora também aparece aqui. É a mesma ficha nos dois -- as conversas continuam separadas por número.`
+              : 'Este contato já existia em outro workspace e agora também aparece aqui.',
+          });
+
+          return shared as unknown as Contact;
+        }
+      }
 
       const { data: newContact, error } = await supabase
         .from('contacts')
@@ -322,6 +386,71 @@ export function useCreateContact() {
       toast({
         title: 'Erro ao criar',
         description: error.message || 'Não foi possível criar o contato.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+/**
+ * Faz o contato aparecer também em outro workspace (ou deixar de aparecer).
+ *
+ * Não é mudança de dono: o workspace de origem continua com ele. É a mesma
+ * ficha vista de dois lugares -- nome, campos e etiquetas são compartilhados;
+ * as conversas continuam separadas por número (regra "workspace = número").
+ */
+export function useShareContactWorkspace() {
+  const queryClient = useQueryClient();
+  const { workspaces } = useWorkspaceContext();
+
+  return useMutation({
+    mutationFn: async ({ contactId, workspaceId }: { contactId: string; workspaceId: string }) => {
+      await shareContactWithWorkspace(contactId, workspaceId);
+      return workspaceId;
+    },
+    onSuccess: (workspaceId) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      const target = workspaces.find((w) => w.id === workspaceId);
+      toast({
+        title: 'Contato compartilhado',
+        description: target
+          ? `Agora ele também aparece no workspace ${target.name}.`
+          : 'Agora ele também aparece no outro workspace.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro ao compartilhar',
+        description: error?.message || 'Não foi possível compartilhar o contato.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useUnshareContactWorkspace() {
+  const queryClient = useQueryClient();
+  const { workspaces } = useWorkspaceContext();
+
+  return useMutation({
+    mutationFn: async ({ contactId, workspaceId }: { contactId: string; workspaceId: string }) => {
+      await unshareContactFromWorkspace(contactId, workspaceId);
+      return workspaceId;
+    },
+    onSuccess: (workspaceId) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      const target = workspaces.find((w) => w.id === workspaceId);
+      toast({
+        title: 'Contato removido do workspace',
+        description: target
+          ? `Ele não aparece mais em ${target.name}, mas continua no workspace de origem.`
+          : 'Ele continua no workspace de origem.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro ao remover',
+        description: error?.message || 'Não foi possível remover o contato deste workspace.',
         variant: 'destructive',
       });
     },

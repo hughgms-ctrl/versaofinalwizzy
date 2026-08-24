@@ -12,11 +12,12 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, MessageSquare, Kanban, Loader2 } from 'lucide-react';
+import { MoreHorizontal, MessageSquare, Kanban, Loader2, Users, UserMinus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useDeleteContact } from '@/hooks/useContacts';
+import { useDeleteContact, useShareContactWorkspace, useUnshareContactWorkspace } from '@/hooks/useContacts';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useState } from 'react';
 import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
 import { useQueryClient } from '@tanstack/react-query';
@@ -73,6 +74,25 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
   const moveConversation = useMoveConversation();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { workspaces, selectedWorkspaceId } = useWorkspaceContext();
+  const shareWorkspace = useShareContactWorkspace();
+  const unshareWorkspace = useUnshareContactWorkspace();
+
+  // Workspaces em que este contato ainda NÃO aparece -- os que dá para oferecer.
+  const sharedWorkspaceIds = contact.shared_workspace_ids || [];
+  const availableWorkspaces = workspaces.filter(
+    (w) => w.id !== contact.workspace_id && !sharedWorkspaceIds.includes(w.id),
+  );
+  // O contato está nesta tela por compartilhamento (a origem dele é outra)?
+  // Só nesse caso faz sentido tirá-lo daqui: o workspace de origem não sai por
+  // este caminho, senão o contato ficaria sem casa.
+  const isSharedHere =
+    !!selectedWorkspaceId &&
+    selectedWorkspaceId !== 'unassigned' &&
+    sharedWorkspaceIds.includes(selectedWorkspaceId);
+  const sharedWorkspaceNames = sharedWorkspaceIds
+    .map((id) => workspaces.find((w) => w.id === id)?.name)
+    .filter(Boolean) as string[];
 
   const handleMoveToPipeline = async (pipelineId: string, columnId: string) => {
     setIsMovingToPipeline(true);
@@ -202,6 +222,16 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
               </span>
             )}
             {/* Tags - Show max 2 */}
+            {sharedWorkspaceNames.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="text-[9px] px-1 py-0 h-4 gap-0.5 flex-shrink-0"
+                title={`Também aparece em: ${sharedWorkspaceNames.join(', ')}`}
+              >
+                <Users className="h-2.5 w-2.5" />
+                {sharedWorkspaceNames.length + 1} workspaces
+              </Badge>
+            )}
             {contact.tags && contact.tags.length > 0 && (
               <>
                 {hasName && <span className="text-muted-foreground text-[10px]">•</span>}
@@ -284,6 +314,42 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
                   )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger onSelect={(e) => e.preventDefault()}>
+                  <Users className="h-4 w-4 mr-2" />
+                  Mostrar em outro workspace
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56" onClick={(e) => e.stopPropagation()}>
+                  {availableWorkspaces.length === 0 ? (
+                    <DropdownMenuItem disabled>Já aparece em todos</DropdownMenuItem>
+                  ) : (
+                    availableWorkspaces.map((workspace) => (
+                      <DropdownMenuItem
+                        key={workspace.id}
+                        disabled={shareWorkspace.isPending}
+                        onSelect={() =>
+                          shareWorkspace.mutate({ contactId: contact.id, workspaceId: workspace.id })
+                        }
+                      >
+                        {workspace.name}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              {isSharedHere && (
+                <DropdownMenuItem
+                  disabled={unshareWorkspace.isPending}
+                  onSelect={() =>
+                    unshareWorkspace.mutate({ contactId: contact.id, workspaceId: selectedWorkspaceId! })
+                  }
+                >
+                  <UserMinus className="h-4 w-4 mr-2" />
+                  Tirar deste workspace
+                </DropdownMenuItem>
+              )}
+
               <DropdownMenuItem
                 onSelect={() => setShowDeleteConfirm(true)}
                 className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
@@ -301,6 +367,16 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
             <AlertDialogTitle>Excluir contato?</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir este contato? As conversas e dados associados a ele também poderão ser perdidos no sistema.
+              {sharedWorkspaceNames.length > 0 && (
+                <>
+                  {' '}
+                  <strong>
+                    Este contato é o mesmo em {sharedWorkspaceNames.length + 1} workspaces
+                    ({sharedWorkspaceNames.join(', ')}) — excluir aqui exclui para todos.
+                  </strong>{' '}
+                  Para tirá-lo só deste workspace, use "Tirar deste workspace".
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

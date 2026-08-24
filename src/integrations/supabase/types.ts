@@ -2845,6 +2845,7 @@ export type Database = {
           name: string | null
           organization_id: string
           phone: string
+          shared_workspace_ids: string[]
           updated_at: string
           workspace_id: string | null
         }
@@ -2857,6 +2858,7 @@ export type Database = {
           name?: string | null
           organization_id: string
           phone: string
+          shared_workspace_ids?: string[]
           updated_at?: string
           workspace_id?: string | null
         }
@@ -2869,6 +2871,7 @@ export type Database = {
           name?: string | null
           organization_id?: string
           phone?: string
+          shared_workspace_ids?: string[]
           updated_at?: string
           workspace_id?: string | null
         }

@@ -3199,6 +3199,26 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       if (Object.keys(updateData).length > 0) {
         await supabase.from('contacts').update(updateData).eq('id', existing.id);
       }
+
+      // Mensagem chegou por um número de OUTRO workspace: a conversa nasce lá
+      // (regra "workspace = número"), então o contato também precisa aparecer
+      // lá -- senão o time vê a conversa e não acha a ficha de quem está
+      // falando. O contato NÃO é movido: continua visível no workspace de
+      // origem.
+      const sharedWorkspaces: string[] = existing.shared_workspace_ids || [];
+      const ownerWorkspace = updateData.workspace_id ?? existing.workspace_id;
+      if (workspaceId && ownerWorkspace !== workspaceId && !sharedWorkspaces.includes(workspaceId)) {
+        const { error: shareError } = await supabase.rpc('share_contact_with_workspace', {
+          _contact_id: existing.id,
+          _workspace_id: workspaceId,
+        });
+        if (shareError) {
+          console.error('[CONTACT] Falha ao compartilhar contato com workspace:', shareError);
+        } else {
+          updateData.shared_workspace_ids = [...sharedWorkspaces, workspaceId];
+        }
+      }
+
       return { ...existing, ...updateData };
     }
 
@@ -3694,7 +3714,18 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     // contatos que dispararam a palavra-chave, daí "não são todas, algumas".
     if (campaignFull?.workspace_id && !conversation.workspace_id) {
       console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
-      await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
+      // Mesma regra para o CONTATO: a guarda acima olha a conversa, mas o
+      // contato pode já ter dono (workspace A) mesmo com a conversa sem
+      // workspace -- e aí este update o arrastaria para B. A RPC adota só se
+      // ele estiver sem workspace; tendo dono, ela apenas o faz aparecer aqui
+      // também.
+      const { error: campaignShareError } = await supabase.rpc('share_contact_with_workspace', {
+        _contact_id: contact.id,
+        _workspace_id: campaignFull.workspace_id,
+      });
+      if (campaignShareError) {
+        console.error('[CAMPAIGN] Falha ao dar visibilidade do contato ao workspace:', campaignShareError);
+      }
       await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
     } else if (campaignFull?.workspace_id) {
       console.log(`[CAMPAIGN] Conversa ${conversation.id} já pertence ao workspace ${conversation.workspace_id} — campanha não move`);

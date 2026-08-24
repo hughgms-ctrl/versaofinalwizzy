@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { shareContactWithWorkspace } from '@/lib/contactWorkspaces';
 import { useAuth } from './useAuth';
 import { toast } from '@/hooks/use-toast';
 
@@ -180,11 +181,12 @@ export function useCreateScheduledMessage() {
 
           if (contactError) throw contactError;
           resolvedContactId = newContact.id;
-        } else if (workspace_id && existingContact.workspace_id !== workspace_id) {
-          await supabase
-            .from('contacts')
-            .update({ workspace_id })
-            .eq('id', resolvedContactId);
+        } else if (workspace_id) {
+          // Antes isto MOVIA o contato para o workspace da programação, e ele
+          // sumia da lista de quem já trabalhava nele no workspace de origem.
+          // Agora ele só passa a aparecer aqui também -- idempotente, não faz
+          // nada se já aparecia.
+          await shareContactWithWorkspace(resolvedContactId, workspace_id);
         }
 
         resolvedMessageData = {

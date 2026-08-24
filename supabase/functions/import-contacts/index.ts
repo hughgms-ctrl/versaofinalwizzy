@@ -234,7 +234,7 @@ serve(async (req) => {
 
                 const { data: matching } = await admin
                     .from('contacts')
-                    .select('id, phone, name, email, metadata, workspace_id, updated_at, created_at')
+                    .select('id, phone, name, email, metadata, workspace_id, shared_workspace_ids, updated_at, created_at')
                     .eq('organization_id', organizationId)
                     .in('phone', variants.length > 0 ? variants : [rawPhone])
                     .order('updated_at', { ascending: false })
@@ -266,16 +266,29 @@ serve(async (req) => {
                     };
                     if (name) updates.name = name;
                     if (email) updates.email = email;
-                    // Só move de workspace se o contato ainda não tinha um: mudar o
-                    // workspace de um contato existente o faria sumir da tela de
-                    // quem trabalha no workspace antigo.
-                    if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+                    // Nunca move de workspace: mudar o workspace de um contato
+                    // existente o faria sumir da tela de quem trabalha no
+                    // workspace antigo. Se o contato ainda não tem workspace, a
+                    // RPC abaixo o adota; se já tem outro, ela o faz aparecer
+                    // TAMBÉM no workspace desta importação.
 
                     const { error: updateError } = await admin
                         .from('contacts')
                         .update(updates)
                         .eq('id', existing.id);
                     if (updateError) throw updateError;
+
+                    // A checagem local evita uma chamada por linha da planilha
+                    // num lote onde quase todo mundo já está visível aqui.
+                    const appearsHere = existing.workspace_id === workspaceId
+                        || (existing.shared_workspace_ids || []).includes(workspaceId);
+                    if (workspaceId && !appearsHere) {
+                        const { error: shareError } = await admin.rpc('share_contact_with_workspace', {
+                            _contact_id: existing.id,
+                            _workspace_id: workspaceId,
+                        });
+                        if (shareError) throw shareError;
+                    }
 
                     touchedContactIds.push(existing.id);
                     updated++;
