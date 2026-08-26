@@ -9,6 +9,7 @@ import {
   unshareContactFromWorkspace,
   workspaceVisibilityOrClause,
 } from '@/lib/contactWorkspaces';
+import { withCountryCode } from '@/lib/phoneVariants';
 
 export interface Contact {
   id: string;
@@ -268,22 +269,31 @@ export function useUpdateContact() {
   });
 }
 
+export interface CreateContactInput extends Partial<Contact> {
+  /**
+   * O telefone já vem em E.164 (com o código do país) e não deve ser adivinhado.
+   * É o que a tela de novo contato manda, porque lá o país foi escolhido na mão.
+   */
+  phoneIsE164?: boolean;
+}
+
 export function useCreateContact() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
   return useMutation({
-    mutationFn: async (data: Partial<Contact>) => {
+    mutationFn: async ({ phoneIsE164, ...data }: CreateContactInput) => {
       if (!profile?.organization_id) throw new Error('Organization ID is required');
 
-      // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
+      // Antes daqui saía um `55` na frente de todo número com 10 ou 11 dígitos,
+      // o que transformava celular estrangeiro em número brasileiro inexistente.
+      // Com o país escolhido na tela não há o que inferir; sem ele, cai no
+      // withCountryCode, que preserva quem já traz código de outro país.
       let formattedPhone = data.phone;
       if (formattedPhone) {
         formattedPhone = formattedPhone.replace(/\D/g, '');
-        if (formattedPhone.length === 10 || formattedPhone.length === 11) {
-          formattedPhone = `55${formattedPhone}`;
-        }
+        if (!phoneIsE164) formattedPhone = withCountryCode(formattedPhone);
       }
 
       // Herda o workspace selecionado quando o chamador não informou um. Sem

@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, Plus, UserPlus } from 'lucide-react';
 import { useCreateContact } from '@/hooks/useContacts';
+import { PhoneNumberInput } from '@/components/shared/PhoneNumberInput';
+import { DEFAULT_COUNTRY, toE164, validateNationalNumber, type Country } from '@/lib/countries';
 
 interface NewContactDialogProps {
     open: boolean;
@@ -21,33 +23,34 @@ interface NewContactDialogProps {
 
 export function NewContactDialog({ open, onOpenChange, onContactCreated }: NewContactDialogProps) {
     const [name, setName] = useState('');
+    const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
+    // Número NACIONAL (sem o código do país) -- o E.164 é montado na hora de salvar.
     const [phone, setPhone] = useState('');
+    // Só aparece depois de tentar salvar: validar enquanto digita acusa erro em
+    // número que ainda está pela metade.
+    const [error, setError] = useState<string | null>(null);
     const createContact = useCreateContact();
 
-    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        // Only allow numbers, plus sign and spaces
-        const value = e.target.value.replace(/[^\d+\s]/g, '');
-        setPhone(value);
-    };
-
     const handleCreate = async () => {
-        // Clean phone number: remove non-digits, ensuring country code pattern
-        const cleanPhone = phone.replace(/\D/g, '');
-
-        if (cleanPhone.length < 10) {
-            alert('Telefone inválido. Digite no formato: DD + Número (ex: 11999999999)');
+        const invalid = validateNationalNumber(country, phone);
+        if (invalid) {
+            setError(invalid);
             return;
         }
+        setError(null);
 
         try {
             const contact = await createContact.mutateAsync({
                 name: name.trim() || null,
-                phone: cleanPhone,
+                phone: toE164(country, phone),
+                // Já vem com o código do país escolhido: o hook não deve chutar o 55.
+                phoneIsE164: true,
             });
 
             onOpenChange(false);
             setName('');
             setPhone('');
+            setCountry(DEFAULT_COUNTRY);
 
             if (onContactCreated && contact) {
                 onContactCreated(contact);
@@ -76,16 +79,29 @@ export function NewContactDialog({ open, onOpenChange, onContactCreated }: NewCo
                 <div className="grid gap-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefone (obrigatório)</Label>
-                        <Input
+                        <PhoneNumberInput
                             id="phone"
-                            placeholder="(11) 99999-9999"
+                            country={country}
+                            onCountryChange={(next) => {
+                                setCountry(next);
+                                setError(null);
+                            }}
                             value={phone}
-                            onChange={handlePhoneChange}
-                            autoComplete="off"
+                            onChange={(value) => {
+                                setPhone(value);
+                                if (error) setError(null);
+                            }}
+                            onEnter={handleCreate}
+                            placeholder={country.iso2 === 'br' ? '(11) 99999-9999' : 'Número sem o código do país'}
                         />
-                        <p className="text-[10px] text-muted-foreground">
-                            Apenas números com DDD. Codigo do Brasil (55) não é obrigatório para números nacionais.
-                        </p>
+                        {error ? (
+                            <p className="text-[11px] text-destructive">{error}</p>
+                        ) : (
+                            <p className="text-[10px] text-muted-foreground">
+                                Escolha o país e digite o número sem o +{country.dialCode}. Colar o número
+                                completo (ex: +1 415 555 0100) também funciona -- o país é reconhecido sozinho.
+                            </p>
+                        )}
                     </div>
 
                     <div className="space-y-2">
@@ -104,7 +120,7 @@ export function NewContactDialog({ open, onOpenChange, onContactCreated }: NewCo
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
                     <Button
                         onClick={handleCreate}
-                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 10 || createContact.isPending}
+                        disabled={!phone.trim() || createContact.isPending}
                         className="gap-2"
                     >
                         {createContact.isPending ? (
