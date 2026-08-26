@@ -78,6 +78,14 @@ async function ensureUazapiLabel(baseUrl: string, token: string, tagName: string
   return null;
 }
 
+// A Evolution guarda o nome da etiqueta sem nenhum caractere fora do ASCII
+// imprimível (replace(/[^ -~]/g, '') no fonte da v2.3.6), então o findLabels
+// devolve "Oramento" onde o cliente escreveu Orçamento. A tag da Wizzy guarda o
+// nome bonito, e comparar cru não casaria com a etiqueta certa.
+function asciiLabelKey(name: string): string {
+  return String(name || '').replace(/[^ -~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
 // ── Evolution: aplica/remove etiqueta via POST /label/handleLabel ──
 // A Evolution não expõe criação de etiqueta; se a tag não tiver etiqueta
 // correspondente no WhatsApp, respondemos skipped com orientação (a etiqueta
@@ -115,9 +123,9 @@ async function applyEvolutionLabel(
     if (response?.ok) {
       const body = await response.json().catch(() => null);
       const labels = Array.isArray(body) ? body : (Array.isArray(body?.labels) ? body.labels : []);
-      const normalizedName = tag.name.trim().toLowerCase();
+      const normalizedName = asciiLabelKey(tag.name);
       const found = labels.find((item: any) =>
-        String(item?.name || '').trim().toLowerCase() === normalizedName);
+        asciiLabelKey(item?.name) === normalizedName);
       if (found) {
         labelId = String(found.labelId ?? found.id ?? '').trim() || null;
         if (labelId) {
