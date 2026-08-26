@@ -55,6 +55,25 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
+/**
+ * Um agendamento só vale se o disparo estiver ao menos MIN_LEAD_MINUTES no futuro:
+ * o cron leva alguns minutos para pegar a fila, então marcar "para agora" (ou para trás)
+ * significaria um envio atrasado ou que nunca sai.
+ */
+const MIN_LEAD_MINUTES = 3;
+
+const parseScheduledAt = (date: string, time: string): Date | null => {
+  if (!date || !time) return null;
+  const dt = new Date(`${date}T${time}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const isFarEnoughInFuture = (date: string, time: string): boolean => {
+  const dt = parseScheduledAt(date, time);
+  if (!dt) return false;
+  return dt.getTime() >= Date.now() + MIN_LEAD_MINUTES * 60 * 1000;
+};
+
 interface CreateScheduledMessageDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -248,7 +267,16 @@ export function CreateScheduledMessageDialog({
 
   const handleSubmit = async () => {
     if (!scheduledDate || !scheduledTime) return;
-    
+
+    if (!isFarEnoughInFuture(scheduledDate, scheduledTime)) {
+      toast({
+        title: 'Horário inválido',
+        description: `O disparo precisa ser agendado para pelo menos ${MIN_LEAD_MINUTES} minutos no futuro.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}`).toISOString();
     
     // Groups only support direct messages (flows operate on a contact/conversation).
@@ -385,8 +413,23 @@ export function CreateScheduledMessageDialog({
     );
   };
 
+  const minScheduleAt = useMemo(
+    () => new Date(Date.now() + MIN_LEAD_MINUTES * 60 * 1000),
+    [scheduledDate, scheduledTime],
+  );
+
+  // Em datas futuras qualquer horário serve; só o dia de hoje tem piso.
+  const minTimeForSelectedDate =
+    scheduledDate === format(minScheduleAt, 'yyyy-MM-dd')
+      ? format(minScheduleAt, 'HH:mm')
+      : undefined;
+
+  const isScheduleTooSoon =
+    !!scheduledDate && !!scheduledTime && !isFarEnoughInFuture(scheduledDate, scheduledTime);
+
   const isValid = () => {
     if (!scheduledDate || !scheduledTime) return false;
+    if (!isFarEnoughInFuture(scheduledDate, scheduledTime)) return false;
     if (contentType === 'message' && !messageContent.trim() && !mediaUrl) return false;
     if (contentType === 'flow' && !flowId) return false;
     if (targetType === 'single' && !contactId) return false;
@@ -801,30 +844,43 @@ export function CreateScheduledMessageDialog({
             )}
 
             {/* Schedule */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Data
-                </Label>
-                <Input
-                  type="date"
-                  value={scheduledDate}
-                  onChange={(e) => setScheduledDate(e.target.value)}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                />
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Data
+                  </Label>
+                  <Input
+                    type="date"
+                    value={scheduledDate}
+                    onChange={(e) => setScheduledDate(e.target.value)}
+                    min={format(new Date(), 'yyyy-MM-dd')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Horário
+                  </Label>
+                  <Input
+                    type="time"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    min={minTimeForSelectedDate}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Horário
-                </Label>
-                <Input
-                  type="time"
-                  value={scheduledTime}
-                  onChange={(e) => setScheduledTime(e.target.value)}
-                />
-              </div>
+              {isScheduleTooSoon ? (
+                <p className="text-xs text-destructive">
+                  O disparo precisa ser agendado para pelo menos {MIN_LEAD_MINUTES} minutos no futuro
+                  (a partir de {format(minScheduleAt, "dd/MM 'às' HH:mm", { locale: ptBR })}).
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Agende para pelo menos {MIN_LEAD_MINUTES} minutos no futuro.
+                </p>
+              )}
             </div>
 
             {/* Delay between contacts */}
