@@ -6,6 +6,7 @@ import { useInfiniteContacts, useContactsCount, Contact, CustomFieldFilter } fro
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useContactFilterJoins, ContactFilterJoins } from '@/hooks/useContactFilterJoins';
+import { contactAppearsInWorkspace } from '@/lib/contactWorkspaces';
 import { parseISO, isBefore, isAfter, isSameDay } from 'date-fns';
 import {
   Search,
@@ -59,8 +60,9 @@ function matchesCondition(contact: Contact, condition: FilterCondition, joins?: 
   }
 
   if (condition.field === 'workspace') {
-    const contactWorkspaceId = (contact as any).workspace_id ?? null;
-    const matches = condition.value === 'unassigned' ? !contactWorkspaceId : contactWorkspaceId === condition.value;
+    // Origem OU compartilhamento: o contato compartilhado aparece no workspace
+    // sem que workspace_id mude (ver src/lib/contactWorkspaces.ts).
+    const matches = contactAppearsInWorkspace(contact, condition.value);
     return matches === wantMatch;
   }
 
@@ -132,7 +134,7 @@ const ContactsPage = () => {
   } = useInfiniteContacts(debouncedSearch, customFieldFilters);
   const { data: totalCount } = useContactsCount(debouncedSearch, customFieldFilters);
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
-  const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const { data: filterJoins } = useContactFilterJoins();
 
   const contacts = useMemo(
@@ -152,12 +154,13 @@ const ContactsPage = () => {
 
     return contacts.filter(contact => {
       // === WORKSPACE FILTER ===
-      if (selectedWorkspaceId) {
-        if (selectedWorkspaceId === 'unassigned') {
-          if ((contact as any).workspace_id) return false;
-        } else if (selectedWorkspace) {
-          if ((contact as any).workspace_id !== selectedWorkspaceId) return false;
-        }
+      // O servidor já devolve exatamente os contatos deste workspace (origem +
+      // compartilhados -- ver applyWorkspaceFilter). Este passo repete a MESMA
+      // regra no cliente: comparar workspace_id cru aqui derrubava justamente o
+      // contato compartilhado que o servidor tinha acabado de trazer, e o
+      // usuário via "já existe/compartilhado" sem nunca achar o contato aqui.
+      if (selectedWorkspaceId && !contactAppearsInWorkspace(contact, selectedWorkspaceId)) {
+        return false;
       }
 
       // A busca por texto é aplicada no servidor (useInfiniteContacts), pra
@@ -174,7 +177,7 @@ const ContactsPage = () => {
 
       return true;
     });
-  }, [contacts, filters, selectedWorkspaceId, selectedWorkspace, filterJoins]);
+  }, [contacts, filters, selectedWorkspaceId, filterJoins]);
 
   // Seleção múltipla para ações em massa
   const selectedContacts = useMemo(
