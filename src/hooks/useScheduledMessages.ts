@@ -8,6 +8,8 @@ export interface ScheduledMessage {
   id: string;
   organization_id: string;
   workspace_id: string | null;
+  /** Pasta da aba Programados (null = raiz). */
+  folder_id: string | null;
   created_by: string | null;
   scheduled_at: string;
   status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
@@ -80,6 +82,7 @@ export interface CreateScheduledMessageInput {
   manual_name?: string | null;
   name?: string | null;
   workspace_id?: string | null;
+  folder_id?: string | null;
   delay_between_contacts?: number | null; // seconds between each contact
   batch_size_max?: number | null; // max lote size; system draws 1..max per batch (null/0 = off)
   batch_pause_minutes?: number | null; // pause (minutes) between batches

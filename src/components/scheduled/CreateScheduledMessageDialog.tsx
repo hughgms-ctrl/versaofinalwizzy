@@ -84,6 +84,8 @@ interface CreateScheduledMessageDialogProps {
    * é criada ao salvar — o original permanece intacto no histórico.
    */
   initialValues?: ScheduledMessage | null;
+  /** Pasta em que a programação será criada (null = raiz). */
+  folderId?: string | null;
 }
 
 const getMediaKind = (type: string) => {
@@ -98,6 +100,7 @@ export function CreateScheduledMessageDialog({
   onOpenChange,
   defaultContactId,
   initialValues,
+  folderId = null,
 }: CreateScheduledMessageDialogProps) {
   const isReschedule = !!initialValues;
   const { data: conversations = [] } = useConversations();
@@ -302,6 +305,7 @@ export function CreateScheduledMessageDialog({
       manual_name: targetType === 'phone' ? manualName : null,
       name: name || null,
       workspace_id: selectedWorkspaceId || null,
+      folder_id: folderId,
       delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
       batch_size_max: batchSizeMax > 0 ? batchSizeMax : null,
       batch_pause_minutes: batchSizeMax > 0 && batchPauseMinutes > 0 ? batchPauseMinutes : null,

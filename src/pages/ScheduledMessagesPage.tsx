@@ -5,6 +5,9 @@ import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateSched
 
 const ScheduledMessagesPage = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // A pasta aberta fica aqui porque o botão "Nova programação" mora no header
+  // da página: sem isso a programação criada de dentro de uma pasta cairia na raiz.
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
 
   return (
     <MainLayout 
@@ -15,11 +18,15 @@ const ScheduledMessagesPage = () => {
       newButtonLabel="Nova programação"
       onNewClick={() => setCreateDialogOpen(true)}
     >
-      <ScheduledMessagesList />
-      
+      <ScheduledMessagesList
+        openFolderId={openFolderId}
+        onOpenFolderChange={setOpenFolderId}
+      />
+
       <CreateScheduledMessageDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        folderId={openFolderId}
       />
     </MainLayout>
   );
