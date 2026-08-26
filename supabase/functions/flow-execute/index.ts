@@ -109,6 +109,24 @@ async function resolveWhatsAppInstance(
   organizationId: string,
   conversationInstanceId?: string | null,
 ) {
+  // Instância designada (número do workspace ou da conversa): é a ÚNICA
+  // permitida. Buscamos direto por id, SEM filtrar por status — se o número
+  // caiu, o fluxo falha em vez de sair pelo número de outro workspace.
+  if (conversationInstanceId) {
+    const { data: designatedInstance, error: designatedError } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('id', conversationInstanceId)
+      .maybeSingle();
+    if (designatedInstance) return { instance: designatedInstance, error: null };
+    console.warn(
+      `[FLOW] Instância designada ${conversationInstanceId} não encontrada na org ${organizationId}; ` +
+      `recusando o envio em vez de usar outro número.`,
+    );
+    return { instance: null, error: designatedError };
+  }
+
   const strategy = await loadProviderStrategy(supabase);
   const preferredProviders: Provider[] = [];
   if (providerEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
@@ -124,11 +142,6 @@ async function resolveWhatsAppInstance(
     .order('created_at', { ascending: false });
 
   if (error || !instances?.length) return { instance: null, error };
-
-  const conversationInstance = conversationInstanceId
-    ? instances.find((item: any) => item.id === conversationInstanceId)
-    : null;
-  if (conversationInstance) return { instance: conversationInstance, error: null };
 
   for (const provider of preferredProviders) {
     const instance = instances.find((item: any) => (item.provider || 'uazapi') === provider);

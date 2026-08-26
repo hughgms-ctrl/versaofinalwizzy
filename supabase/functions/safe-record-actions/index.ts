@@ -324,6 +324,9 @@ async function resolveCampaignInstance(admin: any, organizationId: string, works
       .eq('organization_id', organizationId)
       .maybeSingle();
 
+    // Workspace com número: ele é o ÚNICO permitido. Se a instância sumiu,
+    // devolvemos null — cair no fallback por org mandaria pelo número de outro
+    // workspace.
     if (workspace?.whatsapp_instance_id) {
       const { data: instance } = await admin
         .from('whatsapp_instances')
@@ -331,7 +334,7 @@ async function resolveCampaignInstance(admin: any, organizationId: string, works
         .eq('id', workspace.whatsapp_instance_id)
         .eq('organization_id', organizationId)
         .maybeSingle();
-      if (instance?.id) return instance;
+      return instance?.id ? instance : null;
     }
   }
 

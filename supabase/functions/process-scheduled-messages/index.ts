@@ -95,7 +95,7 @@ interface Contact {
 async function resolveScheduledInstance(
   supabase: any,
   scheduled: ScheduledMessage,
-): Promise<{ instance: any; blocked: boolean }> {
+): Promise<{ instance: any; blocked: boolean; reason: string }> {
   const binding = await resolveWorkspaceInstanceBinding(
     supabase,
     scheduled.organization_id,
@@ -104,7 +104,7 @@ async function resolveScheduledInstance(
 
   // Workspace sem número associado: não enviamos por outro número da org.
   if (binding.blocked) {
-    return { instance: null, blocked: true };
+    return { instance: null, blocked: true, reason: WORKSPACE_WITHOUT_NUMBER_ERROR };
   }
 
   const instance = await resolveWhatsAppInstance(
@@ -112,11 +112,22 @@ async function resolveScheduledInstance(
     scheduled.organization_id,
     binding.workspaceInstanceId,
   );
-  return { instance, blocked: false };
+
+  // O workspace TEM número, mas ele sumiu (instância apagada). Bloqueamos: sem
+  // isso o agendamento seguiria com instância nula e o envio cairia no fallback
+  // por organização — ou seja, sairia pelo número de OUTRO workspace.
+  if (binding.workspaceInstanceId && !instance) {
+    return { instance: null, blocked: true, reason: WORKSPACE_INSTANCE_MISSING_ERROR };
+  }
+
+  return { instance, blocked: false, reason: '' };
 }
 
 const WORKSPACE_WITHOUT_NUMBER_ERROR =
   'Workspace sem número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.';
+
+const WORKSPACE_INSTANCE_MISSING_ERROR =
+  'O número associado a este workspace não está mais disponível. Reconecte o número do workspace para enviar — o envio NÃO é feito por outro número.';
 
 /**
  * A coluna paused_at (pausa manual pelo painel) chega numa migration separada.
@@ -717,13 +728,17 @@ async function processContactCampaign(
   scheduled: ScheduledMessage,
   deadlineAt: number,
 ): Promise<{ done: boolean }> {
-  const { instance: scheduledInstance, blocked: workspaceBlocked } = await resolveScheduledInstance(supabase, scheduled);
+  const {
+    instance: scheduledInstance,
+    blocked: workspaceBlocked,
+    reason: blockedReason,
+  } = await resolveScheduledInstance(supabase, scheduled);
   if (workspaceBlocked) {
-    console.error(`[scheduled ${scheduled.id}] ${WORKSPACE_WITHOUT_NUMBER_ERROR}`);
+    console.error(`[scheduled ${scheduled.id}] ${blockedReason}`);
     // Marca todos os pendentes como falha para o resumo refletir o motivo real.
     await supabase
       .from('scheduled_message_contacts')
-      .update({ status: 'failed', error_message: WORKSPACE_WITHOUT_NUMBER_ERROR })
+      .update({ status: 'failed', error_message: blockedReason })
       .eq('scheduled_message_id', scheduled.id)
       .eq('status', 'pending');
     return { done: true };

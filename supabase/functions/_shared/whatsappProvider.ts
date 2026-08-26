@@ -133,6 +133,27 @@ export async function resolveWhatsAppInstance(
   organizationId: string,
   conversationInstanceId?: string | null,
 ) {
+  // Instância designada (número do workspace ou da conversa): é a ÚNICA
+  // permitida. Buscamos direto por id, SEM filtrar por status — o número
+  // atrelado ao workspace continua sendo o dono da conversa mesmo com o status
+  // dessincronizado ou o número caído. Se ele não estiver disponível, FALHAMOS;
+  // jamais caímos no fallback por organização, que mandaria a mensagem pelo
+  // número de outro workspace (mesma regra do zapi-send-message).
+  if (conversationInstanceId) {
+    const { data: designatedInstance } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('id', conversationInstanceId)
+      .maybeSingle();
+    if (designatedInstance) return designatedInstance;
+    console.warn(
+      `[SEND_ROUTING] Instância designada ${conversationInstanceId} não encontrada na org ${organizationId}; ` +
+      `recusando o envio em vez de usar outro número.`,
+    );
+    return null;
+  }
+
   const strategy = await loadProviderStrategy(supabase);
   const preferredProviders: WhatsAppProvider[] = [];
   if (providerEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
@@ -148,11 +169,6 @@ export async function resolveWhatsAppInstance(
     .order('created_at', { ascending: false });
 
   if (error || !instances?.length) return null;
-
-  const conversationInstance = conversationInstanceId
-    ? instances.find((item: any) => item.id === conversationInstanceId)
-    : null;
-  if (conversationInstance) return conversationInstance;
 
   // Prefer the instance the org marked as active (the number actually "in use").
   // This mirrors how the conversations RLS (get_active_instance_id) and

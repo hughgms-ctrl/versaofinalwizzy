@@ -256,15 +256,16 @@ async function parseProviderMessageId(response: Response): Promise<string | null
 }
 
 async function loadConversationInstance(supabase: any, organizationId: string, conversationInstanceId?: string | null) {
+  // Instância designada: única permitida, buscada sem filtro de status. Se não
+  // existe, devolvemos null em vez de cair no primeiro número conectado da org.
   if (conversationInstanceId) {
     const { data } = await supabase
       .from('whatsapp_instances')
       .select('*')
       .eq('id', conversationInstanceId)
       .eq('organization_id', organizationId)
-      .eq('status', 'connected')
       .maybeSingle();
-    if (data) return data;
+    return data || null;
   }
 
   const { data } = await supabase
@@ -720,23 +721,33 @@ Deno.serve(async (req) => {
     const connectedInstancesByOrg = new Map<string, any[]>();
     const instanceById = new Map<string, any>();
     if (orgIds.length) {
+      // Sem filtro de status: a instância DESIGNADA da conversa precisa ser
+      // encontrada mesmo caída/dessincronizada, senão o follow-up cairia no
+      // fallback por organização e sairia pelo número de outro workspace.
       const { data: instRows } = await supabase
         .from('whatsapp_instances')
         .select('*')
         .in('organization_id', orgIds)
-        .eq('status', 'connected')
         .order('updated_at', { ascending: false });
       for (const inst of instRows || []) {
         instanceById.set(inst.id, inst);
+        if (inst.status !== 'connected') continue;
         if (!connectedInstancesByOrg.has(inst.organization_id)) connectedInstancesByOrg.set(inst.organization_id, []);
         connectedInstancesByOrg.get(inst.organization_id)!.push(inst);
       }
     }
 
     const resolveInstance = (organizationId: string, conversationInstanceId?: string | null) => {
+      // Conversa com número próprio: é o ÚNICO permitido. Não achou (instância
+      // apagada)? Falha — nunca substituímos pelo número de outro workspace.
       if (conversationInstanceId) {
         const inst = instanceById.get(conversationInstanceId);
         if (inst && inst.organization_id === organizationId) return inst;
+        console.warn(
+          `[FLOW TIMEOUTS] Instância designada ${conversationInstanceId} não encontrada na org ${organizationId}; ` +
+          `follow-up não enviado (sem fallback para outro número).`,
+        );
+        return null;
       }
       return (connectedInstancesByOrg.get(organizationId) || [])[0] || null;
     };
