@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -45,7 +45,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { confirmDialog } from '@/lib/confirmDialog';
 import { useFlows, useToggleFlowActive, useDeleteFlow, useToggleFlowVisibleInChat, useDuplicateFlow } from '@/hooks/useFlows';
 import {
@@ -112,7 +112,18 @@ const FlowsPage = () => {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolder, setEditingFolder] = useState<FlowFolder | null>(null);
-  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
+  // A pasta aberta vive na URL (?folder=...): como state local ela se perdia ao
+  // sair para o Flow Builder, e o "voltar" caia sempre na raiz de Fluxos.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openFolderId = searchParams.get('folder');
+  const setOpenFolderId = useCallback((folderId: string | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (folderId) next.set('folder', folderId);
+      else next.delete('folder');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
   const [folderWorkspaceIds, setFolderWorkspaceIds] = useState<string[]>([]);
@@ -152,7 +163,8 @@ const FlowsPage = () => {
   };
 
   const handleEditFlow = (flowId: string) => {
-    navigate(`/flow-builder?id=${flowId}`);
+    // Leva a pasta atual junto para o "voltar" do builder retornar para ela.
+    navigate(`/flow-builder?id=${flowId}${openFolderId ? `&folder=${openFolderId}` : ''}`);
   };
 
   const handleDeleteFlow = async (flowId: string) => {

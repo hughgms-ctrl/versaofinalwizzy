@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,6 +104,10 @@ export function FlowToolbar({
   isGenerating = false,
 }: FlowToolbarProps) {
   const navigate = useNavigate();
+  // Quem abriu o fluxo de dentro de uma pasta manda ?folder= junto: o voltar
+  // precisa devolver para a pasta, nao para a raiz de Fluxos.
+  const [searchParams] = useSearchParams();
+  const backFolderId = searchParams.get('folder');
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -124,7 +128,7 @@ export function FlowToolbar({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => navigate('/flows')}
+          onClick={() => navigate(backFolderId ? `/flows?folder=${backFolderId}` : '/flows')}
           className="gap-1.5"
         >
           <ArrowLeft className="h-4 w-4" />

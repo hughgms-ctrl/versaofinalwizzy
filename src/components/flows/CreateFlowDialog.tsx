@@ -92,7 +92,8 @@ export function CreateFlowDialog({ open, onOpenChange, folderId, folderName, fol
       setWorkspaceId(null);
       
       if (flow && typeof flow === 'object' && 'id' in flow) {
-        navigate(`/flow-builder?id=${(flow as { id: string }).id}`);
+        // Fluxo criado dentro de uma pasta volta para ela ao sair do builder.
+        navigate(`/flow-builder?id=${(flow as { id: string }).id}${folderId ? `&folder=${folderId}` : ''}`);
       }
     } catch (error) {
       // Error is handled by the mutation
