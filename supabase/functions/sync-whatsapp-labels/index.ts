@@ -136,6 +136,31 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+// A Evolution grava o nome da etiqueta sem nenhum caractere fora do ASCII
+// imprimível (label.name.replace(/[^ -~]/g, '') no fonte da v2.3.6), então
+// "Orçamento" volta como "Oramento" no findLabels. Só o evento labels.edit
+// chega com o nome original. Comparar as duas versões pelo mesmo filtro impede
+// que a mesma etiqueta vire duas tags na org.
+function asciiLabelKey(name: string): string {
+  return String(name || '').replace(/[^ -~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+async function findTagByAsciiName(
+  supabase: any,
+  organizationId: string,
+  name: string,
+): Promise<{ id: string; name: string } | null> {
+  const key = asciiLabelKey(name);
+  if (!key) return null;
+  const { data: tags } = await supabase
+    .from('tags')
+    .select('id, name')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  return (tags || []).find((tag: any) => asciiLabelKey(tag.name) === key) || null;
+}
+
 async function ensureTagForLabel(supabase: any, organizationId: string, name: string, colorHex: string): Promise<string | null> {
   const { data: existing } = await supabase
     .from('tags')
@@ -145,6 +170,11 @@ async function ensureTagForLabel(supabase: any, organizationId: string, name: st
     .limit(1)
     .maybeSingle();
   if (existing?.id) return existing.id;
+
+  // O nome do catálogo vem sem acento; se a tag já existe com o nome bonito
+  // (criada pelo evento labels.edit), é a mesma etiqueta — reaproveita.
+  const asciiMatch = await findTagByAsciiName(supabase, organizationId, name);
+  if (asciiMatch?.id) return asciiMatch.id;
 
   const { data: inserted, error } = await supabase
     .from('tags')
@@ -251,19 +281,29 @@ async function fetchChatLabelsFromEvolutionDb(pg: PgClient, evoInstanceName: str
 
 // A maioria dos chats da Evolution usa remoteJid @lid (endereçamento anônimo,
 // sem telefone — confirmado no banco vivo: ~85% dos chats). A tabela
-// IsOnWhatsapp (global, sem instanceId) guarda o par lid ↔ jid de telefone.
+// IsOnWhatsapp (global, sem instanceId) é o mapa lid ↔ telefone da Evolution,
+// mas NÃO na coluna "lid": ali ela grava só o marcador literal 'lid'/null
+// (conferido no fonte da v2.3.6, saveOnWhatsappCache). O par de verdade está em
+// "jidOptions", a lista separada por vírgula com todas as formas do mesmo
+// contato — o @lid entre elas e o "remoteJid" da linha com o telefone.
 // Precisa de GRANT SELECT pro usuário read-only; sem o grant, seguimos sem
 // resolução de lid (chats @lid ficam de fora e são logados).
 async function loadLidMap(pg: PgClient): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
-    const result = await pg.queryObject<{ remoteJid: string; lid: string }>(
-      `SELECT "remoteJid", lid FROM "IsOnWhatsapp" WHERE lid IS NOT NULL`,
+    const result = await pg.queryObject<{ remoteJid: string; jidOptions: string }>(
+      `SELECT "remoteJid", "jidOptions" FROM "IsOnWhatsapp" WHERE "jidOptions" LIKE '%@lid%'`,
     );
     for (const row of result.rows) {
-      const lidDigits = String(row.lid || '').split('@')[0].replace(/\D/g, '');
       const phoneJid = String(row.remoteJid || '');
-      if (lidDigits && phoneJid) map.set(lidDigits, phoneJid);
+      // Linha cujo próprio remoteJid é @lid não conhece o telefone: não ajuda.
+      if (!phoneJid || phoneJid.includes('@lid')) continue;
+      for (const option of String(row.jidOptions || '').split(',')) {
+        const entry = option.trim();
+        if (!entry.endsWith('@lid')) continue;
+        const lidDigits = entry.split('@')[0].replace(/[^0-9]/g, '');
+        if (lidDigits && !map.has(lidDigits)) map.set(lidDigits, phoneJid);
+      }
     }
   } catch (error) {
     console.warn('[SYNC_LABELS] IsOnWhatsapp unavailable (missing GRANT?); @lid chats will be skipped:', String(error).slice(0, 120));
@@ -271,13 +311,21 @@ async function loadLidMap(pg: PgClient): Promise<Map<string, string>> {
   return map;
 }
 
-async function loadOrgContactIndex(supabase: any, organizationId: string): Promise<Map<string, string>> {
-  const index = new Map<string, string>();
+// Dois índices da mesma varredura: telefone→contato e lid→contato. O segundo
+// vem de contacts.metadata.wa_lid, gravado pelo zapi-webhook quando a mensagem
+// chega (é a única hora em que o WhatsApp entrega lid e telefone juntos) — é o
+// que permite resolver chat @lid sem depender do GRANT em IsOnWhatsapp.
+async function loadOrgContactIndex(
+  supabase: any,
+  organizationId: string,
+): Promise<{ byPhone: Map<string, string>; byLid: Map<string, string> }> {
+  const byPhone = new Map<string, string>();
+  const byLid = new Map<string, string>();
   const pageSize = 1000;
   for (let from = 0; ; from += pageSize) {
     const { data: page, error } = await supabase
       .from('contacts')
-      .select('id, phone')
+      .select('id, phone, metadata')
       .eq('organization_id', organizationId)
       .range(from, from + pageSize - 1);
     if (error) {
@@ -286,12 +334,14 @@ async function loadOrgContactIndex(supabase: any, organizationId: string): Promi
     }
     for (const contact of page || []) {
       for (const variant of phoneKeyVariants(contact.phone || '')) {
-        if (!index.has(variant)) index.set(variant, contact.id);
+        if (!byPhone.has(variant)) byPhone.set(variant, contact.id);
       }
+      const lid = String((contact.metadata as any)?.wa_lid || '').replace(/\D/g, '');
+      if (lid && !byLid.has(lid)) byLid.set(lid, contact.id);
     }
     if (!page || page.length < pageSize) break;
   }
-  return index;
+  return { byPhone, byLid };
 }
 
 async function reconcileOrgAssociations(
@@ -335,20 +385,27 @@ async function reconcileOrgAssociations(
     const chatLabels = await fetchChatLabelsFromEvolutionDb(pg, evoName);
     chatCount += chatLabels.size;
     for (const [jid, labelIds] of chatLabels) {
-      // @lid não contém o telefone — resolve via IsOnWhatsapp (lid → jid real)
+      // @lid não contém o telefone: tenta o mapa próprio (wa_lid dos contatos)
+      // e, se ninguém nunca conversou por aqui, a IsOnWhatsapp (lid → jid real)
       let lookupJid = jid;
-      if (jid.includes('@lid')) {
-        const mapped = lidMap.get(jid.split('@')[0].replace(/\D/g, ''));
-        if (!mapped) {
-          unresolvedLids++;
-          continue;
-        }
-        lookupJid = mapped;
-      }
       let contactId: string | undefined;
-      for (const variant of phoneKeyVariants(lookupJid)) {
-        contactId = contactIndex.get(variant);
-        if (contactId) break;
+      if (jid.includes('@lid')) {
+        const lidDigits = jid.split('@')[0].replace(/\D/g, '');
+        contactId = contactIndex.byLid.get(lidDigits);
+        if (!contactId) {
+          const mapped = lidMap.get(lidDigits);
+          if (!mapped) {
+            unresolvedLids++;
+            continue;
+          }
+          lookupJid = mapped;
+        }
+      }
+      if (!contactId) {
+        for (const variant of phoneKeyVariants(lookupJid)) {
+          contactId = contactIndex.byPhone.get(variant);
+          if (contactId) break;
+        }
       }
       if (!contactId) continue;
       const tagSet = desired.get(contactId) || new Set<string>();

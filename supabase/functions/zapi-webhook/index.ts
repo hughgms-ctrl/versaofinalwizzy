@@ -1328,6 +1328,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     return respond({ success: true, ignored: true, reason: 'lid_message' });
   }
 
+  // Chat @lid: o remoteJid anônimo é a ÚNICA chave que os eventos de etiqueta
+  // trazem (labels.association manda chatId=<lid>@lid, sem telefone). A mensagem
+  // é a única hora em que o WhatsApp entrega o lid e o telefone real juntos —
+  // guardamos o par no contato para resolver a etiqueta depois sem depender do
+  // Postgres da Evolution.
+  const rawChatJid = String(evolutionKey.remoteJid || chatid || '');
+  const contactLid = rawChatJid.includes('@lid')
+    ? rawChatJid.split('@')[0].replace(/\D/g, '')
+    : '';
+
   let phone = '';
   // Try UAZAPI JID format first
   if (chatJid && !chatJid.includes('@lid')) {
@@ -2085,6 +2095,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     contactNameToSave,
     chat.imagePreview || chat.image || null,
     fallbackWorkspaceId,
+    contactLid,
   );
 
   // Fetch profile from UAZAPI if no name
@@ -3154,7 +3165,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     return workspaces?.length === 1 ? [workspaces[0].id] : [];
   }
 
-  async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null, workspaceId?: string | null) {
+  async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null, workspaceId?: string | null, lid?: string) {
     const variants = phoneVariants(phone);
     const canonical = canonicalPhone(phone);
 
@@ -3196,6 +3207,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       const metadata = { ...(existing.metadata || {}) };
       const aliases = uniquePhones([...(metadata.phone_aliases || []), phone, canonical, ...variants]);
       updateData.metadata = { ...metadata, phone_aliases: aliases, canonical_phone: canonical };
+      if (lid) updateData.metadata.wa_lid = lid;
       if (Object.keys(updateData).length > 0) {
         await supabase.from('contacts').update(updateData).eq('id', existing.id);
       }
@@ -3231,7 +3243,11 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         avatar_url: avatarUrl || null,
         organization_id: organizationId,
         workspace_id: workspaceId || null,
-        metadata: { phone_aliases: uniquePhones([phone, canonical, ...variants]), canonical_phone: canonical },
+        metadata: {
+          phone_aliases: uniquePhones([phone, canonical, ...variants]),
+          canonical_phone: canonical,
+          ...(lid ? { wa_lid: lid } : {}),
+        },
       })
       .select().single();
     if (error) throw error;
@@ -3890,6 +3906,31 @@ function isWhatsappSystemList(name: string): boolean {
   return WHATSAPP_SYSTEM_LIST_NAMES.has(normalized);
 }
 
+// A Evolution grava o nome da etiqueta sem nenhum caractere fora do ASCII
+// imprimível (label.name.replace(/[^ -~]/g, '') no fonte da v2.3.6), então
+// "Orçamento" volta como "Oramento" no findLabels. Só o evento labels.edit
+// chega com o nome original. Comparar as duas versões pelo mesmo filtro impede
+// que a mesma etiqueta vire duas tags na org.
+function asciiLabelKey(name: string): string {
+  return String(name || '').replace(/[^ -~]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+async function findTagByAsciiName(
+  supabase: any,
+  organizationId: string,
+  name: string,
+): Promise<{ id: string; name: string } | null> {
+  const key = asciiLabelKey(name);
+  if (!key) return null;
+  const { data: tags } = await supabase
+    .from('tags')
+    .select('id, name')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  return (tags || []).find((tag: any) => asciiLabelKey(tag.name) === key) || null;
+}
+
 // Acha (case-insensitive) ou cria a tag da org correspondente \u00e0 etiqueta.
 // A unique (organization_id, name) resolve corrida entre webhooks concorrentes.
 async function ensureTagForLabel(supabase: any, organizationId: string, name: string, colorHex: string): Promise<string | null> {
@@ -3901,6 +3942,20 @@ async function ensureTagForLabel(supabase: any, organizationId: string, name: st
     .limit(1)
     .maybeSingle();
   if (existing?.id) return existing.id;
+
+  // A tag pode ter nascido pelo catálogo, que chega sem acento ("Oramento").
+  // É a mesma etiqueta: reaproveita e devolve o nome original pra ela.
+  const asciiMatch = await findTagByAsciiName(supabase, organizationId, name);
+  if (asciiMatch?.id) {
+    if (asciiMatch.name !== name && !/[^ -~]/.test(asciiMatch.name)) {
+      const { error: renameError } = await supabase
+        .from('tags')
+        .update({ name })
+        .eq('id', asciiMatch.id);
+      if (renameError) console.error('[LABELS] rename tag failed:', renameError);
+    }
+    return asciiMatch.id;
+  }
 
   const { data: inserted, error } = await supabase
     .from('tags')
@@ -4062,19 +4117,36 @@ async function handleLabelAssociation(supabase: any, instance: any, data: any) {
   // Etiquetas em grupos n\u00e3o t\u00eam contato correspondente no Wizzy.
   if (isGroupChat(chatId)) return respond({ success: true, ignored: true, reason: 'group_chat' });
 
-  // chatId @lid n\u00e3o cont\u00e9m o telefone (endere\u00e7amento an\u00f4nimo \u2014 a maioria dos
-  // chats hoje). Quem sabe traduzir lid\u2192telefone \u00e9 a tabela IsOnWhatsapp no
-  // Postgres da Evolution, que a sync-whatsapp-labels acessa. Delegamos a ela
-  // em background, escopada \u00e0 inst\u00e2ncia \u2014 corrige em segundos, n\u00e3o no cron.
+  // chatId @lid não contém o telefone (endereçamento anônimo — a maioria dos
+  // chats hoje). Duas formas de traduzir lid→contato, nesta ordem:
+  //   1) o mapa que o próprio Wizzy monta: toda mensagem recebida grava o lid
+  //      do chat em contacts.metadata.wa_lid, então quem já conversou com a
+  //      empresa resolve aqui mesmo, na hora, sem nenhuma dependência externa;
+  //   2) a tabela IsOnWhatsapp no Postgres da Evolution, que só a
+  //      sync-whatsapp-labels alcança — delegamos a ela em background,
+  //      escopada à instância (corrige em segundos, não no cron).
+  let lidContactId: string | null = null;
   if (chatId.includes('@lid')) {
-    const baseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    runBackground(fetch(`${baseUrl}/functions/v1/sync-whatsapp-labels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-      body: JSON.stringify({ instanceId: instance.id }),
-    }));
-    return respond({ success: true, deferred: true, reason: 'lid_chat_delegated_to_reconciliation' });
+    const lid = chatId.split('@')[0].replace(/\D/g, '');
+    const { data: byLid } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('organization_id', instance.organization_id)
+      .eq('metadata->>wa_lid', lid)
+      .limit(1)
+      .maybeSingle();
+    lidContactId = byLid?.id || null;
+
+    if (!lidContactId) {
+      const baseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      runBackground(fetch(`${baseUrl}/functions/v1/sync-whatsapp-labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ instanceId: instance.id }),
+      }));
+      return respond({ success: true, deferred: true, reason: 'lid_chat_delegated_to_reconciliation' });
+    }
   }
 
   let { data: mapping } = await supabase
@@ -4091,16 +4163,20 @@ async function handleLabelAssociation(supabase: any, instance: any, data: any) {
     return respond({ success: true, ignored: true, reason: 'label_not_mapped', labelId });
   }
 
-  const phone = cleanPhone(chatId);
-  if (!phone) return respond({ success: true, ignored: true, reason: 'invalid_phone' });
-  const variants = phoneVariants(phone);
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('id')
-    .eq('organization_id', instance.organization_id)
-    .in('phone', variants.length ? variants : [phone])
-    .limit(1)
-    .maybeSingle();
+  let contact: { id: string } | null = lidContactId ? { id: lidContactId } : null;
+  if (!contact) {
+    const phone = cleanPhone(chatId);
+    if (!phone) return respond({ success: true, ignored: true, reason: 'invalid_phone' });
+    const variants = phoneVariants(phone);
+    const { data: byPhone } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('organization_id', instance.organization_id)
+      .in('phone', variants.length ? variants : [phone])
+      .limit(1)
+      .maybeSingle();
+    contact = byPhone || null;
+  }
   if (!contact) {
     // Chat etiquetado que nunca conversou com o Wizzy \u2014 nada a sincronizar.
     return respond({ success: true, ignored: true, reason: 'contact_not_found' });
