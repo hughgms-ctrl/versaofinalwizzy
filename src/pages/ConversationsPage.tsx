@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
@@ -31,6 +31,10 @@ import { usePlatformSetting } from '@/hooks/usePlatformSettings';
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
+  // Conversa aberta por atalho (link ?id= ou recém-criada). Ela pode não estar
+  // na página carregada da lista -- nasce sem last_message_at e a ordenação a
+  // joga para o fim --, então não pode ser descartada como "arquivada".
+  const pinnedConversationIdRef = useRef<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
   const serviceMode = filters.serviceMode;
@@ -258,6 +262,7 @@ const ConversationsPage = () => {
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
+    pinnedConversationIdRef.current = null;
     setSelectedConversation(conversation);
     setIsSpyMode(false);
 
@@ -287,16 +292,38 @@ const ConversationsPage = () => {
   // Auto-select conversation from URL ?id= param
   useEffect(() => {
     const convId = searchParams.get('id');
-    if (convId && conversations && conversations.length > 0 && !selectedConversation) {
-      const target = conversations.find(c => c.id === convId);
-      if (target) {
-        handleSelectConversation(target);
-        // Remove the param from URL after selecting
-        searchParams.delete('id');
-        setSearchParams(searchParams, { replace: true });
-      }
+    if (!convId || selectedConversation || isLoading) return;
+
+    const clearParam = () => {
+      searchParams.delete('id');
+      setSearchParams(searchParams, { replace: true });
+    };
+
+    const target = conversations?.find(c => c.id === convId);
+    if (target) {
+      handleSelectConversation(target);
+      clearParam();
+      return;
     }
-  }, [conversations, searchParams]);
+
+    // Não está na página carregada (conversa nova, ou fora do filtro atual):
+    // busca direta pelo id para o atalho não abrir a tela vazia.
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('conversations')
+        .select('*, contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata)')
+        .eq('id', convId)
+        .maybeSingle();
+
+      if (cancelled || !data) return;
+      handleSelectConversation({ ...(data as any), last_message: [] } as unknown as DbConversation);
+      pinnedConversationIdRef.current = convId;
+      clearParam();
+    })();
+
+    return () => { cancelled = true; };
+  }, [conversations, isLoading, searchParams, selectedConversation, handleSelectConversation]);
 
   // Keep selected conversation in sync with updated data or clear if archived
   useEffect(() => {
@@ -306,7 +333,7 @@ const ConversationsPage = () => {
         if (JSON.stringify(updated) !== JSON.stringify(selectedConversation)) {
           setSelectedConversation(updated);
         }
-      } else {
+      } else if (pinnedConversationIdRef.current !== selectedConversation.id) {
         // Conversation was archived or removed - clear selection
         setSelectedConversation(null);
       }
@@ -630,6 +657,7 @@ const ConversationsPage = () => {
         workspaceId={selectedWorkspaceId}
         onConversationCreated={(conv) => {
           setSelectedConversation(conv);
+          pinnedConversationIdRef.current = conv.id;
           refetch(); // Ensure list updates
         }}
       />

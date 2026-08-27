@@ -17,6 +17,7 @@ import {
   Upload,
   Loader2,
   Tag as TagIcon,
+  MessageSquare,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ContactProfilePanel } from '@/components/conversations/ContactProfilePanel';
+import { useStartConversation } from '@/hooks/useStartConversation';
 import { ContactFilters, ContactFiltersState, FilterCondition, defaultContactFilters } from '@/components/contacts/ContactFilters';
 import { ContactListItem } from '@/components/contacts/ContactListItem';
 import { ContactBulkActionsBar } from '@/components/contacts/ContactBulkActionsBar';
@@ -143,6 +145,7 @@ const ContactsPage = () => {
   );
 
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const { startConversation, isStarting } = useStartConversation();
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showBulkTagDialog, setShowBulkTagDialog] = useState(false);
@@ -462,12 +465,12 @@ const ContactsPage = () => {
       {/* Contact Detail Dialog */}
       {selectedContact && (
         <Dialog open={!!selectedContact} onOpenChange={() => setSelectedContact(null)}>
-          <DialogContent className="max-w-lg p-0 max-h-[80vh] overflow-hidden">
+          <DialogContent className="max-w-lg p-0 max-h-[80vh] overflow-hidden flex flex-col">
             <DialogHeader className="sr-only">
               <DialogTitle>Detalhes do contato</DialogTitle>
               <DialogDescription>Visualizacao e edicao das informacoes do contato selecionado.</DialogDescription>
             </DialogHeader>
-            <div className="overflow-y-auto max-h-[80vh]">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <ContactProfilePanel
                 conversation={{
                   id: '',
@@ -496,6 +499,21 @@ const ContactsPage = () => {
                 onClose={() => setSelectedContact(null)}
                 embedded
               />
+            </div>
+            {/* Atalho: abre (ou cria) a conversa com este contato */}
+            <div className="border-t border-border p-3">
+              <Button
+                className="w-full gap-2"
+                disabled={isStarting}
+                onClick={() => startConversation(selectedContact)}
+              >
+                {isStarting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+                Iniciar conversa
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

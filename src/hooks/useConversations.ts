@@ -461,24 +461,34 @@ export function useCreateConversation() {
   const { session, profile } = useAuth();
 
   return useMutation({
-    mutationFn: async (data: { phone: string, name: string | null, workspaceId?: string | null }) => {
+    mutationFn: async (data: { phone?: string; contactId?: string; name?: string | null, workspaceId?: string | null }) => {
       if (!profile?.organization_id) throw new Error('Organization ID is required');
+      if (!data.contactId && !data.phone) throw new Error('Informe um contato ou um telefone');
 
       // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
-      let formattedPhone = data.phone.replace(/\D/g, '');
+      let formattedPhone = (data.phone || '').replace(/\D/g, '');
       if (formattedPhone.length === 10 || formattedPhone.length === 11) {
         formattedPhone = `55${formattedPhone}`;
       }
 
-      // 1. Check if contact exists
+      // 1. Check if contact exists. Quando o chamador já sabe qual é o contato
+      // (atalho "Iniciar conversa" na agenda), buscamos pelo id: passar pelo
+      // telefone re-normalizaria o número e corromperia contato estrangeiro.
       let contactId = null;
-      const { data: existingContact } = await supabase
+      let contactQuery = supabase
         .from('contacts')
         .select('id, workspace_id')
-        .eq('phone', formattedPhone)
-        .eq('organization_id', profile.organization_id)
-        .limit(1)
-        .maybeSingle();
+        .eq('organization_id', profile.organization_id);
+
+      contactQuery = data.contactId
+        ? contactQuery.eq('id', data.contactId)
+        : contactQuery.eq('phone', formattedPhone);
+
+      const { data: existingContact } = await contactQuery.limit(1).maybeSingle();
+
+      if (!existingContact && data.contactId) {
+        throw new Error('Contato não encontrado');
+      }
 
       if (existingContact) {
         contactId = existingContact.id;
@@ -494,7 +504,7 @@ export function useCreateConversation() {
           .from('contacts')
           .insert({
             phone: formattedPhone,
-            name: data.name,
+            name: data.name ?? null,
             organization_id: profile.organization_id,
             workspace_id: data.workspaceId || null,
           } as any)

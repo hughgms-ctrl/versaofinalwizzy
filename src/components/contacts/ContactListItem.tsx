@@ -13,7 +13,6 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, MessageSquare, Kanban, Loader2, Users, UserMinus } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useDeleteContact, useShareContactWorkspace, useUnshareContactWorkspace } from '@/hooks/useContacts';
@@ -25,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useSignedContactAvatar } from '@/components/conversations/contactAvatars';
+import { useStartConversation } from '@/hooks/useStartConversation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +75,7 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { workspaces, selectedWorkspaceId } = useWorkspaceContext();
+  const { startConversation, isStarting } = useStartConversation();
   const shareWorkspace = useShareContactWorkspace();
   const unshareWorkspace = useUnshareContactWorkspace();
 
@@ -265,6 +266,26 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
             {format(parseISO(contact.created_at), "dd/MM/yy", { locale: ptBR })}
           </span>
 
+          {/* Atalho: abre (ou cria) a conversa com este contato */}
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Iniciar conversa"
+            aria-label="Iniciar conversa"
+            disabled={isStarting}
+            className="h-7 w-7 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              startConversation(contact);
+            }}
+          >
+            {isStarting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <MessageSquare className="h-3.5 w-3.5" />
+            )}
+          </Button>
+
           {/* Actions */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
@@ -284,11 +305,13 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
               <DropdownMenuItem onSelect={() => onSelect(contact)}>
                 Ver detalhes
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/conversations" className="flex items-center gap-2">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Ver conversa
-                </Link>
+              <DropdownMenuItem
+                disabled={isStarting}
+                onSelect={() => startConversation(contact)}
+                className="flex items-center gap-2"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Iniciar conversa
               </DropdownMenuItem>
 
               <DropdownMenuSub>
