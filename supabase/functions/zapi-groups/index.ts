@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   resolveWhatsAppInstance,
+  resolveWorkspaceInstanceBinding,
   getEvolutionConfig,
   sendWhatsAppMessage,
   WhatsAppSendType,
@@ -26,6 +27,13 @@ interface GroupRequest {
   action: GroupAction;
   groupJid?: string;
   groupId?: string;
+  // Número designado da operação. `instanceId` é o número do workspace aberto no
+  // app; `workspaceId` serve para carimbar a linha e para resolver o número
+  // quando o cliente não mandou o id. Sem isso caímos no fallback por
+  // organização, que responde pelo primeiro número conectado da org — era assim
+  // que a lista mostrava os grupos de OUTRO número.
+  instanceId?: string | null;
+  workspaceId?: string | null;
   // create
   subject?: string;
   description?: string;
@@ -90,6 +98,32 @@ function mapGroup(raw: any): {
   };
 }
 
+// Um mesmo grupo pode ser visto por dois números da mesma organização, então a
+// chave real é (org, número, grupo). Enquanto a migration que troca a UNIQUE
+// antiga (org, grupo) não for aplicada à mão, caímos de volta na chave antiga —
+// aí o grupo compartilhado fica com o último número que sincronizou.
+async function upsertGroups(
+  supabase: any,
+  rows: Record<string, unknown>[],
+): Promise<{ error: any; legacyKey: boolean }> {
+  if (!rows.length) return { error: null, legacyKey: false };
+
+  const { error } = await supabase
+    .from('whatsapp_groups')
+    .upsert(rows, { onConflict: 'organization_id,whatsapp_instance_id,group_jid' });
+  if (!error) return { error: null, legacyKey: false };
+
+  const message = String(error.message || '');
+  const missingConstraint = error.code === '42P10' || /no unique|exclusion constraint|constraint matching/i.test(message);
+  if (!missingConstraint) return { error, legacyKey: false };
+
+  console.warn('[zapi-groups] índice (org, instância, grupo) ausente; usando a chave antiga (org, grupo).');
+  const { error: legacyError } = await supabase
+    .from('whatsapp_groups')
+    .upsert(rows, { onConflict: 'organization_id,group_jid' });
+  return { error: legacyError, legacyKey: true };
+}
+
 async function evolutionFetch(
   baseUrl: string,
   apiKey: string,
@@ -139,19 +173,46 @@ Deno.serve(async (req) => {
     const payload = await req.json() as GroupRequest;
     const action = payload.action;
 
+    // Número designado: preferimos o id mandado pelo cliente (número do
+    // workspace aberto), depois o número atrelado ao workspace. Só quando não há
+    // workspace nenhum é que caímos no fallback por organização.
+    let designatedInstanceId = payload.instanceId || null;
+    let workspaceId: string | null = null;
+    if (payload.workspaceId) {
+      const binding = await resolveWorkspaceInstanceBinding(supabase, organizationId, payload.workspaceId);
+      if (binding.blocked && !designatedInstanceId) {
+        return json({
+          error: 'Este workspace não tem um número de WhatsApp associado. Associe um número ao workspace para usar os grupos.',
+        }, 400);
+      }
+      // Só carimbamos o workspace quando ele é da org e aponta para o número usado.
+      if (binding.workspaceInstanceId) {
+        if (!designatedInstanceId) designatedInstanceId = binding.workspaceInstanceId;
+        if (binding.workspaceInstanceId === designatedInstanceId) workspaceId = payload.workspaceId;
+      }
+    }
+
     // list reads straight from the DB
     if (action === 'list') {
-      const { data: groups, error } = await supabase
+      let listQuery = supabase
         .from('whatsapp_groups')
         .select('*')
         .eq('organization_id', organizationId)
         .order('name', { ascending: true });
+      if (designatedInstanceId) listQuery = listQuery.eq('whatsapp_instance_id', designatedInstanceId);
+      const { data: groups, error } = await listQuery;
       if (error) return json({ error: error.message }, 500);
       return json({ groups: groups || [] });
     }
 
-    const instance = await resolveWhatsAppInstance(supabase, organizationId, null);
-    if (!instance) return json({ error: 'Nenhuma instância WhatsApp conectada' }, 404);
+    const instance = await resolveWhatsAppInstance(supabase, organizationId, designatedInstanceId);
+    if (!instance) {
+      return json({
+        error: designatedInstanceId
+          ? 'O número atrelado a este workspace não foi encontrado nesta organização.'
+          : 'Nenhuma instância WhatsApp conectada',
+      }, 404);
+    }
 
     // The `send` action works for any provider via the shared sender.
     if (action === 'send') {
@@ -196,40 +257,75 @@ Deno.serve(async (req) => {
         if (!res.ok) return json({ error: `Evolution ${res.status}: ${res.text.slice(0, 300)}` }, 502);
 
         const list: any[] = Array.isArray(res.json) ? res.json : (res.json?.groups || []);
-        const rows = list.map(mapGroup).filter(Boolean) as NonNullable<ReturnType<typeof mapGroup>>[];
+        const mappedRows = list.map(mapGroup).filter(Boolean) as NonNullable<ReturnType<typeof mapGroup>>[];
+        // O upsert em lote não aceita o mesmo group_jid duas vezes no mesmo
+        // comando (ON CONFLICT não pode tocar a mesma linha 2x).
+        const byJid = new Map<string, typeof mappedRows[number]>();
+        for (const row of mappedRows) byJid.set(row.group_jid, row);
+        const rows = [...byJid.values()];
 
         const nowIso = new Date().toISOString();
-        let upserted = 0;
-        for (const row of rows) {
-          const { error } = await supabase
-            .from('whatsapp_groups')
-            .upsert({
-              organization_id: organizationId,
-              whatsapp_instance_id: instance.id,
-              group_jid: row.group_jid,
-              name: row.name,
-              description: row.description,
-              picture_url: row.picture_url,
-              participant_count: row.participant_count,
-              is_admin: row.is_admin,
-              participants: row.participants,
-              raw: row.raw,
-              last_synced_at: nowIso,
-            }, { onConflict: 'organization_id,group_jid' });
-          if (!error) upserted++;
-        }
+        const payloadRows = rows.map((row) => ({
+          organization_id: organizationId,
+          workspace_id: workspaceId,
+          whatsapp_instance_id: instance.id,
+          group_jid: row.group_jid,
+          name: row.name,
+          description: row.description,
+          picture_url: row.picture_url,
+          participant_count: row.participant_count,
+          is_admin: row.is_admin,
+          participants: row.participants,
+          raw: row.raw,
+          last_synced_at: nowIso,
+        }));
 
-        // Drop groups that belong to a different instance than the active one.
-        // Without this, groups synced from a previously-active (or wrong) number
-        // would linger in the list, since upsert keyed on group_jid never removes
-        // rows that the current number doesn't have.
-        await supabase
+        // Upsert em lote: o laço linha a linha estourava o tempo da função em
+        // contas com muitos grupos e a lista ficava sem atualizar.
+        const { error: upsertError, legacyKey } = await upsertGroups(supabase, payloadRows);
+        if (upsertError) return json({ error: upsertError.message }, 500);
+
+        // Só apagamos o que é DESTE número e não veio mais no fetch (grupo do
+        // qual a instância saiu). O código antigo apagava tudo que fosse de
+        // outra instância, então cada sincronização de um número zerava os
+        // grupos dos outros workspaces.
+        let removed = 0;
+        const { data: stale } = await supabase
           .from('whatsapp_groups')
           .delete()
           .eq('organization_id', organizationId)
-          .neq('whatsapp_instance_id', instance.id);
+          .eq('whatsapp_instance_id', instance.id)
+          .lt('last_synced_at', nowIso)
+          .select('id');
+        removed += stale?.length || 0;
 
-        return json({ ok: true, synced: upserted, total: rows.length });
+        const { data: neverSynced } = await supabase
+          .from('whatsapp_groups')
+          .delete()
+          .eq('organization_id', organizationId)
+          .eq('whatsapp_instance_id', instance.id)
+          .is('last_synced_at', null)
+          .select('id');
+        removed += neverSynced?.length || 0;
+
+        // Linhas órfãs: o número que as sincronizou foi excluído (FK SET NULL),
+        // então elas não pertencem a nenhum número e apareciam para todo mundo.
+        const { data: orphans } = await supabase
+          .from('whatsapp_groups')
+          .delete()
+          .eq('organization_id', organizationId)
+          .is('whatsapp_instance_id', null)
+          .select('id');
+        removed += orphans?.length || 0;
+
+        return json({
+          ok: true,
+          synced: payloadRows.length,
+          total: rows.length,
+          removed,
+          instanceId: instance.id,
+          legacyKey,
+        });
       }
 
       case 'participants': {
@@ -282,8 +378,9 @@ Deno.serve(async (req) => {
 
         const mapped = mapGroup(res.json) || mapGroup(res.json?.groupInfo) || null;
         if (mapped) {
-          await supabase.from('whatsapp_groups').upsert({
+          await upsertGroups(supabase, [{
             organization_id: organizationId,
+            workspace_id: workspaceId,
             whatsapp_instance_id: instance.id,
             group_jid: mapped.group_jid,
             name: mapped.name || payload.subject,
@@ -294,7 +391,7 @@ Deno.serve(async (req) => {
             participants: mapped.participants,
             raw: res.json,
             last_synced_at: new Date().toISOString(),
-          }, { onConflict: 'organization_id,group_jid' });
+          }]);
         }
         return json({ ok: true, result: res.json });
       }
@@ -311,6 +408,7 @@ Deno.serve(async (req) => {
         await supabase.from('whatsapp_groups')
           .update({ name: payload.subject })
           .eq('organization_id', organizationId)
+          .eq('whatsapp_instance_id', instance.id)
           .eq('group_jid', payload.groupJid);
         return json({ ok: true });
       }
@@ -327,6 +425,7 @@ Deno.serve(async (req) => {
         await supabase.from('whatsapp_groups')
           .update({ description: payload.description || null })
           .eq('organization_id', organizationId)
+          .eq('whatsapp_instance_id', instance.id)
           .eq('group_jid', payload.groupJid);
         return json({ ok: true });
       }
@@ -343,6 +442,7 @@ Deno.serve(async (req) => {
         await supabase.from('whatsapp_groups')
           .update({ picture_url: payload.image })
           .eq('organization_id', organizationId)
+          .eq('whatsapp_instance_id', instance.id)
           .eq('group_jid', payload.groupJid);
         return json({ ok: true });
       }

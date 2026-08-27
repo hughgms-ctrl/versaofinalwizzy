@@ -1,7 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useWhatsAppGroups, useSyncGroups, WhatsAppGroup } from '@/hooks/useWhatsAppGroups';
+import {
+  useWhatsAppGroups,
+  useSyncGroups,
+  useAutoSyncGroups,
+  useGroupsInstanceScope,
+  WhatsAppGroup,
+} from '@/hooks/useWhatsAppGroups';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { Search, X, UsersRound, Smartphone, Settings, RefreshCw, Plus, Loader2, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -15,7 +21,11 @@ import { CreateGroupDialog } from '@/components/groups/CreateGroupDialog';
 const GroupsPage = () => {
   const { data: groups, isLoading } = useWhatsAppGroups();
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
+  const scope = useGroupsInstanceScope();
   const syncGroups = useSyncGroups();
+  // Abriu a página: se a lista está vazia ou velha, sincroniza sozinho pelo
+  // número do workspace atual, em vez de esperar o clique em "Sincronizar".
+  useAutoSyncGroups(groups, syncGroups, !isLoading);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<WhatsAppGroup | null>(null);
@@ -28,7 +38,36 @@ const GroupsPage = () => {
     return groups.filter(g => (g.name?.toLowerCase().includes(query) || g.group_jid.includes(query)));
   }, [groups, searchQuery]);
 
-  if (!whatsappLoading && !whatsappConnected) {
+  // Workspace sem número: os grupos pertencem ao número, então não há nada para
+  // mostrar aqui — e mostrar os de outro número era exatamente o bug.
+  if (!scope.isLoading && scope.blocked) {
+    return (
+      <MainLayout title="Grupos" subtitle="Gerencie seus grupos de WhatsApp" showSearch={false} fullWidth>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center p-8 max-w-md">
+            <div className="h-20 w-20 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-6">
+              <Smartphone className="h-10 w-10 text-yellow-500" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground mb-2">
+              O workspace {scope.workspaceName || 'selecionado'} não tem número
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              Os grupos pertencem ao número de WhatsApp. Associe um número a este workspace
+              (ou troque de workspace) para ver e sincronizar os grupos.
+            </p>
+            <Button asChild>
+              <Link to="/settings">
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Configurações
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!whatsappLoading && !whatsappConnected && !scope.instanceId) {
     return (
       <MainLayout title="Grupos" subtitle="Gerencie seus grupos de WhatsApp" showSearch={false} fullWidth>
         <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
@@ -88,7 +127,7 @@ const GroupsPage = () => {
                   variant="outline"
                   size="sm"
                   className="gap-1.5 h-8 flex-1"
-                  onClick={() => syncGroups.mutate()}
+                  onClick={() => syncGroups.mutate({})}
                   disabled={syncGroups.isPending}
                 >
                   {syncGroups.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -98,6 +137,15 @@ const GroupsPage = () => {
                   <Plus className="h-3.5 w-3.5" /> Criar grupo
                 </Button>
               </div>
+              {/* Deixa explícito de qual número são os grupos da lista. */}
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1 px-0.5">
+                <Smartphone className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">
+                  {scope.instanceId
+                    ? `Grupos do número ${scope.instanceLabel || 'do workspace'}`
+                    : 'Grupos dos números conectados'}
+                </span>
+              </p>
             </div>
 
             {/* List content */}
