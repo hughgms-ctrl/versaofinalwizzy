@@ -215,3 +215,30 @@ WHERE c.phone LIKE '%995375139'
   AND m.direction = 'outbound'
 ORDER BY m.created_at DESC
 LIMIT 5;
+
+
+-- ---------------------------------------------------------------------------
+-- INSTÂNCIA CAIU x PROBLEMA DO CONTATO (2026-08-27, hora a hora).
+--
+-- A checagem de jid provou que o número do contato está certo (as duas formas
+-- do celular BR apontam para o mesmo jid, e ele existe). Entao a pergunta vira:
+-- essa instância entregou ALGUMA mensagem depois do horário em que parou de
+-- receber? Se `entregues` zera a partir de certa hora para TODOS os contatos
+-- dela, a sessão morreu e o banco continua dizendo 'connected' (drift) --
+-- nao tem nada a ver com o contato criado a mao.
+-- ---------------------------------------------------------------------------
+SELECT
+  wi.phone_number,
+  w.name                          AS workspace,
+  date_trunc('hour', m.created_at) AS hora,
+  count(*) FILTER (WHERE m.direction = 'outbound')                                AS enviadas,
+  count(*) FILTER (WHERE m.direction = 'outbound' AND m.delivered_at IS NOT NULL)  AS entregues,
+  count(*) FILTER (WHERE m.direction = 'inbound')                                 AS recebidas
+FROM public.whatsapp_instances wi
+LEFT JOIN public.workspaces w       ON w.whatsapp_instance_id = wi.id
+JOIN public.conversations conv      ON conv.whatsapp_instance_id = wi.id
+JOIN public.messages m              ON m.conversation_id = conv.id
+WHERE wi.organization_id = (SELECT organization_id FROM public.contacts WHERE phone = '5531995375139' LIMIT 1)
+  AND m.created_at > now() - interval '36 hours'
+GROUP BY 1, 2, 3
+ORDER BY hora DESC, wi.phone_number;
