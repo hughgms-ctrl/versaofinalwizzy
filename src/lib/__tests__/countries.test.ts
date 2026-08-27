@@ -95,3 +95,19 @@ describe('validateNationalNumber', () => {
     expect(validateNationalNumber(us, '415555')).toMatch(/10 dígitos/);
   });
 });
+
+describe('número estrangeiro digitado sem o + com o Brasil selecionado', () => {
+  it('recusa 11 dígitos sem o 9 depois do DDD e aponta o país provável', () => {
+    // O caso real: +1 469 988 0705 (EUA) digitado como 14699880705 com a
+    // bandeira do Brasil. Antes virava 5514699880705 e o WhatsApp recusava.
+    const motivo = validateNationalNumber(br, '14699880705');
+    expect(motivo).toMatch(/9 depois do DDD/);
+    expect(motivo).toMatch(/Estados Unidos/);
+    expect(toE164(us, '4699880705')).toBe('14699880705');
+  });
+
+  it('não atrapalha celular e fixo brasileiros de verdade', () => {
+    expect(validateNationalNumber(br, '14999880705')).toBeNull();
+    expect(validateNationalNumber(br, '1433334444')).toBeNull();
+  });
+});

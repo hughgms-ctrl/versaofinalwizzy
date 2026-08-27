@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dialog';
 import { Loader2, MessageSquarePlus } from 'lucide-react';
 import { useCreateConversation } from '@/hooks/useConversations';
+import { PhoneNumberInput } from '@/components/shared/PhoneNumberInput';
+import { DEFAULT_COUNTRY, toE164, validateNationalNumber, type Country } from '@/lib/countries';
 import { toast } from '@/hooks/use-toast';
 
 interface NewConversationDialogProps {
@@ -23,38 +25,35 @@ interface NewConversationDialogProps {
 
 export function NewConversationDialog({ open, onOpenChange, onConversationCreated, workspaceId }: NewConversationDialogProps) {
     const [name, setName] = useState('');
+    const [country, setCountry] = useState<Country>(DEFAULT_COUNTRY);
+    // Numero NACIONAL (sem o codigo do pais) -- o E.164 e montado ao salvar,
+    // igual ao cadastro de contato. Aqui o telefone tambem cria o contato, e
+    // um 55 chutado em numero estrangeiro gera um jid que nao existe.
     const [phone, setPhone] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const createConversation = useCreateConversation();
 
-    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        // Only allow numbers, plus sign and spaces
-        const value = e.target.value.replace(/[^\d+\s]/g, '');
-        setPhone(value);
-    };
-
     const handleCreate = async () => {
-        // Clean phone number: remove non-digits
-        const cleanPhone = phone.replace(/\D/g, '');
-
-        if (cleanPhone.length < 10) {
-            toast({
-                title: "Telefone inválido",
-                description: "Digite o telefone com DDD (ex: 11999999999)",
-                variant: "destructive"
-            });
+        const invalid = validateNationalNumber(country, phone);
+        if (invalid) {
+            setError(invalid);
             return;
         }
+        setError(null);
 
         try {
             const result = await createConversation.mutateAsync({
                 name: name.trim() || null,
-                phone: cleanPhone,
+                phone: toE164(country, phone),
+                // Ja vem com o codigo do pais escolhido: o hook nao deve chutar o 55.
+                phoneIsE164: true,
                 workspaceId: workspaceId || null,
             });
 
             onOpenChange(false);
             setName('');
             setPhone('');
+            setCountry(DEFAULT_COUNTRY);
 
             if (onConversationCreated && result?.conversation) {
                 onConversationCreated(result.conversation);
@@ -87,13 +86,29 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                 <div className="grid gap-4 py-4">
                     <div className="space-y-2">
                         <Label htmlFor="phone">Telefone (obrigatório)</Label>
-                        <Input
+                        <PhoneNumberInput
                             id="phone"
-                            placeholder="(11) 99999-9999"
+                            country={country}
+                            onCountryChange={(next) => {
+                                setCountry(next);
+                                setError(null);
+                            }}
                             value={phone}
-                            onChange={handlePhoneChange}
-                            autoComplete="off"
+                            onChange={(value) => {
+                                setPhone(value);
+                                if (error) setError(null);
+                            }}
+                            onEnter={handleCreate}
+                            placeholder={country.iso2 === 'br' ? '(11) 99999-9999' : 'Número sem o código do país'}
                         />
+                        {error ? (
+                            <p className="text-[11px] text-destructive">{error}</p>
+                        ) : (
+                            <p className="text-[10px] text-muted-foreground">
+                                Escolha o país e digite o número sem o +{country.dialCode}. Colar o número
+                                completo (ex: +1 415 555 0100) também funciona.
+                            </p>
+                        )}
                     </div>
 
                     <div className="space-y-2">
@@ -112,7 +127,7 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
                     <Button
                         onClick={handleCreate}
-                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 10 || createConversation.isPending}
+                        disabled={!phone.trim() || createConversation.isPending}
                         className="gap-2"
                     >
                         {createConversation.isPending ? (

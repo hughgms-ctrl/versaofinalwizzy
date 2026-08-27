@@ -349,6 +349,18 @@ export function validateNationalNumber(country: Country, national: string): stri
       return 'No Brasil o número tem DDD + 8 ou 9 dígitos (ex: 11999999999).';
     }
     if (!VALID_BR_DDDS.has(parseInt(clean.slice(0, 2), 10))) return 'DDD inválido.';
+    // Celular brasileiro de 11 dígitos SEMPRE tem 9 depois do DDD. Sem esta
+    // checagem, número estrangeiro digitado com o código do país e sem o "+"
+    // (ex.: 1 469 988 0705, dos EUA) passava como se fosse DDD 14 e saía daqui
+    // com um 55 na frente -- virava 5514699880705, um jid que não existe no
+    // WhatsApp, e a mensagem nunca chegava.
+    if (clean.length === 11 && clean[2] !== '9') {
+      const guess = findCountryByDialPrefix(clean);
+      const hint = guess && guess.iso2 !== 'br'
+        ? ` Parece um número de ${guess.name} (+${guess.dialCode}): escolha o país no seletor ou cole o número com o + na frente.`
+        : '';
+      return `No Brasil, número com 11 dígitos tem 9 depois do DDD.${hint}`;
+    }
     return null;
   }
 

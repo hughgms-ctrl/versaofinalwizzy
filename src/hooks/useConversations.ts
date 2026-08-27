@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { withCountryCode } from '@/lib/phoneVariants';
 
 const CONVERSATION_LIST_LIMIT = 1000;
 
@@ -461,14 +462,25 @@ export function useCreateConversation() {
   const { session, profile } = useAuth();
 
   return useMutation({
-    mutationFn: async (data: { phone?: string; contactId?: string; name?: string | null, workspaceId?: string | null }) => {
+    mutationFn: async (data: {
+      phone?: string;
+      contactId?: string;
+      /** O telefone ja veio em E.164 (pais escolhido na tela): nao adivinhar. */
+      phoneIsE164?: boolean;
+      name?: string | null,
+      workspaceId?: string | null,
+    }) => {
       if (!profile?.organization_id) throw new Error('Organization ID is required');
       if (!data.contactId && !data.phone) throw new Error('Informe um contato ou um telefone');
 
-      // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
+      // Aqui saia um 55 na frente de TODO numero com 10 ou 11 digitos, o que
+      // transformava celular estrangeiro em numero brasileiro inexistente
+      // (+1 469 988 0705 virava 5514699880705, jid que nao existe no WhatsApp).
+      // Com o pais escolhido na tela nao ha o que inferir; sem ele, o
+      // withCountryCode preserva quem ja traz o codigo de outro pais.
       let formattedPhone = (data.phone || '').replace(/\D/g, '');
-      if (formattedPhone.length === 10 || formattedPhone.length === 11) {
-        formattedPhone = `55${formattedPhone}`;
+      if (formattedPhone && !data.phoneIsE164) {
+        formattedPhone = withCountryCode(formattedPhone);
       }
 
       // 1. Check if contact exists. Quando o chamador já sabe qual é o contato

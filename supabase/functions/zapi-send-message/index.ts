@@ -197,6 +197,47 @@ function providerAuthErrorMessage(
   }
 }
 
+/**
+ * Erro do provedor em texto que a pessoa na tela entende.
+ *
+ * O caso mais comum e o numero que nao existe no WhatsApp: o Evolution
+ * devolve 400 com a lista de jids e `exists: false`, e esse JSON cru ia
+ * inteiro para o balao da conversa ("Falha no envio: {\"status\":400,...}").
+ * O motivo quase sempre e pais/DDD errado no cadastro do contato.
+ */
+function describeSendError(
+  rawError: string,
+  phone: string,
+  provider: Provider,
+  connectionSettings: Awaited<ReturnType<typeof loadConnectionSettings>>,
+): string {
+  const text = (rawError || "").trim();
+  if (!text) return "Falha ao enviar pelo provedor do WhatsApp.";
+
+  try {
+    const parsed = JSON.parse(text);
+    const entries = parsed?.response?.message ?? parsed?.message;
+    const list = Array.isArray(entries) ? entries : [];
+    const missing = list.find((item: any) => item && typeof item === "object" && item.exists === false);
+    if (missing) {
+      const jid = String(missing.jid || missing.number || phone).replace(/@.*$/, "");
+      return `O numero ${jid} nao tem WhatsApp. Confira o pais e o DDD no cadastro do contato.`;
+    }
+
+    // Provedor recusou sem dizer `exists`: pelo menos nao jogar o JSON na tela.
+    const reasons = list
+      .map((item: any) => (typeof item === "string" ? item : item?.message || item?.jid || ""))
+      .filter((item: string) => !!item)
+      .join("; ");
+    if (reasons) return `O provedor recusou o envio: ${reasons}`;
+  } catch {
+    // Nao e JSON: cai no tratamento generico abaixo.
+  }
+
+  const generic = providerAuthErrorMessage(provider, text, connectionSettings);
+  return typeof generic === "string" && generic.trim() ? generic : text;
+}
+
 async function resolveSendInstance(
   supabase: any,
   organizationId: string,
@@ -614,7 +655,7 @@ Deno.serve(async (req) => {
           media_url: mediaUrl || null,
           zapi_message_id: zapiMsgId,
           metadata: messageMetadata,
-          ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
+          ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: describeSendError(sendErrorText, normalizedPhone, provider, connectionSettings) } : {}),
         })
         .select()
         .maybeSingle();
@@ -633,7 +674,7 @@ Deno.serve(async (req) => {
           success: false,
           error: 'Failed to send message via Evolution, but message was saved',
           messageId: message?.id || `failed-${Date.now()}`,
-          details: sendErrorText,
+          details: describeSendError(sendErrorText, normalizedPhone, provider, connectionSettings),
         }), {
           status: 503,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -779,7 +820,7 @@ Deno.serve(async (req) => {
         media_url: mediaUrl || null,
         zapi_message_id: zapiMsgId,
         metadata: messageMetadata,
-        ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
+        ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: describeSendError(sendErrorText, normalizedPhone, provider, connectionSettings) } : {}),
       })
       .select()
       .maybeSingle();
@@ -799,7 +840,7 @@ Deno.serve(async (req) => {
         success: false,
         error: friendlyError || 'Failed to send message via WhatsApp, but message was saved',
         messageId: message?.id || `failed-${Date.now()}`,
-        details: sendErrorText,
+        details: describeSendError(sendErrorText, normalizedPhone, provider, connectionSettings),
       }), {
         status: 503,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
