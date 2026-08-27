@@ -187,3 +187,31 @@ LEFT JOIN public.whatsapp_instances wi ON wi.id = conv.whatsapp_instance_id
 WHERE c.phone LIKE '%995375139'
 ORDER BY m.created_at DESC
 LIMIT 20;
+
+
+-- ---------------------------------------------------------------------------
+-- VALIDAÇÃO do fix 767e90c3 — rodar DEPOIS de implantar zapi-send-message e
+-- mandar uma mensagem nova. `alvo` e `checagem` só existem em mensagem enviada
+-- pelo código novo (no metadata_cru elas ficariam além do corte de 300 chars).
+--
+-- Esperado: alvo = 5531995375139@s.whatsapp.net e a checagem dizendo qual das
+-- duas formas o WhatsApp reconhece. Se a checagem disser exists:true SÓ para a
+-- forma sem o 9, então a conta do contato é essa mesmo e o jid não é o culpado.
+-- ---------------------------------------------------------------------------
+SELECT
+  m.created_at,
+  left(coalesce(m.content, ''), 30)                                  AS trecho,
+  m.metadata -> 'evolution_response' -> 'key' ->> 'remoteJid'        AS jid_usado,
+  m.metadata ->> 'evolution_target'                                  AS alvo,
+  m.metadata -> 'evolution_number_check'                             AS checagem,
+  m.metadata -> 'evolution_response' ->> 'status'                    AS status_provedor,
+  m.delivered_at,
+  m.read_at,
+  m.failed_at
+FROM public.messages m
+JOIN public.conversations conv ON conv.id = m.conversation_id
+JOIN public.contacts c         ON c.id = conv.contact_id
+WHERE c.phone LIKE '%995375139'
+  AND m.direction = 'outbound'
+ORDER BY m.created_at DESC
+LIMIT 5;
