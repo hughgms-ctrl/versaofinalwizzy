@@ -141,3 +141,49 @@ LEFT JOIN public.messages m         ON m.conversation_id = conv.id
 WHERE wi.organization_id = '<ORG_ID>'
 GROUP BY wi.id, wi.phone_number, wi.label, wi.status
 ORDER BY ultima_recebida DESC NULLS LAST;
+
+
+-- ============================================================================
+-- ATALHO (2026-08-27) — quando o sintoma é "só a conversa criada pelo atalho
+-- da agenda não entrega; responder conversa que veio do WhatsApp funciona, e
+-- fluxo para número de lista funciona".
+--
+-- Nesse cenário a instância está VIVA, entao o que muda entre um caso e outro
+-- é a LINHA da conversa/contato. Esta query nao pede <ORG_ID>: acha pelo final
+-- do telefone. Troque só os 9 dígitos finais.
+--
+-- O que olhar na saída:
+--   jid_usado           -> para qual jid o Evolution REALMENTE mandou. Se vier
+--                          diferente do telefone gravado (ex.: sem o nono
+--                          dígito, ou terminando em @lid), o problema é o
+--                          formato do número, não o envio.
+--   numero_que_enviou   -> se nao for o numero A conectado, a conversa nasceu
+--                          amarrada na instancia errada.
+--   failed_at / erro    -> vazio confirma que o provedor respondeu 200.
+-- ============================================================================
+SELECT
+  m.created_at,
+  m.direction,
+  left(coalesce(m.content, ''), 40)                          AS trecho,
+  m.failed_at,
+  left(coalesce(m.error_message, ''), 160)                   AS erro,
+  m.delivered_at,
+  m.zapi_message_id                                          AS id_no_provedor,
+  coalesce(
+    m.metadata -> 'evolution_response' -> 'key' ->> 'remoteJid',
+    m.metadata -> 'uazapi_response' ->> 'chatid'
+  )                                                          AS jid_usado,
+  c.phone                                                    AS telefone_gravado,
+  conv.id                                                    AS conversation_id,
+  conv.workspace_id,
+  wi.phone_number                                            AS numero_que_enviou,
+  wi.evolution_instance_name,
+  wi.status                                                  AS status_da_instancia,
+  left(m.metadata::text, 300)                                AS metadata_cru
+FROM public.messages m
+JOIN public.conversations conv ON conv.id = m.conversation_id
+JOIN public.contacts c         ON c.id = conv.contact_id
+LEFT JOIN public.whatsapp_instances wi ON wi.id = conv.whatsapp_instance_id
+WHERE c.phone LIKE '%995375139'
+ORDER BY m.created_at DESC
+LIMIT 20;
