@@ -197,6 +197,83 @@ function providerAuthErrorMessage(
   }
 }
 
+const BR_VALID_DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
+
+/** As duas formas que o MESMO celular brasileiro pode ter: com e sem o nono digito. */
+function brazilianJidCandidates(digits: string): string[] {
+  if (!digits.startsWith('55')) return [];
+  const local = digits.slice(2);
+  if (!BR_VALID_DDDS.has(Number(local.slice(0, 2)))) return [];
+  const ddd = local.slice(0, 2);
+  if (local.length === 11 && local[2] === '9') return [digits, `55${ddd}${local.slice(3)}`];
+  if (local.length === 10) return [digits, `55${ddd}9${local.slice(2)}`];
+  return [];
+}
+
+/**
+ * Para qual jid mandar DE VERDADE.
+ *
+ * O Evolution reescreve numero brasileiro antes de enviar (o createJid dele tira
+ * o nono digito de DDD >= 31). Quando a conta do contato TEM o 9 no jid, a
+ * mensagem sai para um jid que nao existe: a API responde 200 com
+ * `status: PENDING`, nada e entregue e NENHUM erro aparece na tela -- foi o que
+ * aconteceu com 5531995375139, que virou 553195375139@s.whatsapp.net.
+ *
+ * Entao perguntamos ao WhatsApp qual das duas formas existe e devolvemos o jid
+ * COMPLETO: com "@s.whatsapp.net" o createJid devolve a string como veio, sem
+ * reescrever. So vale para celular BR (a duvida do nono digito e nossa); numero
+ * de outro pais vai cru como sempre foi.
+ *
+ * Se a checagem nao responder, devolvemos o numero cru -- o comportamento de
+ * antes. O proprio Evolution ainda recusa numero que nao existe (400).
+ */
+async function resolveEvolutionTarget(
+  baseUrl: string,
+  apiKey: string,
+  instanceName: string,
+  digits: string,
+): Promise<{ target: string; check: any }> {
+  const candidates = brazilianJidCandidates(digits);
+  if (candidates.length < 2) return { target: digits, check: null };
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/whatsappNumbers/${instanceName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: apiKey },
+      body: JSON.stringify({ numbers: candidates.map((item) => `${item}@s.whatsapp.net`) }),
+    });
+    if (!response.ok) {
+      const error = await response.text().catch(() => '');
+      return { target: digits, check: { status: response.status, error: error.substring(0, 200) } };
+    }
+
+    const data = await response.json();
+    const list = Array.isArray(data) ? data : [];
+    const onlyDigits = (value: unknown) => String(value || '').replace(/D/g, '');
+    const existing = list.filter((item: any) => item?.exists && (item.jid || item.number));
+    // Preferimos a forma exatamente como esta no cadastro; so entao a outra.
+    const chosen =
+      existing.find((item: any) => onlyDigits(item.jid || item.number) === digits) || existing[0];
+    if (!chosen) return { target: digits, check: list };
+
+    const jid = String(chosen.jid || `${onlyDigits(chosen.number)}@s.whatsapp.net`);
+    console.log(`[SEND_JID] ${digits} -> ${jid}`);
+    return { target: jid, check: list };
+  } catch (error) {
+    return { target: digits, check: { error: error instanceof Error ? error.message : String(error) } };
+  }
+}
+
 /**
  * Erro do provedor em texto que a pessoa na tela entende.
  *
@@ -521,9 +598,17 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Qual jid existe de verdade (nono digito do celular BR). Ver resolveEvolutionTarget.
+      const { target: evolutionTarget, check: evolutionNumberCheck } = await resolveEvolutionTarget(
+        evolutionBaseUrl,
+        evolutionApiKey,
+        instanceName,
+        normalizedPhone,
+      );
+
       let endpoint = `${evolutionBaseUrl}/message/sendText/${instanceName}`;
       let body: Record<string, any> = {
-        number: normalizedPhone,
+        number: evolutionTarget,
         text: content,
         delay: 1000,
         linkPreview: true,
@@ -539,7 +624,7 @@ Deno.serve(async (req) => {
         if (type === 'audio') {
           endpoint = `${evolutionBaseUrl}/message/sendWhatsAppAudio/${instanceName}`;
           body = {
-            number: normalizedPhone,
+            number: evolutionTarget,
             audio: mediaUrl,
             delay: 1000,
             linkPreview: true,
@@ -547,7 +632,7 @@ Deno.serve(async (req) => {
         } else {
           endpoint = `${evolutionBaseUrl}/message/sendMedia/${instanceName}`;
           body = {
-            number: normalizedPhone,
+            number: evolutionTarget,
             mediatype: type,
             mimetype: guessMimeType(type, mediaUrl),
             caption: content,
@@ -562,7 +647,7 @@ Deno.serve(async (req) => {
       if (zapiQuotedMsgId) {
         body.quoted = {
           key: {
-            remoteJid: `${normalizedPhone}@s.whatsapp.net`,
+            remoteJid: evolutionTarget.includes('@') ? evolutionTarget : `${evolutionTarget}@s.whatsapp.net`,
             fromMe: zapiQuotedFromMe,
             id: zapiQuotedMsgId,
           },
@@ -628,6 +713,8 @@ Deno.serve(async (req) => {
       const messageMetadata: Record<string, any> = sendFailed
         ? { provider, send_error: sendErrorText, failed_at: new Date().toISOString() }
         : { provider, evolution_response: evolutionResult };
+      messageMetadata.evolution_target = evolutionTarget;
+      if (evolutionNumberCheck) messageMetadata.evolution_number_check = evolutionNumberCheck;
       if (mediaSendDiagnostics) {
         messageMetadata.media_send = {
           ...mediaSendDiagnostics,
