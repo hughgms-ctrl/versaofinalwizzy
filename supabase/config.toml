@@ -45,6 +45,9 @@ verify_jwt = false
 [functions.zapi-configure-webhook]
 verify_jwt = false
 
+[functions.zapi-call-settings]
+verify_jwt = false
+
 [functions.zapi-send-presence]
 verify_jwt = false
 

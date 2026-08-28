@@ -292,6 +292,9 @@ Deno.serve(async (req) => {
       label,
       is_active: false,
       provider_settings: settings,
+      // Novo numero nasce recusando chamadas (comportamento historico); o dono
+      // libera depois em Configuracoes > Conexoes WhatsApp > Editar.
+      block_calls: settings.rejectCall,
     };
 
     if (provider === 'evolution') {

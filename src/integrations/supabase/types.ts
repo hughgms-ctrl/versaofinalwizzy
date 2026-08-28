@@ -9894,6 +9894,7 @@ export type Database = {
       whatsapp_instances: {
         Row: {
           block_calls: boolean
+          call_reject_message: string | null
           connected_at: string | null
           created_at: string
           default_assignee_id: string | null
@@ -9918,6 +9919,7 @@ export type Database = {
         }
         Insert: {
           block_calls?: boolean
+          call_reject_message?: string | null
           connected_at?: string | null
           created_at?: string
           default_assignee_id?: string | null
@@ -9942,6 +9944,7 @@ export type Database = {
         }
         Update: {
           block_calls?: boolean
+          call_reject_message?: string | null
           connected_at?: string | null
           created_at?: string
           default_assignee_id?: string | null

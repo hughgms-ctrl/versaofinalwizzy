@@ -13,6 +13,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Smartphone,
   Plus,
@@ -26,6 +28,8 @@ import {
   Zap,
   MessageSquare,
   Download,
+  PhoneCall,
+  PhoneOff,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWhatsAppInstances, useDeleteWhatsAppInstance, useUpdateInstanceLabel, WhatsAppInstance } from '@/hooks/useWhatsAppInstances';
@@ -48,6 +52,15 @@ function hasProviderCredentials(instance: WhatsAppInstance) {
     instance.evolution_instance_id ||
     instance.evolution_api_key
   );
+}
+
+const DEFAULT_CALL_REJECT_MESSAGE = 'No momento não atendemos chamadas por WhatsApp. Envie uma mensagem de texto.';
+
+// A instancia so bloqueia chamadas quando block_calls !== false. Numeros criados
+// antes desta configuracao existirem vem com block_calls = true (backfill da
+// migration), que era o comportamento fixo no codigo.
+function blocksCalls(instance: WhatsAppInstance) {
+  return instance.block_calls !== false;
 }
 
 function isWhatsAppNumberInUse(instance: WhatsAppInstance) {
@@ -576,6 +589,19 @@ export function WhatsAppInstancesSettings() {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                             {instance.phone_number && <span>{instance.phone_number}</span>}
+                            {instance.provider === 'evolution' && (
+                              blocksCalls(instance) ? (
+                                <Badge variant="outline" className="text-[10px] py-0 gap-1">
+                                  <PhoneOff className="h-2.5 w-2.5" />
+                                  Chamadas bloqueadas
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] py-0 gap-1 border-green-500/30 text-green-600">
+                                  <PhoneCall className="h-2.5 w-2.5" />
+                                  Chamadas liberadas
+                                </Badge>
+                              )
+                            )}
                             {linkedWorkspaces.slice(0, 3).map((workspace) => (
                               <Badge key={workspace.id} variant="outline" className="text-[10px] py-0" style={{ borderColor: workspace.color, color: workspace.color }}>
                                 {workspace.name}
@@ -649,6 +675,21 @@ export function WhatsAppInstancesSettings() {
   );
 }
 
+// Mesmo padrao de useWorkspaces.ts: o supabase-js devolve sempre a mesma mensagem
+// generica para qualquer status nao-2xx e guarda o corpo real em error.context --
+// aqui isso importa porque o erro util e o do provedor (Evolution recusou).
+async function getCallSettingsError(error: any) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return new Error(body.details ? `${body.error} (${body.details})` : body.error);
+    } catch {
+      // cai no erro original abaixo
+    }
+  }
+  return error;
+}
+
 function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; onOpenChange: (open: boolean) => void; instance: WhatsAppInstance }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -658,6 +699,9 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
 
   const [label, setLabel] = useState(instance.label || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [allowCalls, setAllowCalls] = useState(instance.block_calls === false);
+  const [rejectMessage, setRejectMessage] = useState(instance.call_reject_message || DEFAULT_CALL_REJECT_MESSAGE);
+  const supportsCallSettings = instance.provider === 'evolution';
 
   const currentWorkspaceIds = workspaces
     .filter(w => w.whatsapp_instance_id === instance.id)
@@ -674,6 +718,8 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
 
   useEffect(() => {
     setLabel(instance.label || '');
+    setAllowCalls(instance.block_calls === false);
+    setRejectMessage(instance.call_reject_message || DEFAULT_CALL_REJECT_MESSAGE);
   }, [instance]);
 
   const handleSave = async () => {
@@ -681,6 +727,27 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
     try {
       // Update label
       await updateLabel.mutateAsync({ instanceId: instance.id, label: label.trim() });
+
+      // Chamadas: precisa passar pela edge function porque a configuracao vive no
+      // provedor (Evolution /settings/set), nao no banco. Salvar so na tabela
+      // deixaria a UI dizendo "liberado" com o provedor ainda cortando a ligacao.
+      const trimmedRejectMessage = rejectMessage.trim();
+      const savedRejectMessage = instance.call_reject_message || DEFAULT_CALL_REJECT_MESSAGE;
+      const callSettingsChanged =
+        allowCalls !== (instance.block_calls === false) ||
+        (!allowCalls && trimmedRejectMessage !== savedRejectMessage);
+
+      if (supportsCallSettings && callSettingsChanged) {
+        const { data, error } = await supabase.functions.invoke('zapi-call-settings', {
+          body: {
+            instanceId: instance.id,
+            blockCalls: !allowCalls,
+            rejectMessage: allowCalls ? null : (trimmedRejectMessage || null),
+          },
+        });
+        if (error) throw await getCallSettingsError(error);
+        if (data?.success === false) throw new Error(data?.error || 'Falha ao salvar a configuracao de chamadas');
+      }
 
       const previousIds = new Set(currentWorkspaceIds);
       const nextIds = new Set(workspaceIds);
@@ -732,13 +799,43 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Editar Instância</DialogTitle>
-          <DialogDescription>Altere o nome e os workspaces vinculados.</DialogDescription>
+          <DialogDescription>Altere o nome, as chamadas e os workspaces vinculados.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
             <Label>Nome/Label</Label>
             <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex: Número Principal" className="mt-1" />
           </div>
+          {supportsCallSettings && (
+            <div className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Label className="flex items-center gap-2">
+                    {allowCalls ? <PhoneCall className="h-4 w-4 text-green-500" /> : <PhoneOff className="h-4 w-4 text-muted-foreground" />}
+                    Receber chamadas neste número
+                  </Label>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {allowCalls
+                      ? 'A ligação toca normalmente no celular. Use em números pessoais.'
+                      : 'A Wizzy recusa a ligação e responde com a mensagem abaixo.'}
+                  </p>
+                </div>
+                <Switch checked={allowCalls} onCheckedChange={setAllowCalls} />
+              </div>
+              {!allowCalls && (
+                <div className="mt-3">
+                  <Label className="text-xs">Mensagem ao recusar</Label>
+                  <Textarea
+                    value={rejectMessage}
+                    onChange={(e) => setRejectMessage(e.target.value)}
+                    rows={2}
+                    className="mt-1 text-sm"
+                    placeholder={DEFAULT_CALL_REJECT_MESSAGE}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <Label>Workspaces vinculados</Label>
             <div className="mt-2 max-h-64 space-y-2 overflow-y-auto rounded-md border p-2">

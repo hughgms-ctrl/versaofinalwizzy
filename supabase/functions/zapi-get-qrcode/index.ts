@@ -41,12 +41,17 @@ async function loadConnectionSettings(supabase: any) {
   };
 }
 
+const DEFAULT_CALL_REJECT_MESSAGE = 'No momento não atendemos chamadas por WhatsApp. Envie uma mensagem de texto.';
+
 // Mesmas configurações usadas em zapi-create-instance, para recriar a instância
-// idêntica ao re-parear.
-function defaultProviderSettings() {
+// idêntica ao re-parear. A recriação zera os settings no servidor, então o
+// bloqueio de chamadas precisa vir da instância salva (block_calls) -- senão um
+// re-pareamento voltaria a cortar as ligações de quem tinha liberado.
+function providerSettingsFor(instance?: any) {
+  const rejectCall = instance?.block_calls !== false;
   return {
-    rejectCall: true,
-    msgCall: 'No momento não atendemos chamadas por WhatsApp. Envie uma mensagem de texto.',
+    rejectCall,
+    msgCall: rejectCall ? (instance?.call_reject_message || DEFAULT_CALL_REJECT_MESSAGE) : '',
     groupsIgnore: true,
     alwaysOnline: false,
     readMessages: false,
@@ -66,6 +71,7 @@ async function repairEvolutionInstance(
   apiKey: string,
   instanceName: string,
   webhookUrl: string,
+  instance?: any,
 ): Promise<{ qrCode: string | null; instanceApiKey: string | null }> {
   // 1) Apaga a instância no servidor (best-effort: pode não existir / estar logada).
   try {
@@ -83,7 +89,7 @@ async function repairEvolutionInstance(
     instanceName,
     integration: 'WHATSAPP-BAILEYS',
     qrcode: true,
-    ...defaultProviderSettings(),
+    ...providerSettingsFor(instance),
     webhook: {
       url: webhookUrl,
       byEvents: false,
@@ -320,6 +326,7 @@ Deno.serve(async (req) => {
             evolutionApiKey,
             instanceName,
             connectionSettings.webhookUrl,
+            instance,
           );
 
           await supabase

@@ -15,6 +15,8 @@ export interface WhatsAppInstance {
   evolution_instance_id?: string | null;
   evolution_api_key?: string | null;
   provider_settings?: Record<string, unknown>;
+  block_calls?: boolean;
+  call_reject_message?: string | null;
   is_active: boolean;
   connected_at: string | null;
   disconnected_at: string | null;
