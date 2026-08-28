@@ -31,6 +31,24 @@ const STATUS_HINT: Record<string, string> = {
   pending: 'Conexão não concluída. Refaça a autorização para ativar a automação.',
 };
 
+// O callback do OAuth volta como redirect do navegador, então o motivo da
+// falha chega na URL. Traduzido aqui porque "connection_failed" sozinho não
+// dizia nada — e a etapa aponta direto para o culpado.
+const ERROR_LABEL: Record<string, string> = {
+  access_denied: 'A autorização foi recusada no Instagram.',
+  missing_code_or_state: 'O Instagram voltou sem os dados da autorização.',
+  invalid_or_expired_state: 'O pedido de conexão expirou. Tente de novo.',
+  app_not_configured: 'O app do Instagram não está configurado neste ambiente (IG_APP_ID/IG_APP_SECRET).',
+  connection_failed: 'A conexão falhou.',
+};
+
+const ERROR_STEP_LABEL: Record<string, string> = {
+  token_exchange: 'Etapa: troca do código pelo token (confira o ID e a chave secreta do app na Meta).',
+  long_lived_token: 'Etapa: geração do token de 60 dias.',
+  profile: 'Etapa: leitura do perfil (permissões concedidas).',
+  save: 'Etapa: gravação da conta no banco.',
+};
+
 export function InstagramAccountsSettings() {
   const { toast } = useToast();
   const { selectedOrganizationId } = useWorkspaceContext();
@@ -56,12 +74,26 @@ export function InstagramAccountsSettings() {
         description: username ? `Conta @${username} conectada com sucesso.` : 'Conta conectada com sucesso.',
       });
     } else if (error) {
-      toast({ title: 'Falha ao conectar Instagram', description: error, variant: 'destructive' });
+      const step = params.get('instagram_error_step');
+      const detail = params.get('instagram_error_detail');
+      const description = [
+        ERROR_LABEL[error] || error,
+        step ? ERROR_STEP_LABEL[step] : null,
+        detail,
+      ].filter(Boolean).join(' · ');
+      toast({
+        title: 'Falha ao conectar Instagram',
+        description,
+        variant: 'destructive',
+        duration: 15000,
+      });
     }
 
     params.delete('instagram_connected');
     params.delete('instagram_username');
     params.delete('instagram_error');
+    params.delete('instagram_error_step');
+    params.delete('instagram_error_detail');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
   }, [toast]);

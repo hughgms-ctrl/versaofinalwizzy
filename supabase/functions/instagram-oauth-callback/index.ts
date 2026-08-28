@@ -37,6 +37,18 @@ function redirectTo(baseOrigin: string | null, params: Record<string, string>) {
   return new Response(null, { status: 302, headers: { Location: target.toString() } });
 }
 
+// A causa real da falha ficava só no log da edge function: a tela dizia
+// "connection_failed" e nada mais, o que não distingue segredo errado de
+// permissão faltando ou de recusa da Meta. Como o retorno é um redirect no
+// navegador, a mensagem viaja na URL — limpa de qualquer segredo antes.
+function sanitizeDetail(message: string, secrets: Array<string | undefined>): string {
+  let out = message;
+  for (const secret of secrets) {
+    if (secret && secret.length >= 6) out = out.split(secret).join('***');
+  }
+  return out.replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
 
@@ -56,11 +68,20 @@ Deno.serve(async (req) => {
 
   if (oauthError) {
     console.error('[instagram-oauth-callback] Meta returned an error:', oauthError);
-    return redirectTo(null, { instagram_error: 'access_denied' });
+    return redirectTo(null, {
+      instagram_error: 'access_denied',
+      instagram_error_detail: sanitizeDetail(String(oauthError), [appConfig.appSecret]),
+    });
   }
 
   if (!code || !state) {
     return redirectTo(null, { instagram_error: 'missing_code_or_state' });
+  }
+
+  // Sem app id/secret nada abaixo funciona, e o erro que a Meta devolve nesse
+  // caso ("Invalid platform app") não deixa isso óbvio.
+  if (!appConfig.appId || !appConfig.appSecret) {
+    return redirectTo(null, { instagram_error: 'app_not_configured' });
   }
 
   const statePayload = await verifyOAuthState(appConfig.appSecret, state);
@@ -70,6 +91,10 @@ Deno.serve(async (req) => {
 
   const returnOrigin = safeOrigin(statePayload.origin);
 
+  // Em qual etapa a conexão morreu. Vai junto no retorno: cada etapa aponta
+  // para um culpado diferente (segredo do app, permissão, banco).
+  let step = 'token_exchange';
+
   try {
     const redirectUri = `${supabaseUrl}/functions/v1/instagram-oauth-callback`;
     const { accessToken: shortLivedToken, igUserId } = await exchangeCodeForShortLivedToken(
@@ -78,6 +103,8 @@ Deno.serve(async (req) => {
       redirectUri,
       code,
     );
+
+    step = 'long_lived_token';
     const { accessToken: longLivedToken, expiresIn } = await exchangeForLongLivedToken(
       appConfig.appSecret,
       shortLivedToken,
@@ -86,6 +113,7 @@ Deno.serve(async (req) => {
     // Instagram Login flow returns the account's own user id at code-exchange
     // time already — this profile fetch is just to get the username to show
     // in the connect UI, not to resolve which account was authorized.
+    step = 'profile';
     const profile = await fetchInstagramProfile(longLivedToken);
     const resolvedIgUserId = profile.igUserId || igUserId;
 
@@ -93,6 +121,7 @@ Deno.serve(async (req) => {
       ? new Date(Date.now() + expiresIn * 1000).toISOString()
       : null;
 
+    step = 'save';
     const { data: existing } = await supabase
       .from('instagram_accounts')
       .select('id')
@@ -113,8 +142,8 @@ Deno.serve(async (req) => {
       token_expires_at: tokenExpiresAt,
       status: 'connected',
       // Reconectar precisa desfazer TODO o desligamento anterior: 'expired' e
-      // 'disconnected' tambem zeram is_active, e sem isto a conta voltava
-      // marcada como conectada mas invisivel para o webhook e para os fluxos,
+      // 'disconnected' também zeram is_active, e sem isto a conta voltava
+      // marcada como conectada mas invisível para o webhook e para os fluxos,
       // que filtram por is_active.
       is_active: true,
       scopes: REQUESTED_SCOPES_FALLBACK,
@@ -122,11 +151,12 @@ Deno.serve(async (req) => {
       disconnected_at: null,
     };
 
-    if (existing?.id) {
-      await supabase.from('instagram_accounts').update(upsertPayload).eq('id', existing.id);
-    } else {
-      await supabase.from('instagram_accounts').insert(upsertPayload);
-    }
+    // O erro de gravação era descartado: a autorização dava certo, a linha não
+    // era salva e a tela ainda assim comemorava "Instagram conectado!".
+    const saveResult = existing?.id
+      ? await supabase.from('instagram_accounts').update(upsertPayload).eq('id', existing.id)
+      : await supabase.from('instagram_accounts').insert(upsertPayload);
+    if (saveResult.error) throw new Error(`Falha ao salvar a conta: ${saveResult.error.message}`);
 
     const subscribeResult = await subscribeAccountToWebhooks(resolvedIgUserId, longLivedToken, WEBHOOK_SUBSCRIBE_FIELDS);
     if (!subscribeResult.ok) {
@@ -134,8 +164,12 @@ Deno.serve(async (req) => {
     }
 
     return redirectTo(returnOrigin, { instagram_connected: '1', instagram_username: profile.username || '' });
-  } catch (error) {
-    console.error('[instagram-oauth-callback] error:', error);
-    return redirectTo(returnOrigin, { instagram_error: 'connection_failed' });
+  } catch (error: any) {
+    console.error('[instagram-oauth-callback] error at step', step, error);
+    return redirectTo(returnOrigin, {
+      instagram_error: 'connection_failed',
+      instagram_error_step: step,
+      instagram_error_detail: sanitizeDetail(error?.message || String(error), [appConfig.appSecret, appConfig.appId]),
+    });
   }
 });
