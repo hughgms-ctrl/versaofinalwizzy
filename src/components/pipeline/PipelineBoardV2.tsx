@@ -52,8 +52,6 @@ import { ConversationFiltersState } from '@/components/shared/ConversationFilter
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
 import { useTags, useAllContactTags } from '@/hooks/useTags';
-import { useContactCustomFields } from '@/hooks/useContactCustomFields';
-import { resolveContactCustomFields } from '@/lib/contactCustomFields';
 import { ContactCustomFieldsSection } from '@/components/contacts/ContactCustomFieldsSection';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
@@ -420,7 +418,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // SUCESSO, e todo filtro montado em cima dela (tag, permissao por tag, chips
   // do card) escondia card sem dar erro.
   const { data: allContactTags = [] } = useAllContactTags();
-  const { data: contactCustomFieldDefs = [] } = useContactCustomFields();
 
   // Apply all filters to conversations (including search)
   const filteredConversations = useMemo(() => {
@@ -1099,9 +1096,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const isRecording = isActive && presence?.presence_type === 'recording';
     const contactId = conversation.contact?.id;
     const note = (conversation.contact?.metadata as { note?: string } | null)?.note;
-    const customFields = resolveContactCustomFields(conversation.contact?.metadata, contactCustomFieldDefs);
-    // Teto de 3 para o card nao virar formulario; o resto abre no detalhe.
-    const visibleCustomFields = customFields.slice(0, 3);
+    // Campos personalizados nao aparecem no card: poluiam demais. Ficam so no
+    // detalhe do card (ContactCustomFieldsSection), que ja resolve tudo sozinho.
     const contactTagIds = allContactTags?.filter(ct => ct.contact_id === contactId).map(ct => ct.tag_id) || [];
     const contactTags = tags.filter(t => contactTagIds.includes(t.id));
     const visibleTags = contactTags.slice(0, 5);
@@ -1173,22 +1169,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             {note && (
               <div className="mb-1.5 rounded bg-amber-400/15 px-2 py-1 text-[10px] font-medium leading-tight text-amber-200 line-clamp-2">
                 {note}
-              </div>
-            )}
-
-            {visibleCustomFields.length > 0 && (
-              <div className="mb-1.5 space-y-0.5">
-                {visibleCustomFields.map(field => (
-                  <div key={field.key} className="flex items-baseline gap-1 text-[10px] leading-tight">
-                    <span className="shrink-0 text-zinc-500">{field.label}:</span>
-                    <span className="truncate text-zinc-300">{field.value}</span>
-                  </div>
-                ))}
-                {customFields.length > visibleCustomFields.length && (
-                  <div className="text-[9px] text-zinc-500">
-                    +{customFields.length - visibleCustomFields.length} campo(s)
-                  </div>
-                )}
               </div>
             )}
 
