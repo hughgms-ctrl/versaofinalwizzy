@@ -149,23 +149,38 @@ export default function ProfilePage() {
       return;
     }
 
+    if (!profile.organization_id) {
+      toast({
+        title: 'Erro ao enviar foto',
+        description: 'Sessão sem organização. Recarregue a página e tente novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsUploadingPhoto(true);
     try {
-      const fileExt = file.name.split('.').pop();
+      const fileExt = file.name.split('.').pop() || 'jpg';
       // chat-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
-      const filePath = `${profile.organization_id}/avatars/${profile.id}.${fileExt}`;
+      //
+      // Nome ÚNICO + upsert:false de propósito. Com upsert:true o storage-api precisa
+      // LER a linha existente em storage.objects antes de sobrescrever, e a policy de
+      // SELECT do chat-media foi removida no hardening do Advisor (20260718140000 /
+      // 20260718150000) — então a troca de foto batia em RLS. Gravar um objeto novo a
+      // cada troca exige só o INSERT, que continua escopado por org.
+      const filePath = `${profile.organization_id}/avatars/${profile.id}-${Date.now()}.${fileExt}`;
 
       // Upload to storage
-      const { error: uploadError } = await supabase.storage
+      const { data: uploaded, error: uploadError } = await supabase.storage
         .from('chat-media')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
       if (uploadError) throw uploadError;
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('chat-media')
-        .getPublicUrl(filePath);
+        .getPublicUrl(uploaded.path);
 
       // Update profile with new avatar URL
       const { error: updateError } = await supabase
@@ -182,9 +197,14 @@ export default function ProfilePage() {
       });
     } catch (error) {
       console.error('Error uploading photo:', error);
+      const msg = (error as any)?.message || '';
       toast({
         title: 'Erro ao enviar foto',
-        description: 'Não foi possível atualizar sua foto.',
+        // Sem a mensagem do backend não dá para separar RLS de MIME de tamanho — o
+        // texto genérico escondia a causa real do erro.
+        description: msg
+          ? `Não foi possível atualizar sua foto: ${msg}`
+          : 'Não foi possível atualizar sua foto.',
         variant: 'destructive',
       });
     } finally {
