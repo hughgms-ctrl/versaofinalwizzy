@@ -112,6 +112,11 @@ Deno.serve(async (req) => {
       long_lived_user_token: longLivedToken,
       token_expires_at: tokenExpiresAt,
       status: 'connected',
+      // Reconectar precisa desfazer TODO o desligamento anterior: 'expired' e
+      // 'disconnected' tambem zeram is_active, e sem isto a conta voltava
+      // marcada como conectada mas invisivel para o webhook e para os fluxos,
+      // que filtram por is_active.
+      is_active: true,
       scopes: REQUESTED_SCOPES_FALLBACK,
       connected_at: new Date().toISOString(),
       disconnected_at: null,

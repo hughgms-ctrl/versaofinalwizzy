@@ -18,6 +18,17 @@ const STATUS_LABEL: Record<string, { label: string; icon: JSX.Element; className
   pending: { label: 'Pendente', icon: <Clock className="h-3.5 w-3.5" />, className: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' },
   disconnected: { label: 'Desconectado', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-muted text-muted-foreground' },
   error: { label: 'Erro', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-destructive/10 text-destructive border-destructive/20' },
+  expired: { label: 'Token expirado', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-destructive/10 text-destructive border-destructive/20' },
+};
+
+// O que dizer ao dono em cada estado que não é "conectado". Sem isto a conta
+// aparecia só como um selo vermelho, sem explicar que a automação está parada
+// nem o que fazer — e 'expired' nem tinha selo: caía no rótulo "Desconectado".
+const STATUS_HINT: Record<string, string> = {
+  expired: 'O acesso ao Instagram venceu e a automação está parada. Clique em Reconectar para autorizar de novo.',
+  error: 'A Meta recusou o acesso desta conta e a automação está parada. Clique em Reconectar para autorizar de novo.',
+  disconnected: 'Conta desconectada. A automação não roda enquanto ela estiver assim.',
+  pending: 'Conexão não concluída. Refaça a autorização para ativar a automação.',
 };
 
 export function InstagramAccountsSettings() {
@@ -131,6 +142,7 @@ export function InstagramAccountsSettings() {
             <div className="space-y-3">
               {accounts.map((account, index) => {
                 const statusInfo = STATUS_LABEL[account.status] || STATUS_LABEL.disconnected;
+                const hint = account.status === 'connected' ? null : STATUS_HINT[account.status] || STATUS_HINT.disconnected;
                 return (
                   <div key={account.id}>
                     {index > 0 && <Separator className="mb-3" />}
@@ -154,6 +166,7 @@ export function InstagramAccountsSettings() {
                           <p className="text-xs text-muted-foreground">
                             {account.ig_username ? `@${account.ig_username}` : 'Conta Instagram'}
                           </p>
+                          {hint && <p className="text-xs text-destructive mt-1 max-w-md">{hint}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -161,6 +174,22 @@ export function InstagramAccountsSettings() {
                           {statusInfo.icon}
                           {statusInfo.label}
                         </Badge>
+                        {account.status !== 'connected' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={connectAccount.isPending}
+                            onClick={handleConnect}
+                          >
+                            {connectAccount.isPending ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            )}
+                            Reconectar
+                          </Button>
+                        )}
                         {account.status !== 'disconnected' && (
                           <Button
                             variant="ghost"

@@ -11,7 +11,7 @@ export interface InstagramAccount {
   ig_name: string | null;
   ig_profile_pic_url: string | null;
   facebook_page_id: string | null;
-  status: 'pending' | 'connected' | 'disconnected' | 'error';
+  status: 'pending' | 'connected' | 'disconnected' | 'error' | 'expired';
   scopes: string[];
   label: string | null;
   is_active: boolean;

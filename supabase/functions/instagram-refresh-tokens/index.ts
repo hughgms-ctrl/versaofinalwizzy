@@ -20,6 +20,12 @@ const REFRESH_WINDOW_DAYS = 21;
 // are simply left for the next weekly pass.
 const MIN_TOKEN_AGE_MS = 25 * 60 * 60 * 1000;
 
+// Prazo nominal do token de longa duração. Serve para deduzir a idade do token
+// a partir de `token_expires_at` (emitido = expira − 60 dias). `updated_at` não
+// serve: um trigger o reescreve a cada UPDATE na linha, por qualquer motivo, e
+// a conta ficava eternamente "nova demais para renovar".
+const LONG_LIVED_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
 Deno.serve(async () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -30,8 +36,11 @@ Deno.serve(async () => {
 
     const { data: accounts, error } = await supabase
       .from('instagram_accounts')
-      .select('id, organization_id, long_lived_user_token, page_access_token, token_expires_at, updated_at')
-      .eq('status', 'connected')
+      .select('id, organization_id, long_lived_user_token, page_access_token, token_expires_at, status')
+      // 'error' entra junto: a conta pode ter caído por um tropeço passageiro da
+      // Graph API e continuar com token válido. Fora do sweep, ela nunca mais
+      // renovaria — e aí o token morreria de verdade.
+      .in('status', ['connected', 'error'])
       .not('token_expires_at', 'is', null)
       .lte('token_expires_at', horizon);
 
@@ -48,10 +57,12 @@ Deno.serve(async () => {
         continue;
       }
 
+      const expiresAt = new Date(account.token_expires_at).getTime();
+
       // Already past expiry: refreshing is impossible, only re-authorization
       // works. Mark it so the UI can tell the client to reconnect instead of
       // leaving them with an account that looks connected but cannot send.
-      if (account.token_expires_at && new Date(account.token_expires_at).getTime() <= Date.now()) {
+      if (expiresAt <= Date.now()) {
         await supabase
           .from('instagram_accounts')
           .update({ status: 'expired', is_active: false })
@@ -60,7 +71,7 @@ Deno.serve(async () => {
         continue;
       }
 
-      if (account.updated_at && Date.now() - new Date(account.updated_at).getTime() < MIN_TOKEN_AGE_MS) {
+      if (expiresAt - Date.now() > LONG_LIVED_TTL_MS - MIN_TOKEN_AGE_MS) {
         skipped++;
         continue;
       }
@@ -74,6 +85,11 @@ Deno.serve(async () => {
             // Kept in sync because every send path reads page_access_token.
             page_access_token: accessToken,
             token_expires_at: new Date(Date.now() + (expiresIn || 60 * 24 * 60 * 60) * 1000).toISOString(),
+            // A Meta aceitou o token: a conta está viva. Se estava marcada como
+            // 'error', volta ao ar — senão ficaria fora de todo envio, que
+            // resolve conta por status='connected'.
+            status: 'connected',
+            is_active: true,
           })
           .eq('id', account.id);
         refreshed++;
