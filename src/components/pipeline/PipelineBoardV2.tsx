@@ -2067,9 +2067,22 @@ function PipelineCardDetailDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[92vh] w-[min(98vw,1280px)] max-w-none p-0 gap-0 overflow-hidden border-border bg-card text-card-foreground dark:bg-[#15161d] dark:text-zinc-100 dark:border-zinc-700 [&>button.absolute]:hidden">
+        {/* Fechar fica ancorado na quina da janela, nao no fim da coluna da esquerda:
+            com a barra lateral aberta o X aparecia no meio do dialogo. */}
+        <div className="absolute right-3 top-3 z-50">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Fechar"
+            className="text-muted-foreground hover:bg-accent hover:text-foreground dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-border px-5 py-4 dark:border-zinc-700">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 pr-14 dark:border-zinc-700 lg:pr-5">
               <div className="flex min-w-0 items-center gap-3">
                 <ContactAvatar
                   src={contact?.avatar_url}
@@ -2123,14 +2136,6 @@ function PipelineCardDetailDialog({
                 >
                   <MessagesSquare className="mr-2 h-4 w-4" />
                   Mensagens
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X className="h-5 w-5" />
                 </Button>
               </div>
             </div>
