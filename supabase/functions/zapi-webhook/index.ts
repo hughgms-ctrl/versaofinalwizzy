@@ -1278,6 +1278,35 @@ function respond(data: any, status = 200) {
   });
 }
 
+/**
+ * B5: fecha a execução que está em waiting_input ANTES de retomar — e só
+ * retoma quem conseguiu fechar. Duas mensagens do mesmo contato em 200 ms
+ * chegavam aqui em dois isolates, os dois liam a mesma execução, os dois a
+ * fechavam por id (o segundo UPDATE não falha: a linha existe) e os dois
+ * chamavam o flow-execute, que sempre insere execução nova. Resultado: o resto
+ * do fluxo rodando duas vezes e o contato recebendo tudo em dobro.
+ *
+ * O filtro por status transforma o UPDATE num compare-and-set: a linha só sai
+ * de waiting_input uma vez, então só um dos isolates recebe ela de volta.
+ */
+async function claimWaitingExecution(supabase: any, executionId: string, patch: Record<string, unknown>): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('flow_executions')
+    .update(patch)
+    .eq('id', executionId)
+    .eq('status', 'waiting_input')
+    .select('id');
+  if (error) {
+    console.error(`[WEBHOOK] Falha ao reivindicar execução ${executionId}:`, error);
+    return false;
+  }
+  const claimed = Array.isArray(data) && data.length > 0;
+  if (!claimed) {
+    console.log(`[WEBHOOK] Execução ${executionId} já foi retomada por outra mensagem — esta não retoma de novo`);
+  }
+  return claimed;
+}
+
 async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string, eventType: string) {
   // Log payload keys for diagnostics (helps identify media field names)
   console.log(`[WEBHOOK handleMessage] Payload keys: ${Object.keys(payload).join(', ')}`);
@@ -2610,21 +2639,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         if (respondedTarget) {
           // Clear timeout and remarketing, advance to responded node
-          await supabase.from('flow_executions').update({
-            // 'running' aqui era o zumbi: quem escreveu isto contava que o
-            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
-            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
-            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
-            // rodando, e como o webhook trata 'running' como fluxo ativo, a
-            // conversa emudecia assim que a execucao de verdade terminasse.
-            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
-            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             current_node_id: respondedTarget,
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,
@@ -2641,11 +2664,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         } else {
           // No responded edge — flow STOPS here. Complete and cleanup.
           console.log(`[WEBHOOK] action-flow has NO responded edge — flow STOPS`);
-          await supabase.from('flow_executions').update({
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             timeout_at: null,
             completed_at: new Date().toISOString(),
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           // Cleanup: reset service_mode and ai_agent_id
           const { data: convMeta } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
@@ -2674,22 +2699,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const nextNodeId = nextEdge?.target || null;
 
         if (nextNodeId) {
-          await supabase.from('flow_executions').update({
-            // 'running' aqui era o zumbi: quem escreveu isto contava que o
-            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
-            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
-            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
-            // rodando, e como o webhook trata 'running' como fluxo ativo, a
-            // conversa emudecia assim que a execucao de verdade terminasse.
-            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
-            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             current_node_id: nextNodeId,
             variables: existingVars,
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,
@@ -2706,13 +2725,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         } else {
           // No next node — flow STOPS here. Complete and cleanup.
           console.log(`[WEBHOOK] Content block has NO outgoing edge — flow STOPS`);
-          await supabase.from('flow_executions').update({
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             variables: existingVars,
             completed_at: new Date().toISOString(),
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           // Cleanup: reset service_mode and ai_agent_id
           const { data: convMeta2 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
@@ -2800,22 +2821,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           existingVars._lastChoice = triggerText || '';
           existingVars._lastChoiceHandle = matchedHandle || 'none';
 
-          await supabase.from('flow_executions').update({
-            // 'running' aqui era o zumbi: quem escreveu isto contava que o
-            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
-            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
-            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
-            // rodando, e como o webhook trata 'running' como fluxo ativo, a
-            // conversa emudecia assim que a execucao de verdade terminasse.
-            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
-            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             current_node_id: nextNodeId,
             variables: existingVars,
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,
@@ -2832,11 +2847,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         } else {
           // No matching edge — flow STOPS
           console.log(`[WEBHOOK] ${currentNode.type} has NO matching edge — flow STOPS`);
-          await supabase.from('flow_executions').update({
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             timeout_at: null,
             completed_at: new Date().toISOString(),
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           const { data: convMetaBtn } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
           const cleanMetaBtn = { ...(convMetaBtn?.metadata || {}) };
@@ -2859,22 +2876,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const inputVariable = currentNode?.data?.variableName;
           if (inputVariable && triggerText) varsWithChoice[String(inputVariable)] = triggerText;
 
-          await supabase.from('flow_executions').update({
-            // 'running' aqui era o zumbi: quem escreveu isto contava que o
-            // flow-execute CONTINUASSE esta execucao a partir de current_node_id.
-            // Ele nao continua nenhuma -- sempre insere outra (ver o insert em
-            // flow-execute/index.ts). A linha ficava em 'running' sem ninguem
-            // rodando, e como o webhook trata 'running' como fluxo ativo, a
-            // conversa emudecia assim que a execucao de verdade terminasse.
-            // Fechar aqui e o mesmo contrato ja usado no atraso inteligente
-            // (process-flow-timeouts, fase 1.8) e na volta do sub-fluxo.
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             current_node_id: followUpEdge.target,
             variables: varsWithChoice,
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,
@@ -2890,12 +2901,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           }));
         } else if (!hasOutgoingEdge) {
           console.log(`[WEBHOOK] Node ${activeFlowExec.current_node_id} has NO outgoing edge — flow STOPS`);
-          await supabase.from('flow_executions').update({
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           const { data: convMeta3 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
           const cleanMeta3 = { ...(convMeta3?.metadata || {}) };
@@ -2913,12 +2926,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           // a mais por mensagem -- a busca por started_at DESC escondia isso
           // enquanto a de cima fosse a certa. Fecha antes de chamar, como os
           // outros ramos.
-          await supabase.from('flow_executions').update({
+          if (!(await claimWaitingExecution(supabase, activeFlowExec.id, {
             status: 'completed',
             completed_at: new Date().toISOString(),
             timeout_at: null,
             remarketing_step: 0,
-          }).eq('id', activeFlowExec.id);
+          }))) {
+            return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
+          }
 
           runBackground(resumeFlow({
             flowId: activeFlowExec.flow_id,

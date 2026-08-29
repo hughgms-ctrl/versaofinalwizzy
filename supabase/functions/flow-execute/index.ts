@@ -421,6 +421,28 @@ Deno.serve(async (req) => {
       }
     }
 
+    // B5: uma execução só pode ser retomada UMA vez. Quem retoma fecha a
+    // anterior com compare-and-set (zapi-webhook, process-flow-timeouts,
+    // orquestrador), mas esta é a última linha de defesa: se já existe uma
+    // filha viva ou concluída desta mesma execução, esta chamada é a cópia
+    // gêmea de uma corrida e não pode inserir outra. Filha 'failed'/'cancelled'
+    // não conta — aí a retomada é legítima (retentativa).
+    if (resumedFromExecutionId) {
+      const { data: siblings } = await supabase
+        .from('flow_executions')
+        .select('id, status')
+        .eq('resumed_from_execution_id', resumedFromExecutionId)
+        .not('status', 'in', '("failed","cancelled")')
+        .limit(1);
+      if (siblings && siblings.length > 0) {
+        return fail(
+          'already_resumed',
+          `Execução ${resumedFromExecutionId} já foi retomada pela ${siblings[0].id} (${siblings[0].status}); ignorando retomada duplicada`,
+          409,
+        );
+      }
+    }
+
     // Start background execution
     const executionPromise = (async () => {
       try {
@@ -456,6 +478,13 @@ Deno.serve(async (req) => {
           .single();
 
         if (execError) {
+          // 23505 aqui é a unique parcial idx_flow_executions_one_live (uma
+          // execução viva por conversa): outra já está rodando — esta seria a
+          // duplicata, e desistir é exatamente o comportamento certo.
+          if ((execError as { code?: string }).code === '23505') {
+            console.warn(`[FLOW EXECUTE] Conversa ${conversationId} já tem execução viva — não inserindo duplicata (flow=${flowId}, resumedFrom=${resumedFromExecutionId || '-'})`);
+            return;
+          }
           console.error('[FLOW EXECUTE] Error creating execution:', execError);
           return;
         }
