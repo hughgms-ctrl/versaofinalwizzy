@@ -14,8 +14,13 @@
 // version Meta still supports, which moves without warning — so calls that work
 // today can start failing on a Meta-side sunset we never opted into. Pinning
 // makes the upgrade a deliberate, testable change instead.
+//
+// EXCEÇÃO: os endpoints de token (`/access_token` e `/refresh_access_token`)
+// NÃO são versionados — usam GRAPH_API_HOST. Versioná-los foi o que quebrou a
+// conexão do Instagram em agosto de 2026. Ver os comentários nas funções.
 export const GRAPH_API_VERSION = 'v25.0';
-export const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
+export const GRAPH_API_HOST = 'https://graph.instagram.com';
+export const GRAPH_API_BASE = `${GRAPH_API_HOST}/${GRAPH_API_VERSION}`;
 const IG_OAUTH_AUTHORIZE_URL = 'https://www.instagram.com/oauth/authorize';
 const IG_OAUTH_TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
 
@@ -366,8 +371,13 @@ export async function exchangeCodeForShortLivedToken(
 }
 
 // GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
+//
+// Sem versão no path, de propósito: os endpoints de token do Instagram são
+// servidos na RAIZ de graph.instagram.com. Com o prefixo `/v25.0/` a Meta
+// responde `OAuthException` code 200 "API access blocked" — uma mensagem que
+// parece bloqueio do app e mandou o diagnóstico para o lado errado.
 export async function exchangeForLongLivedToken(appSecret: string, shortLivedToken: string) {
-  const url = new URL(`${GRAPH_API_BASE}/access_token`);
+  const url = new URL(`${GRAPH_API_HOST}/access_token`);
   url.searchParams.set('grant_type', 'ig_exchange_token');
   url.searchParams.set('client_secret', appSecret);
   url.searchParams.set('access_token', shortLivedToken);
@@ -385,7 +395,8 @@ export async function exchangeForLongLivedToken(appSecret: string, shortLivedTok
 // hand. Meta requires the token to be at least 24 hours old and still valid: a
 // token already expired cannot be refreshed, only re-authorized.
 export async function refreshLongLivedToken(accessToken: string) {
-  const url = new URL(`${GRAPH_API_BASE}/refresh_access_token`);
+  // Também na raiz, pelo mesmo motivo do endpoint acima.
+  const url = new URL(`${GRAPH_API_HOST}/refresh_access_token`);
   url.searchParams.set('grant_type', 'ig_refresh_token');
   url.searchParams.set('access_token', accessToken);
   const response = await fetch(url.toString());
