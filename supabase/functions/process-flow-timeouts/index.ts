@@ -37,6 +37,11 @@ const DEFAULT_FINAL_WAIT_MINUTES = 1440; // 24h
  * muito pior, então na dúvida a gente fecha.
  */
 const RUNNING_STUCK_MINUTES = Number(Deno.env.get('FLOW_RUNNING_STUCK_MINUTES') || '15');
+// B7: com heartbeat por nó (flow-execute grava last_heartbeat_at a cada nó),
+// uma execução 'running' sem batimento há 3 min está morta — nenhum nó leva
+// isso. Execuções sem heartbeat (coluna nula: código antigo) continuam no
+// corte conservador de started_at.
+const HEARTBEAT_STUCK_MINUTES = Number(Deno.env.get('FLOW_HEARTBEAT_STUCK_MINUTES') || '3');
 
 /**
  * CRITICAL SAFETY: Check if a contact responded AFTER the last follow-up message.
@@ -467,13 +472,35 @@ Deno.serve(async (req) => {
     // execução já basta para destravar campanhas e agente independente.
     // ═══════════════════════════════════════════════════════════════════
     const runningCutoff = new Date(Date.now() - RUNNING_STUCK_MINUTES * 60 * 1000).toISOString();
+    const heartbeatCutoff = new Date(Date.now() - HEARTBEAT_STUCK_MINUTES * 60 * 1000).toISOString();
 
-    const { data: zombieExecs, error: zombieErr } = await supabase
-      .from('flow_executions')
-      .select('id, flow_id, conversation_id, current_node_id, started_at')
-      .eq('status', 'running')
-      .lt('started_at', runningCutoff)
-      .limit(200);
+    // Com heartbeat: sem batimento há HEARTBEAT_STUCK_MINUTES, ou sem batimento
+    // nenhum e started_at além do corte antigo. Se a coluna ainda não existe
+    // (migration 20260830140000 pendente), o PostgREST recusa o filtro e a
+    // varredura cai para o critério antigo, só por started_at.
+    let zombieExecs: any[] | null = null;
+    let zombieErr: any = null;
+    {
+      const withHeartbeat = await supabase
+        .from('flow_executions')
+        .select('id, flow_id, conversation_id, current_node_id, started_at')
+        .eq('status', 'running')
+        .or(`last_heartbeat_at.lt.${heartbeatCutoff},and(last_heartbeat_at.is.null,started_at.lt.${runningCutoff})`)
+        .limit(200);
+      zombieExecs = withHeartbeat.data;
+      zombieErr = withHeartbeat.error;
+      if (zombieErr) {
+        console.warn('[FLOW TIMEOUTS] Varredura com heartbeat indisponível, usando started_at:', zombieErr.message);
+        const legacy = await supabase
+          .from('flow_executions')
+          .select('id, flow_id, conversation_id, current_node_id, started_at')
+          .eq('status', 'running')
+          .lt('started_at', runningCutoff)
+          .limit(200);
+        zombieExecs = legacy.data;
+        zombieErr = legacy.error;
+      }
+    }
 
     if (zombieErr) {
       // Não aborta o cron: as outras fases continuam valendo.
@@ -500,7 +527,7 @@ Deno.serve(async (req) => {
           status: 'failed',
           completed_at: new Date().toISOString(),
           timeout_at: null,
-          error_message: `Execução presa em 'running' por mais de ${RUNNING_STUCK_MINUTES}min — fechada pela rede de proteção do process-flow-timeouts.`,
+          error_message: `Execução presa em 'running' (sem heartbeat há ${HEARTBEAT_STUCK_MINUTES}min ou iniciada há mais de ${RUNNING_STUCK_MINUTES}min) — fechada pela rede de proteção do process-flow-timeouts.`,
         })
         .in('id', zombieExecs.map((e: any) => e.id))
         .eq('status', 'running')

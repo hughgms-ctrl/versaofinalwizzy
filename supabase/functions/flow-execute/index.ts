@@ -10,6 +10,16 @@ import {
   sendEvolutionReplyButtons,
 } from '../_shared/evolutionButtons.ts';
 
+// B7: nenhum fetch sem prazo. Um provedor ou webhook externo que não responde
+// segurava o isolate até o runtime matá-lo — a execução ficava em 'running'
+// sem ninguém rodando (zumbi) e a conversa do lead emudecia.
+const FETCH_TIMEOUT_PROVIDER_MS = 15_000;
+const FETCH_TIMEOUT_WEBHOOK_MS = 20_000;
+const FETCH_TIMEOUT_INTERNAL_MS = 15_000;
+const FETCH_TIMEOUT_PDF_MS = 30_000;
+const FETCH_TIMEOUT_ORCHESTRATOR_MS = 60_000;
+const FETCH_TIMEOUT_PRESENCE_MS = 5_000;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -445,6 +455,7 @@ Deno.serve(async (req) => {
 
     // Start background execution
     const executionPromise = (async () => {
+      let createdExecutionId: string | null = null;
       try {
         // Retomada de atraso: herda a raiz da execução anterior para que todos os
         // trechos continuem sendo a MESMA passagem no histórico. Se a anterior
@@ -489,6 +500,7 @@ Deno.serve(async (req) => {
           return;
         }
 
+        createdExecutionId = execution.id;
         const nodes = flow.nodes as FlowNode[];
         const edges = flow.edges as FlowEdge[];
 
@@ -513,6 +525,16 @@ Deno.serve(async (req) => {
         await runFlowExecution(execution.id, flow, nodes, edges, context, supabase);
       } catch (err) {
         console.error('[FLOW EXECUTE] Background processing error:', err);
+        // B7: erro fora do laço de nós (montagem do contexto, falha de banco)
+        // deixava a linha em 'running' para sempre. Fecha como failed.
+        if (createdExecutionId) {
+          try {
+            await markExecutionFailed(supabase, createdExecutionId, `Erro fora do laço de nós: ${err instanceof Error ? err.message : String(err)}`);
+            await cleanupFlowEnd(supabase, conversationId, createdExecutionId, flow);
+          } catch (cleanupErr) {
+            console.error('[FLOW EXECUTE] Falha ao fechar execução após erro:', cleanupErr);
+          }
+        }
       }
     })();
 
@@ -695,6 +717,56 @@ async function resumeParentFlow(
   });
 }
 
+// B7: heartbeat por nó. A fase 0 do process-flow-timeouts só conseguia
+// distinguir zumbi de execução viva por started_at (15 min); com o heartbeat o
+// corte cai para 3 min sem o risco de matar um fluxo saudável. A coluna vem da
+// migration 20260830140000; enquanto não existir, o UPDATE é refeito sem ela.
+let heartbeatColumnAvailable = true;
+
+async function updateExecutionWithHeartbeat(
+  supabase: SupabaseClientType,
+  executionId: string,
+  patch: Record<string, unknown>,
+) {
+  if (heartbeatColumnAvailable) {
+    const { error } = await supabase
+      .from('flow_executions')
+      .update({ ...patch, last_heartbeat_at: new Date().toISOString() })
+      .eq('id', executionId);
+    if (!error) return;
+    if (error.code === '42703' || /last_heartbeat_at/.test(error.message || '')) {
+      heartbeatColumnAvailable = false;
+      console.warn('[FLOW EXECUTE] flow_executions.last_heartbeat_at não existe (migration 20260830140000 pendente); seguindo sem heartbeat');
+    } else {
+      console.error(`[FLOW EXECUTE] Falha ao gravar progresso da execução ${executionId}:`, error);
+      return;
+    }
+  }
+  const { error } = await supabase.from('flow_executions').update(patch).eq('id', executionId);
+  if (error) console.error(`[FLOW EXECUTE] Falha ao gravar progresso da execução ${executionId}:`, error);
+}
+
+async function markExecutionFailed(
+  supabase: SupabaseClientType,
+  executionId: string,
+  reason: string,
+  extra: Record<string, unknown> = {},
+) {
+  // Só derruba quem ainda está 'running': se a execução já foi fechada por
+  // outro caminho (waiting_input, completed), não sobrescreve.
+  await supabase
+    .from('flow_executions')
+    .update({
+      status: 'failed',
+      error_message: reason.slice(0, 1000),
+      completed_at: new Date().toISOString(),
+      timeout_at: null,
+      ...extra,
+    })
+    .eq('id', executionId)
+    .eq('status', 'running');
+}
+
 async function runFlowExecution(
   executionId: string,
   flow: any,
@@ -832,27 +904,36 @@ async function runFlowExecution(
 
       currentNodeId = nextNodeId;
 
-      await supabase
-        .from('flow_executions')
-        .update({
-          execution_log: executionLog,
-          current_node_id: currentNodeId,
-          variables: context.variables,
-        })
-        .eq('id', executionId);
+      await updateExecutionWithHeartbeat(supabase, executionId, {
+        execution_log: executionLog,
+        current_node_id: currentNodeId,
+        variables: context.variables,
+      });
 
       if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block' || currentNode.type === 'action-delay')) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error) {
+      // B7: exceção no meio de um nó (provedor caiu, timeout, bug) terminava
+      // com `break` e o fim do laço gravava 'completed' — o histórico dizia que
+      // o fluxo chegou ao fim quando ele morreu no meio. Agora fica 'failed'
+      // com o motivo, e a limpeza (service_mode, pai) roda como em qualquer
+      // outro fim.
+      const reason = error instanceof Error ? error.message : String(error);
       console.error(`[FLOW EXECUTE] Error executing node ${currentNode.id}:`, error);
       executionLog.push({
         nodeId: currentNode.id,
         type: currentNode.type,
         result: 'error',
+        metadata: { error: reason.slice(0, 300) },
         timestamp: new Date().toISOString(),
       });
-      break;
+      await markExecutionFailed(supabase, executionId, `Nó ${currentNode.id} (${currentNode.type}): ${reason}`, {
+        execution_log: executionLog,
+        variables: context.variables,
+      });
+      await cleanupFlowEnd(supabase, conversationId, executionId, flow);
+      return;
     }
   }
 
@@ -1098,6 +1179,7 @@ async function executeGeneratePdfAction(
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
     const response = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PDF_MS),
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
       body: JSON.stringify({
@@ -2011,6 +2093,7 @@ async function executeAIHandoff(
 
         // Call agent-orchestrator (background)
         const orchestratorPromise = fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_ORCHESTRATOR_MS),
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
@@ -2108,6 +2191,7 @@ async function executeSubFlow(
 
     // Trigger the sub-flow
     const response = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_INTERNAL_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2494,11 +2578,13 @@ async function notifyHumanEscalation({
     try {
       const res = context.provider === 'evolution'
         ? await fetch(`${context.evolutionBaseUrl}/message/sendText/${context.evolutionInstanceName}`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
           method: 'POST',
           headers: { 'Content-Type': 'application/json', apikey: context.evolutionApiKey! },
           body: JSON.stringify({ number: normalized, text: message, delay: 1000, linkPreview: false }),
         })
         : await fetch(`${context.uazapiBaseUrl}/send/text`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
           method: 'POST',
           headers: { 'Content-Type': 'application/json', token: context.zapiToken },
           body: JSON.stringify({ number: normalized, text: message }),
@@ -2741,6 +2827,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       throw new Error('Evolution API not configured for flow execution');
     }
     response = await fetch(`${context.evolutionBaseUrl}/message/sendText/${context.evolutionInstanceName}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2758,6 +2845,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       throw new Error('UAZAPI not configured for flow execution');
     }
     response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2845,6 +2933,7 @@ async function sendMediaItem(
       ? `${context.evolutionBaseUrl}/message/sendWhatsAppAudio/${context.evolutionInstanceName}`
       : `${context.evolutionBaseUrl}/message/sendMedia/${context.evolutionInstanceName}`;
     response = await fetch(endpoint, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2868,6 +2957,7 @@ async function sendMediaItem(
     if (mediaType === 'audio') body.ptt = true;
 
     response = await fetch(`${context.uazapiBaseUrl}/send/media`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -3017,6 +3107,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
         console.log(`[FLOW EXECUTE] Trying native buttons via /send/menu: ${JSON.stringify(nativeBody)}`);
 
         const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/menu`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -3035,6 +3126,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
           } else {
             console.log(`[FLOW EXECUTE] Native buttons API returned error: ${JSON.stringify(nativeResult)}, falling back to text`);
             response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+              signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
               body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -3044,6 +3136,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
           const errText = await nativeResponse.text();
           console.log(`[FLOW EXECUTE] Native buttons failed (${nativeResponse.status}): ${errText}, falling back to text`);
           response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
             body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -3052,6 +3145,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       } catch (nativeErr) {
         console.log(`[FLOW EXECUTE] Native buttons exception: ${nativeErr}, falling back to text`);
         response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
           body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -3061,6 +3155,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       // More than 3 buttons — always use text fallback
       console.log(`[FLOW EXECUTE] ${buttons.length} buttons > 3, using text fallback`);
       response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
         body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -3144,6 +3239,7 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
     /*
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
     const response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -3589,6 +3685,7 @@ async function executePipelineAction(
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       await fetch(`${supabaseUrl}/functions/v1/stage-notification`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_INTERNAL_MS),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3938,6 +4035,7 @@ async function executeWebhook(data: Record<string, unknown>, context: ExecutionC
     }
 
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_WEBHOOK_MS),
       method,
       headers: buildWebhookHeaders(data.headers, context.variables),
       body: method !== 'GET' ? JSON.stringify(payload) : undefined,
@@ -3979,6 +4077,7 @@ async function sendPresence(
     if (context.provider === 'evolution') {
       if (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName) return;
       await fetch(`${context.evolutionBaseUrl}/chat/sendPresence/${context.evolutionInstanceName}`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_PRESENCE_MS),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4007,6 +4106,7 @@ async function sendPresence(
     for (const ep of presenceEndpoints) {
       try {
         const response = await fetch(`${context.uazapiBaseUrl}${ep.path}`, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_PRESENCE_MS),
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
