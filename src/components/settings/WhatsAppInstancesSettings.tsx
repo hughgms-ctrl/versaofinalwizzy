@@ -13,6 +13,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -708,6 +709,21 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
     .map(w => w.id);
   const [workspaceIds, setWorkspaceIds] = useState<string[]>(currentWorkspaceIds);
 
+  // R3 (docs/WORKSPACE_REGRAS_SPEC.md): com >=2 workspaces no mesmo número é
+  // obrigatório dizer como dividir os contatos NOVOS. Depois da primeira
+  // conversa manda a regra do dono (último workspace a enviar).
+  type RoutingMode = 'single' | 'round_robin' | 'percentage';
+  const [routingMode, setRoutingMode] = useState<RoutingMode>(instance.routing_mode || 'single');
+  const [primaryWorkspaceId, setPrimaryWorkspaceId] = useState<string>(instance.routing_config?.primary_workspace_id || '');
+  const [weights, setWeights] = useState<Record<string, number>>(instance.routing_config?.weights || {});
+  const needsRouting = workspaceIds.length >= 2;
+  const weightsTotal = workspaceIds.reduce((sum, id) => sum + (Number(weights[id]) || 0), 0);
+  const routingValid =
+    !needsRouting ||
+    routingMode === 'round_robin' ||
+    (routingMode === 'single' && workspaceIds.includes(primaryWorkspaceId)) ||
+    (routingMode === 'percentage' && weightsTotal === 100);
+
   useEffect(() => {
     setWorkspaceIds(
       workspaces
@@ -720,13 +736,44 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
     setLabel(instance.label || '');
     setAllowCalls(instance.block_calls === false);
     setRejectMessage(instance.call_reject_message || DEFAULT_CALL_REJECT_MESSAGE);
+    setRoutingMode(instance.routing_mode || 'single');
+    setPrimaryWorkspaceId(instance.routing_config?.primary_workspace_id || '');
+    setWeights(instance.routing_config?.weights || {});
   }, [instance]);
 
   const handleSave = async () => {
+    // R4: todo número tem pelo menos um workspace.
+    if (workspaceIds.length === 0) {
+      toast({ title: 'Escolha um workspace', description: 'Todo número precisa estar em pelo menos um workspace.', variant: 'destructive' });
+      return;
+    }
+    if (!routingValid) {
+      toast({
+        title: 'Defina a regra de divisão',
+        description: routingMode === 'percentage'
+          ? 'As porcentagens precisam somar 100%.'
+          : 'Escolha qual workspace recebe os contatos novos.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsLoading(true);
     try {
       // Update label
       await updateLabel.mutateAsync({ instanceId: instance.id, label: label.trim() });
+
+      // Regra de roteamento (R3). Só faz sentido com >=2 workspaces; com um só,
+      // volta para 'single' apontando para ele, para não sobrar config velha.
+      const routingConfig =
+        !needsRouting ? { primary_workspace_id: workspaceIds[0] }
+        : routingMode === 'single' ? { primary_workspace_id: primaryWorkspaceId }
+        : routingMode === 'percentage' ? { weights: Object.fromEntries(workspaceIds.map(id => [id, Number(weights[id]) || 0])) }
+        : {};
+      const { error: routingError } = await supabase
+        .from('whatsapp_instances')
+        .update({ routing_mode: needsRouting ? routingMode : 'single', routing_config: routingConfig } as any)
+        .eq('id', instance.id);
+      if (routingError) throw routingError;
 
       // Chamadas: precisa passar pela edge function porque a configuracao vive no
       // provedor (Evolution /settings/set), nao no banco. Salvar so na tabela
@@ -894,9 +941,89 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
               );
             })()}
             <p className="mt-2 text-xs text-muted-foreground">
-              O numero fica disponivel para os workspaces selecionados. Conversas existentes nao sao movidas automaticamente.
+              O numero fica disponivel para os workspaces selecionados. Conversas existentes nao sao movidas: cada workspace
+              tem o proprio chat com o contato, e o historico de um nao aparece no outro.
             </p>
           </div>
+
+          {needsRouting && (
+            <div className="rounded-lg border p-3">
+              <Label>Como dividir os contatos novos entre os workspaces?</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Vale so para a primeira mensagem de um contato. Depois, ele fica com o ultimo workspace que falou com ele
+                (ou que recebeu a conversa por transferencia).
+              </p>
+              <RadioGroup value={routingMode} onValueChange={(v) => setRoutingMode(v as RoutingMode)} className="mt-3 space-y-2">
+                <label className="flex items-start gap-2 text-sm">
+                  <RadioGroupItem value="single" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Tudo para um workspace</span>
+                    <span className="block text-xs text-muted-foreground">Um workspace recebe todos e transfere para os outros.</span>
+                  </span>
+                </label>
+                {routingMode === 'single' && (
+                  <div className="ml-6 space-y-1">
+                    {workspaceIds.map((id) => {
+                      const ws = workspaces.find((w) => w.id === id);
+                      if (!ws) return null;
+                      return (
+                        <label key={id} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="primary-ws"
+                            checked={primaryWorkspaceId === id}
+                            onChange={() => setPrimaryWorkspaceId(id)}
+                          />
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ws.color }} />
+                          {ws.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <label className="flex items-start gap-2 text-sm">
+                  <RadioGroupItem value="round_robin" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Dividir igualmente</span>
+                    <span className="block text-xs text-muted-foreground">Um contato novo para cada workspace, em rodizio.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm">
+                  <RadioGroupItem value="percentage" className="mt-0.5" />
+                  <span>
+                    <span className="font-medium">Dividir por porcentagem</span>
+                    <span className="block text-xs text-muted-foreground">Ex.: 70% para Vendas, 30% para Suporte.</span>
+                  </span>
+                </label>
+                {routingMode === 'percentage' && (
+                  <div className="ml-6 space-y-1">
+                    {workspaceIds.map((id) => {
+                      const ws = workspaces.find((w) => w.id === id);
+                      if (!ws) return null;
+                      return (
+                        <div key={id} className="flex items-center gap-2 text-sm">
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: ws.color }} />
+                          <span className="flex-1">{ws.name}</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={100}
+                            className="h-8 w-20"
+                            value={weights[id] ?? ''}
+                            onChange={(e) => setWeights((w) => ({ ...w, [id]: Number(e.target.value) }))}
+                          />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                      );
+                    })}
+                    <p className={`text-xs ${weightsTotal === 100 ? 'text-muted-foreground' : 'text-destructive'}`}>
+                      Total: {weightsTotal}% {weightsTotal !== 100 && '(precisa somar 100%)'}
+                    </p>
+                  </div>
+                )}
+              </RadioGroup>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={isLoading}>

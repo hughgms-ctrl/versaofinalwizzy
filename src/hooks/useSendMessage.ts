@@ -11,6 +11,20 @@ interface SendMessageParams {
   quotedMessageId?: string;
   quotedContent?: string;
   quotedSender?: string;
+  /** R5: o contato está com outro workspace e o atendente confirmou trazê-lo para cá. */
+  confirmTakeover?: boolean;
+}
+
+/**
+ * zapi-send-message devolveu 409 CONTACT_OWNED_BY_OTHER_WORKSPACE: outro
+ * workspace é o dono deste contato neste número. O chat pergunta e reenvia
+ * com confirmTakeover=true.
+ */
+export class TakeoverRequiredError extends Error {
+  code = 'CONTACT_OWNED_BY_OTHER_WORKSPACE' as const;
+  constructor(public ownerWorkspaceName: string, message: string) {
+    super(message);
+  }
 }
 
 function normalizeFunctionErrorMessage(message: unknown) {
@@ -36,8 +50,12 @@ async function getFunctionErrorMessage(error: any) {
   if (context && typeof context.json === 'function') {
     try {
       const body = await context.json();
+      if (body?.code === 'CONTACT_OWNED_BY_OTHER_WORKSPACE') {
+        throw new TakeoverRequiredError(body.ownerWorkspaceName || 'outro workspace', body.error);
+      }
       return normalizeFunctionErrorMessage(body?.details || body?.error || error.message);
-    } catch {
+    } catch (e) {
+      if (e instanceof TakeoverRequiredError) throw e;
       return normalizeFunctionErrorMessage(error.message);
     }
   }
@@ -49,9 +67,9 @@ export function useSendMessage() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender }: SendMessageParams) => {
+    mutationFn: async ({ conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender, confirmTakeover }: SendMessageParams) => {
       const { data, error } = await supabase.functions.invoke('zapi-send-message', {
-        body: { conversationId, content, type, mediaUrl, quotedMessageId, quotedContent, quotedSender },
+        body: { conversationId, content, type, mediaUrl, quotedMessageId, quotedContent, quotedSender, confirmTakeover },
         headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
 
@@ -132,6 +150,14 @@ export function useSendMessage() {
       return { previousMessages, previousConversations };
     },
     onError: (err, newMessage, context) => {
+      if (err instanceof TakeoverRequiredError) {
+        // Nada foi enviado nem salvo: tira o otimista e deixa o chat perguntar.
+        queryClient.setQueryData(['messages', newMessage.conversationId], (context as any)?.previousMessages);
+        (context as any)?.previousConversations?.forEach(([key, data]: [unknown[], unknown]) => {
+          queryClient.setQueryData(key as any, data);
+        });
+        return;
+      }
       // IMPORTANT: Do NOT revert the optimistic state here.
       // zapi-send-message saves the message to the DB even on provider failure (with failed_at set).
       // Reverting would make the message disappear from the screen even though it's in the DB.

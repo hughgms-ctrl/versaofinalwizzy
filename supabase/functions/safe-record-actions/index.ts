@@ -185,12 +185,13 @@ async function setConversationWorkspace(
 ) {
   const { data: conversation, error: conversationError } = await admin
     .from('conversations')
-    .select('id, contact_id, organization_id')
+    .select('id, contact_id, organization_id, workspace_id, whatsapp_instance_id')
     .eq('id', conversationId)
     .eq('organization_id', organizationId)
     .single();
 
   if (conversationError || !conversation) throw new Error('Conversa não encontrada');
+  if ((conversation.workspace_id || null) === (workspaceId || null)) return;
 
   if (workspaceId) {
     const { data: workspace, error: workspaceError } = await admin
@@ -204,31 +205,69 @@ async function setConversationWorkspace(
     if (workspaceError || !workspace) throw new Error('Workspace não encontrado');
   }
 
-  const { data: updatedConversation, error: conversationUpdateError } = await admin
+  // Transferência (R2, docs/WORKSPACE_REGRAS_SPEC.md): a conversa vai inteira,
+  // com o histórico. Identidade da conversa = (contato, número, workspace), então
+  // se o destino JÁ tem um chat deste contato neste número, os dois viram um só:
+  // as mensagens desta vão para lá e esta é apagada.
+  let targetQuery = admin
     .from('conversations')
-    .update({ workspace_id: workspaceId })
-    .eq('id', conversationId)
+    .select('id')
     .eq('organization_id', organizationId)
-    .select('id, workspace_id')
-    .maybeSingle();
-  if (conversationUpdateError) throw conversationUpdateError;
+    .eq('contact_id', conversation.contact_id)
+    .neq('id', conversationId);
+  targetQuery = conversation.whatsapp_instance_id
+    ? targetQuery.eq('whatsapp_instance_id', conversation.whatsapp_instance_id)
+    : targetQuery.is('whatsapp_instance_id', null);
+  targetQuery = workspaceId ? targetQuery.eq('workspace_id', workspaceId) : targetQuery.is('workspace_id', null);
+  const { data: target } = await targetQuery.limit(1).maybeSingle();
 
-  // A guarda no banco (trg_guard_conversation_workspace_number) recusa em
-  // silêncio o carimbo num workspace que não atende o número desta conversa —
-  // silêncio é certo para webhook/campanha, mas aqui há um humano esperando
-  // resposta. Confere e devolve o motivo antes de mexer no contato.
-  if (workspaceId && updatedConversation && updatedConversation.workspace_id !== workspaceId) {
-    throw new Error(
-      'Esta conversa pertence a outro número de WhatsApp. Só um workspace que atende esse número pode recebê-la.'
-    );
+  if (target) {
+    const { error: moveError } = await admin
+      .from('messages')
+      .update({ conversation_id: target.id })
+      .eq('conversation_id', conversationId);
+    if (moveError) throw moveError;
+
+    const { error: deleteError } = await admin
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId)
+      .eq('organization_id', organizationId);
+    if (deleteError) throw deleteError;
+
+    // O destino passa a ser o dono do contato neste número (R5). O trigger de
+    // transferência não dispara aqui (não houve UPDATE de workspace_id).
+    if (workspaceId && conversation.whatsapp_instance_id) {
+      await admin.rpc('wz_claim_contact_owner', {
+        _contact_id: conversation.contact_id,
+        _instance_id: conversation.whatsapp_instance_id,
+        _workspace_id: workspaceId,
+        _source: 'transfer',
+      });
+    }
+  } else {
+    const { data: updatedConversation, error: conversationUpdateError } = await admin
+      .from('conversations')
+      .update({ workspace_id: workspaceId })
+      .eq('id', conversationId)
+      .eq('organization_id', organizationId)
+      .select('id, workspace_id')
+      .maybeSingle();
+    if (conversationUpdateError) throw conversationUpdateError;
+    if (workspaceId && updatedConversation && updatedConversation.workspace_id !== workspaceId) {
+      throw new Error('Não foi possível mover a conversa para este workspace.');
+    }
   }
 
-  const { error: contactUpdateError } = await admin
-    .from('contacts')
-    .update({ workspace_id: workspaceId })
-    .eq('id', conversation.contact_id)
-    .eq('organization_id', organizationId);
-  if (contactUpdateError) throw contactUpdateError;
+  // Contato: NÃO muda de workspace (é ficha do CRM, R8). Só passa a aparecer
+  // também no destino, para o time achar a ficha de quem está falando.
+  if (workspaceId) {
+    const { error: shareError } = await admin.rpc('share_contact_with_workspace', {
+      _contact_id: conversation.contact_id,
+      _workspace_id: workspaceId,
+    });
+    if (shareError) console.error('share_contact_with_workspace:', shareError);
+  }
 }
 
 async function setContactsWorkspace(

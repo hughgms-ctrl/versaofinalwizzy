@@ -17,6 +17,9 @@ export interface WhatsAppInstance {
   provider_settings?: Record<string, unknown>;
   block_calls?: boolean;
   call_reject_message?: string | null;
+  /** R3: como dividir contatos NOVOS quando >=2 workspaces usam este número. */
+  routing_mode?: 'single' | 'round_robin' | 'percentage';
+  routing_config?: { primary_workspace_id?: string; weights?: Record<string, number> };
   is_active: boolean;
   connected_at: string | null;
   disconnected_at: string | null;

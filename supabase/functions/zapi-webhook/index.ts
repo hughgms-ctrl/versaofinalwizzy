@@ -2081,6 +2081,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   const organizationId = whatsappInstance.organization_id;
+  // Workspace "óbvio" do número (só quando exatamente um workspace o atende).
+  // Serve para o CONTATO novo nascer com workspace. O workspace da CONVERSA é
+  // decidido depois, por wz_route_incoming_conversation (dono + roteamento).
   const fallbackWorkspaceIds = await resolveWorkspacesForInstance(supabase, organizationId, whatsappInstance.id);
   const fallbackWorkspaceId = fallbackWorkspaceIds.length === 1 ? fallbackWorkspaceIds[0] : null;
 
@@ -2124,20 +2127,24 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
-  // Find or create conversation for THIS specific contact
+  // Em qual workspace cai esta mensagem? (docs/WORKSPACE_REGRAS_SPEC.md)
+  //   R5: o workspace DONO do (contato, número) — o último que enviou/transferiu;
+  //   R3: contato novo → regra de roteamento do número (tudo-para-um / igual / %);
+  //   sem workspace nenhum atendendo o número → NULL ("Sem Workspace").
+  // Nunca cai em contact.workspace_id: esse é o workspace do CRM, não do atendimento.
+  const conversationWorkspaceId = await routeIncomingConversation(
+    supabase, contact.id, organizationId, whatsappInstance.id, fallbackWorkspaceId,
+  );
+  await ensureContactVisibleInWorkspace(supabase, contact, conversationWorkspaceId);
+
+  // Find or create conversation for THIS contact, THIS number, THIS workspace.
   const conversation = await findOrCreateConversation(
     supabase,
     contact.id,
     organizationId,
     whatsappInstance.id,
     whatsappInstance.phone_number,
-    // O workspace da conversa sai do NÚMERO que recebeu a mensagem, e só dele.
-    // Antes, quando a instância não resolvia para nenhum workspace, isto caía em
-    // `contact.workspace_id` — o workspace do CRM, que não tem relação com o
-    // número. Bastava o contato ter ficado apontando para um workspace antigo
-    // (ex.: conversas movidas na mão, contatos não) para a primeira mensagem nova
-    // recriar a conversa lá, inclusive em workspace sem número algum.
-    fallbackWorkspaceId,
+    conversationWorkspaceId,
   );
   const connectedPhoneSnapshot = getConnectedPhoneSnapshot(whatsappInstance, payload);
   await recordConversationOriginAudit(supabase, {
@@ -3165,6 +3172,47 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     return workspaces?.length === 1 ? [workspaces[0].id] : [];
   }
 
+  // R5 + R3. Se a função ainda não existe no banco (migration 20260829120000
+  // não aplicada), cai no comportamento antigo: workspace único do número ou NULL.
+  async function routeIncomingConversation(
+    supabase: any,
+    contactId: string,
+    organizationId: string,
+    whatsappInstanceId: string,
+    fallbackWorkspaceId: string | null,
+  ): Promise<string | null> {
+    const { data, error } = await supabase.rpc('wz_route_incoming_conversation', {
+      _contact_id: contactId,
+      _organization_id: organizationId,
+      _instance_id: whatsappInstanceId,
+    });
+    if (error) {
+      console.error('[ROUTING] wz_route_incoming_conversation falhou; usando fallback:', error.message || error);
+      return fallbackWorkspaceId;
+    }
+    return (data as string | null) || null;
+  }
+
+  // A conversa vai nascer em `workspaceId`; o contato precisa aparecer lá também
+  // (R8), senão o time vê a conversa e não acha a ficha. Não move o contato.
+  async function ensureContactVisibleInWorkspace(supabase: any, contact: any, workspaceId: string | null) {
+    if (!workspaceId || !contact) return;
+    if (contact.workspace_id === workspaceId) return;
+    const shared: string[] = contact.shared_workspace_ids || [];
+    if (shared.includes(workspaceId)) return;
+    if (!contact.workspace_id) {
+      await supabase.from('contacts').update({ workspace_id: workspaceId }).eq('id', contact.id);
+      contact.workspace_id = workspaceId;
+      return;
+    }
+    const { error } = await supabase.rpc('share_contact_with_workspace', {
+      _contact_id: contact.id,
+      _workspace_id: workspaceId,
+    });
+    if (error) console.error('[CONTACT] Falha ao compartilhar contato com workspace:', error);
+    else contact.shared_workspace_ids = [...shared, workspaceId];
+  }
+
   async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null, workspaceId?: string | null, lid?: string) {
     const variants = phoneVariants(phone);
     const canonical = canonicalPhone(phone);
@@ -3356,30 +3404,23 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
   }
 
   async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null) {
-    // A same customer can talk to different company numbers. Conversation identity
-    // must include the receiving WhatsApp instance to avoid cross-company routing.
-    let existingQuery = supabase
-      .from('conversations').select('*')
-      .eq('contact_id', contactId).eq('organization_id', organizationId);
+    // Identidade da conversa = (contato, org, número, WORKSPACE). O mesmo contato
+    // no mesmo número tem um chat por workspace (R1): o histórico do Suporte não
+    // aparece em Vendas quando o número troca de time.
+    const scopedQuery = () => {
+      let q = supabase
+        .from('conversations').select('*')
+        .eq('contact_id', contactId).eq('organization_id', organizationId);
+      q = whatsappInstanceId ? q.eq('whatsapp_instance_id', whatsappInstanceId) : q.is('whatsapp_instance_id', null);
+      q = workspaceId ? q.eq('workspace_id', workspaceId) : q.is('workspace_id', null);
+      return q;
+    };
 
-    existingQuery = whatsappInstanceId
-      ? existingQuery.eq('whatsapp_instance_id', whatsappInstanceId)
-      : existingQuery.is('whatsapp_instance_id', null);
-
-    const { data: existing } = await existingQuery
+    const { data: existing } = await scopedQuery()
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     if (existing) {
       const updates: any = {};
-      // PREENCHE, NÃO MOVE. Antes isto reescrevia o workspace da conversa a cada
-      // mensagem recebida, sempre que a instância resolvia para um workspace só.
-      // Com dois workspaces disputando o mesmo número, basta o vínculo mudar uma
-      // vez para que TODA conversa que receba mensagem migre junto — e o usuário
-      // vê conversas trocando de workspace sozinhas. Reparo de workspace errado
-      // agora é operação explícita (docs/sanear-conversas-workspace-errado.sql),
-      // não efeito colateral de uma mensagem chegar.
-      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
-
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
         await supabase.from('conversations').update(updates).eq('id', existing.id);
@@ -3399,20 +3440,18 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (error) {
       if (error.code === '23505') {
-        let raceQuery = supabase
+        // Corrida no MESMO (contato, número, workspace): recupera a conversa
+        // recém-criada por outro request. Se o banco ainda está no índice antigo
+        // (sem workspace), a colisão é com a conversa de outro workspace: usa ela
+        // em vez de perder a mensagem.
+        const { data: raceExisting } = await scopedQuery().limit(1).maybeSingle();
+        if (raceExisting) return raceExisting;
+        let legacyQuery = supabase
           .from('conversations').select('*')
           .eq('contact_id', contactId).eq('organization_id', organizationId);
-
-        raceQuery = whatsappInstanceId
-          ? raceQuery.eq('whatsapp_instance_id', whatsappInstanceId)
-          : raceQuery.is('whatsapp_instance_id', null);
-
-        // Corrida na MESMA instância: recupera a conversa recém-criada por outro
-        // request. Escopo por instância ativo (idx_conversations_contact_org_instance_unique),
-        // então o 23505 só ocorre para (contato, org, instância) idêntico — NÃO
-        // mesclamos com conversa de outra instância (cada número = um chat).
-        const { data: raceExisting } = await raceQuery.limit(1).maybeSingle();
-        if (raceExisting) return raceExisting;
+        legacyQuery = whatsappInstanceId ? legacyQuery.eq('whatsapp_instance_id', whatsappInstanceId) : legacyQuery.is('whatsapp_instance_id', null);
+        const { data: legacyExisting } = await legacyQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (legacyExisting) return legacyExisting;
       }
       throw error;
     }

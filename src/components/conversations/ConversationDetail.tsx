@@ -1,7 +1,18 @@
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { DbConversation, useMessages, DbMessage } from '@/hooks/useConversations';
 import { useContactPresence } from '@/hooks/useContactPresence';
-import { useSendMessage } from '@/hooks/useSendMessage';
+import { useSendMessage, TakeoverRequiredError } from '@/hooks/useSendMessage';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useSyncMessages } from '@/hooks/useSyncMessages';
 import { useWhatsAppPresence } from '@/hooks/useWhatsAppPresence';
 import { useMediaUpload } from '@/hooks/useMediaUpload';
@@ -192,6 +203,54 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const displayAvatar = conversation.contact?.avatar_url || notificationRecipient?.avatar_url || null;
   const { isTyping, isRecording, isOnline } = useContactPresence(contactId);
   const sendMessage = useSendMessage();
+
+  // R5 (docs/WORKSPACE_REGRAS_SPEC.md): quem é o dono deste contato neste número?
+  // Se for outro workspace, avisa e pede confirmação antes de enviar daqui.
+  const { data: workspacesList = [] } = useWorkspaces();
+  const ownerInstanceId = (conversation as any).whatsapp_instance_id as string | null;
+  const { data: contactOwner } = useQuery({
+    queryKey: ['contact-number-owner', contactId, ownerInstanceId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('contact_number_owners')
+        .select('workspace_id')
+        .eq('contact_id', contactId)
+        .eq('whatsapp_instance_id', ownerInstanceId)
+        .maybeSingle();
+      return (data as { workspace_id: string } | null) || null;
+    },
+    enabled: !!contactId && !!ownerInstanceId,
+    staleTime: 15_000,
+  });
+  const ownedByOtherWorkspace =
+    !!contactOwner?.workspace_id &&
+    !!(conversation as any).workspace_id &&
+    contactOwner.workspace_id !== (conversation as any).workspace_id;
+  const ownerWorkspaceName = ownedByOtherWorkspace
+    ? workspacesList.find((w) => w.id === contactOwner!.workspace_id)?.name || 'outro workspace'
+    : null;
+
+  const [pendingTakeover, setPendingTakeover] = useState<{
+    params: Parameters<typeof sendMessage.mutateAsync>[0];
+    ownerName: string;
+    resolve: () => void;
+    reject: (e: unknown) => void;
+  } | null>(null);
+
+  // Envia; se outro workspace é o dono, pergunta e reenvia com confirmTakeover.
+  const sendGuarded = async (params: Parameters<typeof sendMessage.mutateAsync>[0]) => {
+    try {
+      return await sendMessage.mutateAsync(params);
+    } catch (error) {
+      if (!(error instanceof TakeoverRequiredError)) throw error;
+      await new Promise<void>((resolve, reject) => {
+        setPendingTakeover({ params, ownerName: error.ownerWorkspaceName, resolve, reject });
+      });
+      const result = await sendMessage.mutateAsync({ ...params, confirmTakeover: true });
+      queryClient.invalidateQueries({ queryKey: ['contact-number-owner', contactId, ownerInstanceId] });
+      return result;
+    }
+  };
   const { sendTyping } = useWhatsAppPresence();
   const { uploadFile, uploadAudioBlob, isUploading } = useMediaUpload();
   const {
@@ -417,7 +476,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         }
 
         const caption = newMessage.trim();
-        await sendMessage.mutateAsync({
+        await sendGuarded({
           conversationId: conversation.id,
           content: caption || (attachedMedia.type === 'document' ? attachedMedia.file.name : ''),
           type: attachedMedia.type,
@@ -481,7 +540,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     }
 
     try {
-      await sendMessage.mutateAsync({
+      await sendGuarded({
         conversationId: conversation.id,
         content: messageContent,
         type: 'text',
@@ -621,7 +680,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         throw new Error('Falha ao enviar o audio para o armazenamento.');
       }
 
-      await sendMessage.mutateAsync({
+      await sendGuarded({
         conversationId: conversation.id,
         content: 'Audio',
         type: 'audio',
@@ -974,11 +1033,53 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           </div>
         </div>
 
+        {ownedByOtherWorkspace && (
+          <div className="flex items-center gap-2 border-t border-amber-300/50 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              Este contato está em atendimento com <strong>{ownerWorkspaceName}</strong>. As mensagens dele
+              estão chegando lá; enviar daqui traz o contato para este workspace.
+            </span>
+          </div>
+        )}
+
         {/* AI Context Bar */}
         <AIContextBar
           conversationId={conversation.id}
           isAIActive={isAIActive}
         />
+
+        <AlertDialog
+          open={!!pendingTakeover}
+          onOpenChange={(open) => {
+            if (!open && pendingTakeover) {
+              pendingTakeover.reject(new Error('Envio cancelado'));
+              setPendingTakeover(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Trazer o contato para este workspace?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Este contato está em atendimento com <strong>{pendingTakeover?.ownerName}</strong>. Se você enviar,
+                as próximas mensagens dele passam a chegar aqui, e não mais lá.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const p = pendingTakeover;
+                  setPendingTakeover(null);
+                  p?.resolve();
+                }}
+              >
+                Enviar e trazer para cá
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Input */}
         <div className="border-t border-border bg-card">

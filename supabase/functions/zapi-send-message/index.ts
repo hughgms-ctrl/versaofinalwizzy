@@ -14,6 +14,8 @@ interface SendMessageRequest {
   quotedMessageId?: string;
   quotedContent?: string;
   quotedSender?: string;
+  /** R5: confirma que o atendente quer trazer o contato de outro workspace para o seu. */
+  confirmTakeover?: boolean;
 }
 
 type Provider = 'evolution' | 'uazapi';
@@ -404,7 +406,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender } = await req.json() as SendMessageRequest;
+    const { conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender, confirmTakeover } = await req.json() as SendMessageRequest;
 
     if (!conversationId || (type === 'text' && !content)) {
       return new Response(JSON.stringify({ error: type === 'text' ? 'conversationId and content are required' : 'conversationId is required' }), {
@@ -455,6 +457,31 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({
           error: 'Este workspace não tem um número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.',
           code: 'WORKSPACE_WITHOUT_NUMBER',
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // R5 (docs/WORKSPACE_REGRAS_SPEC.md): se OUTRO workspace é o dono deste
+    // contato neste número, enviar daqui traz o contato para cá. É permitido,
+    // mas só com confirmação explícita do atendente.
+    const ownerInstanceId = workspaceInstanceId || conversation.whatsapp_instance_id;
+    if (conversation.workspace_id && ownerInstanceId && !confirmTakeover) {
+      const { data: owner } = await supabase
+        .from('contact_number_owners')
+        .select('workspace_id, workspace:workspaces(name)')
+        .eq('contact_id', conversation.contact_id)
+        .eq('whatsapp_instance_id', ownerInstanceId)
+        .maybeSingle();
+      if (owner?.workspace_id && owner.workspace_id !== conversation.workspace_id) {
+        const ownerName = (owner as any).workspace?.name || 'outro workspace';
+        return new Response(JSON.stringify({
+          error: `Este contato está em atendimento com ${ownerName}. Enviar daqui traz o contato para o seu workspace.`,
+          code: 'CONTACT_OWNED_BY_OTHER_WORKSPACE',
+          ownerWorkspaceId: owner.workspace_id,
+          ownerWorkspaceName: ownerName,
         }), {
           status: 409,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -66,19 +66,34 @@ mantida). Abrir chat novo em A com contato de B adiciona A automaticamente.
   não por workspace).
 - Admin/owner vê todos os workspaces, "Todos" e "Sem Workspace".
 
-## Estado atual (2026-08-28) — o que contraria a spec
+## Implementação (2026-08-29)
 
-- Índice único `idx_conversations_contact_org_instance_unique` =
-  `(contact_id, org, whatsapp_instance_id)` — **sem workspace**. Impede R1
-  (chat novo no A) e usa id da instância (contraria R7).
-- Migration `20260818120000_workspace_conversa_pertence_ao_numero` + guard
-  `wz_workspace_allowed_for_conversation` / `trg_guard_conversation_workspace_number`
-  codificam "conversa pertence ao número" — bloqueiam a transferência (R2)
-  em silêncio.
-- Webhook (`zapi-webhook` ~2084): 1 workspace → carimba; ≥2 → `NULL`
-  ("Sem Workspace"). Não existe roteamento (R3) nem dono (R5).
-- `whatsapp_instances` não tem workspace; o vínculo é `workspaces.whatsapp_instance_id`
-  (N ws → 1 número). Não há tabela de roteamento.
-- Isolamento por workspace é só filtro no front (`useConversations.ts:113`);
-  RLS é por org.
-- Nada impede número sem workspace (contraria R4).
+Migration `supabase/migrations/20260829120000_workspace_conversa_pertence_ao_workspace.sql`
+(aplicar À MÃO no SQL Editor; testada em postgres:15):
+- guard `trg_guard_conversation_workspace_number` desligado; `wz_workspace_allowed_for_conversation` só checa org;
+- índice único vira `(contact_id, org, whatsapp_instance_id, COALESCE(workspace_id))` → R1/R6;
+- `whatsapp_instances.routing_mode/routing_config/routing_cursor` → R3;
+- `contact_number_owners` (dono por contato+número) + `wz_claim_contact_owner`;
+  triggers em `messages` (outbound) e em `conversations` (UPDATE de workspace_id) → R5;
+- `wz_route_incoming_conversation(contact, org, instance)` → webhook;
+- backfill dos donos pela última mensagem enviada.
+
+Código:
+- `zapi-webhook`: `routeIncomingConversation` (rpc; fallback = comportamento antigo se a
+  migration não foi aplicada) + `findOrCreateConversation` escopado por workspace +
+  `ensureContactVisibleInWorkspace` (R8).
+- `zapi-send-message`: 409 `CONTACT_OWNED_BY_OTHER_WORKSPACE` se outro workspace é o dono;
+  reenvio com `confirmTakeover: true`.
+- `safe-record-actions.set_conversation_workspace`: transferência mescla com o chat
+  que já existir no destino (mensagens migram, conversa origem apagada) e compartilha o
+  contato em vez de mover.
+- Front: aviso "em atendimento com X" + diálogo de confirmação (`ConversationDetail`);
+  regra de roteamento ao marcar o 2º workspace e bloqueio de número sem workspace
+  (`WhatsAppInstancesSettings`).
+
+Saneamento do caso A/B: `docs/sanear-workspace-numero-movido.sql`.
+
+Pendências conhecidas:
+- RLS por workspace continua só no front (decisão adiada).
+- `useWorkspaces.useUpdateWorkspace` ainda permite `whatsapp_instance_id: null` (R4 só na UI da instância).
+- `types.ts` precisa ser regenerado após aplicar a migration (front usa `as any` nos campos novos).
