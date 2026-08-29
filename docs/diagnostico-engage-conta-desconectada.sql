@@ -51,9 +51,17 @@ WHERE j.jobname LIKE 'instagram%'
 ORDER BY j.jobname;
 
 -- ── BLOCO 3 · A Meta desautorizou o app? ────────────────────────────────────
--- O callback de deauthorize marca a conta como desconectada. Se houver linha
--- aqui perto da data em que parou, foi a Meta (ou alguem removeu o app em
--- Instagram > Apps e sites).
+-- Esta e a query que responde "quem desligou a conta". O callback de
+-- deauthorize marca a conta como 'disconnected' e deixa este rastro; se houver
+-- linha aqui, NAO foi alguem clicando em Desconectar na tela - foi a Meta (ou
+-- o app removido em Instagram > Apps e sites). A data diz quando parou.
+SELECT event_type, created_at, error, raw_payload
+FROM public.instagram_webhook_events
+WHERE event_type IN ('deauthorize', 'data_deletion')
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- Pedidos de exclusao de dados (outro callback obrigatorio da Meta).
 SELECT * FROM public.instagram_data_deletion_requests ORDER BY created_at DESC LIMIT 10;
 
 -- ── BLOCO 4 · Ultimo sinal de vida do modulo ────────────────────────────────
