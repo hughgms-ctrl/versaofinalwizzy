@@ -37,9 +37,11 @@ import {
  * se quer saber antes de escolher. Dá vida ao cartão sendo útil, e não
  * enfeitando-o.
  *
- * A cor azul dos balões é a do Instagram, de propósito: aquele retângulo
+ * As cores dos balões são as do Direct, de propósito: aquele retângulo
  * representa o aplicativo, não a interface da Wizzy. Um balão magenta pareceria
- * parte do formulário.
+ * parte do formulário. O balão de saída usa o degradê roxo do Direct, o mesmo
+ * de InstagramPhonePreview — a mesma mensagem desenhada em dois lugares não
+ * pode ter duas cores, ou o módulo mostra dois Instagrams diferentes.
  *
  * E se aquele retângulo representa o Instagram, ele usa as cores do Instagram
  * inteiras — fundo branco ou preto, balão #efefef ou #262626 —, não os tokens
@@ -139,7 +141,7 @@ function ConversationPreview({
 
         {reply?.kind === 'text' && (
           <div className="flex justify-end">
-            <p className="max-w-[78%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
+            <p className="max-w-[78%] rounded-[18px] rounded-br-[6px] bg-gradient-to-br from-[#a334e0] to-[#7b46f2] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
               {reply.label}
             </p>
           </div>
