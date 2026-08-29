@@ -1218,10 +1218,11 @@ Deno.serve(async (req) => {
         if (instanceId) orFilters.push(`evolution_instance_id.eq.${instanceId}`);
         if (payloadTokenConn) orFilters.push(`zapi_token.eq.${payloadTokenConn}`);
         
-        updateQuery.or(orFilters.join(','))
-          .then(({ error }: { error: any }) => {
-            if (error) console.error('Error updating instance on connect:', error);
-          });
+        // Era um .then() solto: o isolate podia morrer antes do UPDATE chegar e
+        // a instância ficava "desconectada" no banco enquanto o número
+        // funcionava — causa provável do "conecta mas não envia".
+        const { error: connectError } = await updateQuery.or(orFilters.join(','));
+        if (connectError) console.error('Error updating instance on connect:', connectError);
       }
 
       // Trigger sync functions in background
@@ -1314,6 +1315,10 @@ Deno.serve(async (req) => {
       try {
         return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
       } catch (msgError) {
+        if (isInfraError(msgError)) {
+          console.error('[WEBHOOK] handleMessage falhou por infraestrutura — 503 para o provedor reenviar:', msgError);
+          return respond({ success: false, error: 'message_handler_infra_error', retry: true, detail: String(msgError) }, 503);
+        }
         console.error('[WEBHOOK] handleMessage crashed but returning 200 to prevent retry loop:', msgError);
         return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
       }
@@ -1331,6 +1336,10 @@ Deno.serve(async (req) => {
         try {
           return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
         } catch (msgError) {
+          if (isInfraError(msgError)) {
+            console.error('[WEBHOOK] handleMessage (chat) falhou por infraestrutura — 503:', msgError);
+            return respond({ success: false, error: 'message_handler_infra_error', retry: true, detail: String(msgError) }, 503);
+          }
           console.error('[WEBHOOK] handleMessage (chat) crashed:', msgError);
           return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
         }
@@ -1376,6 +1385,28 @@ async function triggerMediaAnalysis(messageId: string, mediaUrl: string, message
     console.error('[WEBHOOK] Auto-transcription error:', e);
     return null;
   }
+}
+
+// B3: separar erro de NEGÓCIO (200 — o provedor não deve reenviar: instância
+// inexistente, payload vazio, duplicata) de erro de INFRA (503 — banco fora,
+// statement timeout, rede: o provedor reenvia e a mensagem não se perde).
+// Antes tudo virava 200 e a perda era silenciosa.
+class InfraError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = 'InfraError';
+  }
+}
+
+function isInfraError(err: unknown): boolean {
+  if (err instanceof InfraError) return true;
+  const anyErr = err as { code?: unknown; message?: unknown } | null;
+  const code = String(anyErr?.code || '');
+  // Classes SQLSTATE: 08 conexão, 53 recursos, 57 intervenção do operador
+  // (57014 = statement timeout), 58 sistema, XX interno.
+  if (/^(08|53|57|58|XX)/.test(code)) return true;
+  const msg = String(anyErr?.message || err || '').toLowerCase();
+  return /fetch failed|timed? ?out|econnreset|econnrefused|socket hang up|too many connections|connection terminated|upstream|service unavailable|gateway/.test(msg);
 }
 
 function respond(data: any, status = 200) {
@@ -1808,7 +1839,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     instanceError = error;
   }
 
-  if (instanceError || !whatsappInstance) {
+  if (instanceError) {
+    // A consulta falhou (não é "não existe"): devolver 200 aqui faria o
+    // provedor descartar a mensagem por um soluço do banco.
+    throw new InfraError(`Falha ao consultar whatsapp_instances: ${instanceError.message}`, instanceError);
+  }
+  if (!whatsappInstance) {
     console.error(`[WEBHOOK] Instance not found for ID: ${instanceId}, Name: ${instanceName}, Token: ${payloadToken ? 'present' : 'absent'}. EventType: ${eventType}`);
     console.log(`[WEBHOOK] Full payload for debug:`, JSON.stringify(payload));
     return respond({ success: false, error: 'instance_not_found', instanceId, instanceName });
@@ -2562,8 +2598,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     .select().maybeSingle();
 
   if (messageError) {
+    if (messageError.code === '23505') {
+      // O provedor reenviou (ou dois isolates receberam o mesmo evento) e a
+      // primeira cópia já está gravada: nada a fazer além de confirmar.
+      console.log(`[WEBHOOK] Message ${msgId} already stored in conversation ${conversation.id} (23505) — duplicate acknowledged`);
+      return respond({ success: true, duplicate: true, reason: 'message_already_stored' });
+    }
     console.error('Error inserting message:', messageError);
-    throw messageError;
+    throw new InfraError(`Falha ao gravar mensagem: ${messageError.message}`, messageError);
   }
 
   // B2: a mensagem já está no banco; agora sim vai ao provedor buscar a mídia
@@ -3450,7 +3492,25 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         },
       })
       .select().single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23505') {
+        // Duas mensagens do mesmo número novo em paralelo: o outro isolate
+        // acabou de criar o contato. Usa ele.
+        const { data: raceExisting } = await supabase
+          .from('contacts')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .in('phone', uniquePhones([phone, canonical, ...variants]))
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (raceExisting) {
+          console.log(`[CONTACT] Corrida na criação do contato ${canonical}: usando o ${raceExisting.id} criado em paralelo`);
+          return raceExisting;
+        }
+      }
+      throw error;
+    }
     return newContact;
   }
 
