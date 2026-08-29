@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +21,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Info, Loader2, Megaphone, Send, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useTags } from '@/hooks/useTags';
 import type { InstagramAccount } from '@/hooks/useInstagramAccounts';
@@ -32,6 +30,16 @@ import {
   useInstagramAudienceCount,
   useInstagramBroadcasts,
 } from '@/hooks/useInstagramBroadcasts';
+import {
+  EngageEmptyState,
+  EngageFilterChip,
+  EngageListSkeleton,
+  EngageNotConnected,
+  EngagePanel,
+  EngageStatus,
+  EngageToolbar,
+  type EngageTone,
+} from './EngageUI';
 
 /**
  * Disparo de DM no Instagram.
@@ -50,10 +58,10 @@ interface InstagramBroadcastTabProps {
   accounts: InstagramAccount[];
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  sending: 'enviando',
-  completed: 'concluído',
-  cancelled: 'cancelado',
+const STATUS: Record<string, { tone: EngageTone; label: string }> = {
+  sending: { tone: 'live', label: 'enviando' },
+  completed: { tone: 'ok', label: 'concluído' },
+  cancelled: { tone: 'idle', label: 'cancelado' },
 };
 
 export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) {
@@ -130,24 +138,22 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
 
   if (!accounts.length) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="py-6 text-center text-sm text-muted-foreground">
-          Conecte uma conta do Instagram em Configurações para disparar mensagens.
-        </CardContent>
-      </Card>
+      <EngageNotConnected purpose="O disparo manda DM para quem interagiu com a sua conta nas últimas 24 horas." />
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Nota, não cartão: a lista abaixo já é feita de cartões, e mais um do
+    <div className="space-y-5">
+      {/* Nota, não cartão: a lista abaixo já é uma superfície, e mais uma do
           mesmo peso competiria com ela. A cor de atenção fica só no ícone —
           `status-pending` como texto não passa dos 4.5:1 em corpo pequeno. */}
-      <div className="flex gap-3 rounded-lg border border-status-pending/25 bg-status-pending/[0.06] p-4">
+      <div className="flex gap-3 rounded-xl border border-status-pending/25 bg-status-pending/[0.06] p-4">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-pending" aria-hidden />
         <div className="max-w-[70ch] space-y-1 text-sm">
-          <p className="font-medium">O público é quem respondeu nas últimas 24 horas.</p>
-          <p className="text-muted-foreground">
+          <p className="text-[15px] font-medium tracking-[-0.011em]">
+            O público é quem respondeu nas últimas 24 horas.
+          </p>
+          <p className="leading-relaxed text-muted-foreground">
             O Instagram não entrega DM fora dessa janela — e insistir derruba a conta.
             Não é limite da Wizzy: é regra da Meta, e a conta punida seria a sua. Para
             alcançar mais gente, o caminho é fazer mais gente responder — automação de
@@ -156,83 +162,118 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
         </div>
       </div>
 
-      <div className="flex justify-end">
+      <EngageToolbar>
+        <p className="text-[15px] tracking-[-0.011em] text-muted-foreground">
+          {broadcasts.length
+            ? `${broadcasts.length} ${broadcasts.length === 1 ? 'disparo' : 'disparos'} no histórico`
+            : 'Nenhum disparo ainda'}
+        </p>
         <Button onClick={() => setOpen(true)} className="gap-2">
-          <Megaphone className="h-4 w-4" />
+          <Megaphone className="h-4 w-4" aria-hidden />
           Novo disparo
         </Button>
-      </div>
+      </EngageToolbar>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>
+        <EngageListSkeleton rows={2} />
       ) : !broadcasts.length ? (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum disparo ainda.
-          </CardContent>
-        </Card>
+        <EngageEmptyState
+          icon={Megaphone}
+          title="Nenhum disparo ainda"
+          description="Um disparo alcança quem já respondeu — é o jeito de voltar a falar com quem a automação trouxe."
+          action={
+            <Button variant="outline" onClick={() => setOpen(true)} className="gap-2">
+              <Megaphone className="h-4 w-4" aria-hidden />
+              Criar o primeiro
+            </Button>
+          }
+        />
       ) : (
-        <div className="space-y-3">
-          {broadcasts.map((broadcast) => {
-            const done = broadcast.sent_count + broadcast.failed_count + broadcast.skipped_count;
-            const percent = broadcast.total_recipients
-              ? Math.round((done / broadcast.total_recipients) * 100)
-              : 0;
+        <EngagePanel>
+          <div className="divide-y">
+            {broadcasts.map((broadcast) => {
+              const done = broadcast.sent_count + broadcast.failed_count + broadcast.skipped_count;
+              const percent = broadcast.total_recipients
+                ? Math.round((done / broadcast.total_recipients) * 100)
+                : 0;
+              const status = STATUS[broadcast.status] || STATUS.cancelled;
 
-            return (
-              <Card key={broadcast.id}>
-                <CardContent className="space-y-3 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-2 font-medium">
-                        {broadcast.name}
+              return (
+                <div key={broadcast.id} className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    <div className="min-w-0 flex-1 basis-64">
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        <p className="truncate text-[15px] font-medium tracking-[-0.011em]">
+                          {broadcast.name}
+                        </p>
                         {/* Mesmo padrão da aba de contatos: o ponto carrega o
                             estado, o texto fica legível. */}
-                        <span className="inline-flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
-                          <span
-                            aria-hidden
-                            className={cn(
-                              'h-1.5 w-1.5 shrink-0 rounded-full',
-                              broadcast.status === 'sending' && 'animate-pulse bg-primary',
-                              broadcast.status === 'completed' && 'bg-status-open',
-                              broadcast.status === 'cancelled' && 'bg-muted-foreground/40',
-                            )}
-                          />
-                          {STATUS_LABEL[broadcast.status]}
-                        </span>
+                        <EngageStatus tone={status.tone} className="text-sm text-muted-foreground">
+                          {status.label}
+                        </EngageStatus>
+                      </div>
+                      <p className="mt-0.5 line-clamp-1 text-[14px] tracking-[-0.009em] text-muted-foreground">
+                        {broadcast.message}
                       </p>
-                      <p className="line-clamp-1 text-sm text-muted-foreground">{broadcast.message}</p>
                     </div>
-                    {broadcast.status === 'sending' && (
-                      <Button variant="ghost" size="sm" onClick={() => handleCancel(broadcast.id)} className="gap-1.5">
-                        <X className="h-3.5 w-3.5" />
-                        Cancelar
-                      </Button>
-                    )}
+
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {new Date(broadcast.created_at).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                      {broadcast.status === 'sending' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCancel(broadcast.id)}
+                          className="gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden />
+                          Cancelar
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
-                  {broadcast.status === 'sending' && <Progress value={percent} className="h-1.5" />}
+                  {broadcast.status === 'sending' && (
+                    <Progress
+                      value={percent}
+                      className="h-1.5"
+                      aria-label={`${percent}% do disparo processado`}
+                    />
+                  )}
 
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <span><strong className="text-foreground">{broadcast.sent_count}</strong> enviados</span>
-                    <span>{broadcast.total_recipients} na lista</span>
+                    <span>
+                      <strong className="font-medium tabular-nums text-foreground">
+                        {broadcast.sent_count}
+                      </strong>{' '}
+                      enviados
+                    </span>
+                    <span className="tabular-nums">{broadcast.total_recipients} na lista</span>
                     {broadcast.skipped_count > 0 && (
                       // Nomeado pelo motivo, não por "pulados": a janela ter
                       // fechado no meio do disparo é rotina, não incidente.
-                      <span>{broadcast.skipped_count} saíram da janela antes da vez</span>
+                      <span className="tabular-nums">
+                        {broadcast.skipped_count} saíram da janela antes da vez
+                      </span>
                     )}
                     {broadcast.failed_count > 0 && (
-                      <span className="text-destructive">{broadcast.failed_count} falharam</span>
+                      <span className="tabular-nums text-destructive">
+                        {broadcast.failed_count} falharam
+                      </span>
                     )}
-                    <span className="ml-auto">
-                      {new Date(broadcast.created_at).toLocaleString('pt-BR')}
-                    </span>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        </EngagePanel>
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -262,18 +303,18 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
 
             {/* O número que decide se vale a pena disparar, mostrado antes de
                 escrever qualquer coisa. */}
-            <div className="rounded-lg border bg-muted/40 p-4">
+            <div className="rounded-xl border bg-muted/40 p-4">
               {countingAudience ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   Calculando quem está alcançável…
                 </div>
               ) : (
                 <>
-                  <p className="text-3xl font-semibold leading-none">
+                  <p className="text-[40px] font-semibold leading-none tabular-nums tracking-[-0.028em]">
                     {(audience?.eligible || 0).toLocaleString('pt-BR')}
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-2 text-[15px] leading-relaxed tracking-[-0.011em] text-muted-foreground">
                     de {(audience?.total || 0).toLocaleString('pt-BR')} contatos vão
                     receber — os demais estão fora da janela de 24h.
                   </p>
@@ -285,31 +326,25 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
               <div className="space-y-1.5">
                 <Label className="text-sm">Estreitar por etiqueta (opcional)</Label>
                 <div className="flex flex-wrap gap-1.5">
-                  {tags.map((tag) => {
-                    const active = tagIds.includes(tag.id);
-                    return (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => setTagIds(active
-                          ? tagIds.filter((id) => id !== tag.id)
-                          : [...tagIds, tag.id])}
-                        className={cn(
-                          'rounded-full border px-3 py-1 text-xs transition',
-                          active ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground',
-                        )}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
+                  {tags.map((tag) => (
+                    <EngageFilterChip
+                      key={tag.id}
+                      active={tagIds.includes(tag.id)}
+                      onClick={() => setTagIds(tagIds.includes(tag.id)
+                        ? tagIds.filter((id) => id !== tag.id)
+                        : [...tagIds, tag.id])}
+                    >
+                      {tag.name}
+                    </EngageFilterChip>
+                  ))}
                 </div>
               </div>
             )}
 
             <div className="space-y-1.5">
-              <Label className="text-sm">Nome do disparo</Label>
+              <Label className="text-sm" htmlFor="broadcast-name">Nome do disparo</Label>
               <Input
+                id="broadcast-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ex: Aviso da live de quinta"
@@ -317,8 +352,9 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm">Mensagem</Label>
+              <Label className="text-sm" htmlFor="broadcast-message">Mensagem</Label>
               <Textarea
+                id="broadcast-message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={5}
@@ -326,7 +362,7 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
               />
             </div>
 
-            <div className="rounded-lg border p-3">
+            <div className="rounded-xl border p-3">
               <div className="flex items-start gap-2.5">
                 <Checkbox
                   id="broadcast-link"
@@ -339,23 +375,25 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
                 </Label>
               </div>
               {linkEnabled && (
-                <div className="mt-3 grid grid-cols-[1fr_1.4fr] gap-2 pl-6">
-                  <Input
-                    value={linkLabel}
-                    onChange={(e) => setLinkLabel(e.target.value)}
-                    placeholder="Texto do botão"
-                  />
-                  <Input
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://..."
-                  />
+                <div className="mt-3 space-y-2 pl-6">
+                  <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+                    <Input
+                      value={linkLabel}
+                      onChange={(e) => setLinkLabel(e.target.value)}
+                      placeholder="Texto do botão"
+                      aria-label="Texto do botão"
+                    />
+                    <Input
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      placeholder="https://..."
+                      aria-label="Endereço do link"
+                    />
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    O clique é contabilizado — é o que responde “quantos abriram”.
+                  </p>
                 </div>
-              )}
-              {linkEnabled && (
-                <p className="mt-2 pl-6 text-xs text-muted-foreground">
-                  O clique é contabilizado — é o que responde "quantos abriram".
-                </p>
               )}
             </div>
           </div>
@@ -363,7 +401,7 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button onClick={handleSend} disabled={!canSend || sending} className="gap-2">
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Send className="h-4 w-4" aria-hidden />}
               Disparar para {(audience?.eligible || 0).toLocaleString('pt-BR')}
             </Button>
           </DialogFooter>

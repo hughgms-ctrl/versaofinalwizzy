@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,9 +60,32 @@ interface WhatsAppStatus {
   hasCredentials?: boolean;
 }
 
+/** As abas válidas. Um `?tab=` inventado cairia numa tela em branco sem isto. */
+const SETTINGS_TABS = [
+  'whatsapp',
+  'instagram',
+  'import',
+  'tags',
+  'crm',
+  'notifications',
+  'general',
+  'security',
+  'workspaces',
+] as const;
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const { session, profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // O retorno do OAuth do Instagram chega sem `tab` — abrir em WhatsApp
+  // deixaria o aviso "Instagram conectado!" flutuando sobre a tela errada.
+  const requestedTab = searchParams.get('tab');
+  const activeTab = (SETTINGS_TABS as readonly string[]).includes(requestedTab || '')
+    ? (requestedTab as string)
+    : (searchParams.has('instagram_connected') || searchParams.has('instagram_error'))
+      ? 'instagram'
+      : 'whatsapp';
   const { settings: notificationSettings, updateSettings: updateNotificationSettings } = useNotificationSettings();
   const { signatureDefault, updateDefaultSignature } = useSignatureSettings();
 
@@ -452,7 +476,14 @@ export default function SettingsPage() {
       title="Configurações"
       subtitle="Gerencie as configurações do sistema"
     >
-      <Tabs defaultValue="whatsapp" className="space-y-4 md:space-y-6">
+      {/* A aba vem da URL para que outra tela possa mandar a pessoa direto ao
+          lugar certo — o "Conectar" do Wizzy Engage abre em Instagram, e não
+          em WhatsApp com a instrução de procurar. */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setSearchParams({ tab: value }, { replace: true })}
+        className="space-y-4 md:space-y-6"
+      >
         <TabsList className="bg-muted flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="whatsapp" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
             <MessageSquare className="h-3.5 w-3.5 md:h-4 md:w-4" />

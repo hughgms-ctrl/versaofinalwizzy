@@ -27,7 +27,7 @@ export function InstagramTab() {
             <p className="text-sm text-muted-foreground">
               As configurações de conexão do Instagram estão na página de Configurações.
             </p>
-            <Button onClick={() => navigate('/settings')} className="gap-2">
+            <Button onClick={() => navigate('/settings?tab=instagram')} className="gap-2">
               <ExternalLink className="h-4 w-4" />
               Ir para Configurações
             </Button>

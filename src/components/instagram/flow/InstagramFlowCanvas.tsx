@@ -179,7 +179,7 @@ function CanvasInner({
   };
 
   return (
-    <div className="flex h-full min-h-[520px] overflow-hidden rounded-lg border">
+    <div className="flex h-full min-h-[520px] overflow-hidden rounded-xl border bg-card">
       <div className="w-52 shrink-0 space-y-1 overflow-y-auto border-r bg-muted/30 p-2">
         <p className="px-1 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Blocos

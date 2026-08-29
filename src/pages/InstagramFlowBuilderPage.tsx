@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Loader2, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useInstagramAccounts } from '@/hooks/useInstagramAccounts';
 import {
@@ -138,41 +139,63 @@ export default function InstagramFlowBuilderPage() {
 
   if (flowId && isLoading) {
     return (
-      <MainLayout>
-        <div className="flex h-64 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <MainLayout title="Fluxo" backTo="/tools/wizzy-engage" backLabel="Wizzy Engage">
+        <div className="space-y-4">
+          <Skeleton className="h-11 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-[520px] w-full rounded-xl" />
         </div>
       </MainLayout>
     );
   }
 
   return (
-    <MainLayout>
+    <MainLayout
+      title={flowId ? 'Editar fluxo' : 'Novo fluxo'}
+      subtitle="Conversas de várias etapas no Instagram"
+      backTo="/tools/wizzy-engage"
+      backLabel="Wizzy Engage"
+    >
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/tools/wizzy-engage')}>
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Voltar
-          </Button>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nome do fluxo"
-            className="max-w-xs"
-          />
+        {/* O nome, o interruptor e o salvar numa faixa só, na ordem em que a
+            pessoa os usa. O nome vive como campo de verdade (com rótulo, e não
+            um placeholder disfarçado de título) porque salvar sem ele falha. */}
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
+          <div className="min-w-0 flex-1 basis-64 space-y-1.5">
+            <Label className="text-xs text-muted-foreground" htmlFor="flow-name">
+              Nome do fluxo
+            </Label>
+            <Input
+              id="flow-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ex: Qualificação da turma de junho"
+              className="max-w-sm"
+            />
+          </div>
+
           <div className="ml-auto flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
-              <Label className="text-sm font-normal">{isActive ? 'Ativo' : 'Pausado'}</Label>
+              <Switch id="flow-active" checked={isActive} onCheckedChange={setIsActive} />
+              <Label htmlFor="flow-active" className="cursor-pointer text-sm font-normal">
+                {isActive ? 'Ativo' : 'Pausado'}
+              </Label>
             </div>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
               Salvar
             </Button>
           </div>
         </div>
 
-        <div className="grid gap-3 rounded-lg border p-3 md:grid-cols-3">
+        <div className="rounded-xl border bg-card p-4">
+          <h2 className="text-sm font-semibold">Quando este fluxo começa</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            O gatilho decide quem entra na conversa. Os blocos abaixo decidem o que
+            ela diz.
+          </p>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Conta</Label>
             <Select value={accountId} onValueChange={setAccountId}>
@@ -234,9 +257,10 @@ export default function InstagramFlowBuilderPage() {
               <InstagramMediaPicker accountId={accountId} value={mediaIds} onChange={setMediaIds} />
             </div>
           )}
+          </div>
         </div>
 
-        <div className="h-[calc(100vh-22rem)] min-h-[520px]">
+        <div className="h-[calc(100vh-26rem)] min-h-[520px]">
           <InstagramFlowCanvas
             initialNodes={existingFlow?.nodes}
             initialEdges={existingFlow?.edges}

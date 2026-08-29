@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Instagram, Loader2, RefreshCw, Unlink, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Instagram, Loader2, RefreshCw, Unlink } from 'lucide-react';
+import { EngageStatus, type EngageTone } from '@/components/instagram/EngageUI';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import {
@@ -13,12 +13,21 @@ import {
   useInstagramAccounts,
 } from '@/hooks/useInstagramAccounts';
 
-const STATUS_LABEL: Record<string, { label: string; icon: JSX.Element; className: string }> = {
-  connected: { label: 'Conectado', icon: <CheckCircle className="h-3.5 w-3.5" />, className: 'bg-green-500/10 text-green-600 border-green-500/20' },
-  pending: { label: 'Pendente', icon: <Clock className="h-3.5 w-3.5" />, className: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' },
-  disconnected: { label: 'Desconectado', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-muted text-muted-foreground' },
-  error: { label: 'Erro', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-destructive/10 text-destructive border-destructive/20' },
-  expired: { label: 'Token expirado', icon: <XCircle className="h-3.5 w-3.5" />, className: 'bg-destructive/10 text-destructive border-destructive/20' },
+/**
+ * O estado da conta, no mesmo vocabulário do Wizzy Engage.
+ *
+ * Antes eram cores cravadas na mão — `text-green-600`, `text-yellow-600` — que
+ * não existem em lugar nenhum do resto do produto e ficam abaixo de 4.5:1 em
+ * corpo pequeno. Aqui o estado é um ponto colorido com texto legível ao lado,
+ * igual à lista de contatos e ao histórico de disparos: quem sai desta tela e
+ * entra no Engage reconhece o mesmo sinal.
+ */
+const STATUS_LABEL: Record<string, { label: string; tone: EngageTone }> = {
+  connected: { label: 'Conectado', tone: 'ok' },
+  pending: { label: 'Conexão incompleta', tone: 'warn' },
+  disconnected: { label: 'Desconectado', tone: 'idle' },
+  error: { label: 'Acesso recusado', tone: 'error' },
+  expired: { label: 'Acesso vencido', tone: 'error' },
 };
 
 // O que dizer ao dono em cada estado que não é "conectado". Sem isto a conta
@@ -202,10 +211,9 @@ export function InstagramAccountsSettings() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={`gap-1 ${statusInfo.className}`}>
-                          {statusInfo.icon}
+                        <EngageStatus tone={statusInfo.tone} className="mr-1">
                           {statusInfo.label}
-                        </Badge>
+                        </EngageStatus>
                         {account.status !== 'connected' && (
                           <Button
                             variant="outline"

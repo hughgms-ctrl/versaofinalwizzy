@@ -86,6 +86,35 @@ export function useInstagramContacts(accountId?: string) {
 }
 
 /**
+ * Só o total, sem trazer a base.
+ *
+ * O cabeçalho do módulo e a aba mostram a mesma contagem; `head: true` traz o
+ * número sem uma linha sequer de payload, e o cache do react-query faz as duas
+ * telas dividirem a mesma consulta.
+ */
+export function useInstagramContactCount() {
+  const { profile } = useAuth();
+
+  return useQuery({
+    queryKey: ['instagram-contacts-count', profile?.organization_id],
+    queryFn: async () => {
+      if (!profile?.organization_id) return 0;
+      const { count, error } = await (supabase
+        .from(CONTACTS)
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', profile.organization_id) as unknown as Promise<{
+          count: number | null;
+          error: any;
+        }>);
+      if (error) throw error;
+      return count || 0;
+    },
+    enabled: !!profile?.organization_id,
+    staleTime: 60_000,
+  });
+}
+
+/**
  * Vincula (ou desvincula) o perfil do Instagram a um contato da Wizzy.
  *
  * Sempre por ação humana: dois cadastros com o mesmo nome não são prova de

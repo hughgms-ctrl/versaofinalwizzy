@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  EngageDisplay,
+  EngageLede,
+  EngageSectionHeader,
+} from '@/components/instagram/EngageUI';
 import {
   BLANK_TEMPLATE,
   INSTAGRAM_TEMPLATES,
@@ -37,6 +40,11 @@ import {
  * A cor azul dos balões é a do Instagram, de propósito: aquele retângulo
  * representa o aplicativo, não a interface da Wizzy. Um balão magenta pareceria
  * parte do formulário.
+ *
+ * A prévia ocupa o topo inteiro e tem altura mínima fixa. As duas coisas andam
+ * juntas: sendo ela o conteúdo que decide a escolha, ganha a área; tendo altura
+ * fixa, os títulos de uma fileira de cartões caem todos na mesma linha, e a
+ * grade lê como grade em vez de dente de serra.
  */
 
 interface InstagramTemplateGalleryProps {
@@ -45,40 +53,21 @@ interface InstagramTemplateGalleryProps {
   onOpenFlows: () => void;
 }
 
-function useInstagramContactCount() {
-  const { profile } = useAuth();
-
-  return useQuery({
-    queryKey: ['instagram-contacts-count', profile?.organization_id],
-    queryFn: async () => {
-      if (!profile?.organization_id) return 0;
-      const { count, error } = await (supabase
-        .from('instagram_contacts' as 'contacts')
-        .select('id', { count: 'exact', head: true })
-        .eq('organization_id', profile.organization_id) as unknown as Promise<{ count: number | null; error: any }>);
-      if (error) throw error;
-      return count || 0;
-    },
-    enabled: !!profile?.organization_id,
-    staleTime: 60_000,
-  });
-}
-
 /** A conversa em miniatura, no topo do cartão. */
 function ConversationPreview({ template }: { template: InstagramTemplate }) {
   const { message, reply } = templatePreview(template);
 
   return (
-    <div className="space-y-1.5 border-b bg-muted/40 px-4 py-4">
+    <div className="flex min-h-[140px] flex-col justify-center gap-2 border-b bg-muted/50 px-5 py-7 transition-colors duration-200 ease-out group-hover:bg-muted/80">
       <div className="flex">
-        <p className="max-w-[88%] rounded-2xl rounded-bl-md border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-sm">
+        <p className="max-w-[88%] rounded-[18px] rounded-bl-[6px] border bg-card px-3.5 py-2.5 text-[13px] leading-relaxed tracking-[-0.006em] text-foreground">
           {message}
         </p>
       </div>
 
       {reply?.kind === 'text' && (
         <div className="flex justify-end">
-          <p className="max-w-[80%] rounded-2xl rounded-br-md bg-[#3797f0] px-3 py-1.5 text-xs leading-relaxed text-white">
+          <p className="max-w-[80%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
             {reply.label}
           </p>
         </div>
@@ -86,7 +75,7 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
 
       {reply?.kind === 'chip' && (
         <div className="flex justify-end">
-          <span className="rounded-full border border-[#3797f0] px-2.5 py-1 text-[11px] font-medium text-[#3797f0]">
+          <span className="rounded-full border border-[#3797f0] px-3 py-1.5 text-[12px] font-medium tracking-[-0.01em] text-[#3797f0]">
             {reply.label}
           </span>
         </div>
@@ -96,7 +85,7 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
           termina na primeira mensagem. O espaço vazio seria uma mentira
           silenciosa sobre o alcance do modelo. */}
       {!reply && (
-        <p className="pl-1 pt-0.5 text-[11px] text-muted-foreground">
+        <p className="pl-1 text-[12px] tracking-[-0.02em] text-muted-foreground">
           conversa fica aberta para o time
         </p>
       )}
@@ -107,7 +96,7 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
 /** Os três passos, separados por seta. */
 function Mechanism({ steps }: { steps: readonly string[] }) {
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] tracking-[-0.02em] text-muted-foreground">
       {steps.map((step, index) => (
         <span key={step} className="inline-flex items-center gap-1.5">
           {index > 0 && <ArrowRight className="h-3 w-3 shrink-0 opacity-50" aria-hidden />}
@@ -133,10 +122,9 @@ function TemplateCard({
       onClick={() => onPick(template)}
       className={cn(
         'group flex flex-col overflow-hidden rounded-xl border bg-card text-left',
-        'transition-[transform,box-shadow,border-color] duration-200 ease-out',
-        'hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+        'transition-colors duration-200 ease-out hover:border-foreground/25',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+        'motion-reduce:transition-none',
         // O destaque vem da borda, não de fundo colorido: um cartão tingido
         // entre seis brancos vira propaganda, não hierarquia.
         featured && 'border-primary/40',
@@ -144,9 +132,9 @@ function TemplateCard({
     >
       <ConversationPreview template={template} />
 
-      <div className="flex flex-1 flex-col gap-2 p-4">
+      <div className="flex flex-1 flex-col gap-2.5 p-5">
         <div className="flex items-start justify-between gap-2">
-          <h4 className="font-medium leading-snug transition-colors group-hover:text-primary">
+          <h4 className="text-[15px] font-medium leading-snug tracking-[-0.011em]">
             {template.title}
           </h4>
           {template.badge && (
@@ -154,9 +142,11 @@ function TemplateCard({
           )}
         </div>
 
-        <p className="text-sm leading-relaxed text-muted-foreground">{template.description}</p>
+        <p className="text-[14px] leading-relaxed tracking-[-0.009em] text-muted-foreground">
+          {template.description}
+        </p>
 
-        <div className="mt-auto border-t pt-3">
+        <div className="mt-auto border-t pt-3.5">
           <Mechanism steps={template.steps} />
         </div>
       </div>
@@ -170,56 +160,44 @@ export function InstagramTemplateGallery({
   onOpenFlows,
 }: InstagramTemplateGalleryProps) {
   const { profile } = useAuth();
-  const { data: contactCount = 0 } = useInstagramContactCount();
 
   const firstName = (profile?.full_name || '').trim().split(/\s+/)[0];
 
   return (
-    <div className="space-y-10">
-      <header>
-        <h2 className="text-xl font-semibold tracking-tight">
-          {firstName ? `Olá, ${firstName}` : 'Comece por aqui'}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {connectedAccounts === 0 ? (
-            <>Conecte o Instagram em Configurações para começar a automatizar.</>
-          ) : (
-            <>
-              {connectedAccounts} {connectedAccounts === 1 ? 'conta conectada' : 'contas conectadas'}
-              {' · '}
-              {contactCount.toLocaleString('pt-BR')} {contactCount === 1 ? 'contato' : 'contatos'}
-            </>
-          )}
-        </p>
-      </header>
-
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="font-medium">Modelos prontos</h3>
+    <div className="space-y-14">
+      {/* O estado da conta e o total de contatos ficam na faixa acima das abas,
+          onde valem para as seis telas. Repeti-los aqui seria dizer duas vezes
+          a mesma coisa a 200px de distância. */}
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+        <div className="space-y-2.5">
+          <EngageDisplay>{firstName ? `Olá, ${firstName}` : 'Comece por aqui'}</EngageDisplay>
+          <EngageLede>
+            {connectedAccounts === 0
+              ? 'Escolha um modelo para ver como ele funciona — conectar a conta fica para a hora de ativar.'
+              : 'Cada modelo mostra a conversa que produz. Escolha um, ajuste o texto e ative.'}
+          </EngageLede>
+        </div>
         <button
           type="button"
           onClick={onOpenFlows}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          className="mb-1.5 inline-flex items-center gap-1 rounded-md text-[14px] tracking-[-0.009em] text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           Prefiro montar um fluxo
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </button>
-      </div>
+      </header>
 
       {TEMPLATE_GROUPS.map((group) => {
         const items = INSTAGRAM_TEMPLATES.filter((t) => t.group === group.key);
         if (!items.length) return null;
 
         return (
-          <section key={group.key} className="space-y-3">
-            <div className="flex items-center gap-3">
-              <h4 className="text-sm font-medium">{group.label}</h4>
-              <span className="h-px flex-1 bg-border" aria-hidden />
-              <span className="text-xs text-muted-foreground">{items.length} modelos</span>
-            </div>
+          <section key={group.key} className="space-y-5">
+            <EngageSectionHeader label={group.label} meta={`${items.length} modelos`} />
 
             {/* auto-fit em vez de breakpoints: os cartões se acomodam à largura
                 real do conteúdo, que muda quando a barra lateral recolhe. */}
-            <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+            <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
               {items.map((template) => (
                 <TemplateCard key={template.id} template={template} onPick={onPick} />
               ))}
@@ -228,10 +206,12 @@ export function InstagramTemplateGallery({
         );
       })}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
-        <div>
-          <p className="text-sm font-medium">{BLANK_TEMPLATE.title}</p>
-          <p className="text-sm text-muted-foreground">{BLANK_TEMPLATE.description}</p>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t pt-7">
+        <div className="space-y-1">
+          <p className="text-[17px] font-medium tracking-[-0.014em]">{BLANK_TEMPLATE.title}</p>
+          <p className="text-[14px] leading-relaxed tracking-[-0.009em] text-muted-foreground">
+            {BLANK_TEMPLATE.description}
+          </p>
         </div>
         <Button variant="outline" onClick={() => onPick(BLANK_TEMPLATE)} className="gap-1.5">
           <Plus className="h-4 w-4" />

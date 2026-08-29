@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +41,14 @@ import {
   type InstagramContact,
 } from '@/hooks/useInstagramContacts';
 import { useContacts } from '@/hooks/useContacts';
+import {
+  EngageEmptyState,
+  EngageFilterChip,
+  EngageNotConnected,
+  EngagePanel,
+  EngageStatus,
+  EngageTableSkeleton,
+} from './EngageUI';
 
 /**
  * Os contatos que o Instagram trouxe.
@@ -69,9 +76,14 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
 
 function Avatar({ contact }: { contact: InstagramContact }) {
   return contact.profile_pic_url ? (
-    <img src={contact.profile_pic_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+    <img
+      src={contact.profile_pic_url}
+      alt=""
+      loading="lazy"
+      className="h-8 w-8 shrink-0 rounded-full object-cover"
+    />
   ) : (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 text-xs font-semibold text-white">
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 text-xs font-semibold text-white">
       {(contact.username || contact.name || '?').slice(0, 1).toUpperCase()}
     </div>
   );
@@ -93,18 +105,9 @@ function ReachBadge({ contact }: { contact: InstagramContact }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex cursor-default items-center gap-1.5 whitespace-nowrap text-sm">
-            <span
-              aria-hidden
-              className={cn(
-                'h-1.5 w-1.5 shrink-0 rounded-full',
-                open ? 'bg-status-open' : 'bg-muted-foreground/40',
-              )}
-            />
-            <span className={open ? undefined : 'text-muted-foreground'}>
-              {open ? 'alcançável' : 'fora da janela'}
-            </span>
-          </span>
+          <EngageStatus tone={open ? 'ok' : 'idle'} className="cursor-default">
+            {open ? 'alcançável' : 'fora da janela'}
+          </EngageStatus>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs text-xs leading-relaxed">
           {open ? (
@@ -175,11 +178,15 @@ function LinkDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por nome ou telefone"
-        />
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome ou telefone"
+            className="pl-8"
+          />
+        </div>
 
         <div className="max-h-72 space-y-1 overflow-y-auto">
           {isLoading ? (
@@ -195,7 +202,9 @@ function LinkDialog({
                 type="button"
                 onClick={() => apply(c.id)}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-md border p-2.5 text-left text-sm transition hover:border-primary',
+                  'flex w-full items-center justify-between gap-3 rounded-lg border p-2.5 text-left text-sm',
+                  'transition-colors duration-150 hover:border-primary/50 hover:bg-muted/50',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   contact?.linked_contact_id === c.id && 'border-primary bg-primary/5',
                 )}
               >
@@ -229,6 +238,13 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
   const [filter, setFilter] = useState<Filter>('all');
   const [linking, setLinking] = useState<InstagramContact | null>(null);
 
+  const matchesFilter = (contact: InstagramContact, key: Filter) => {
+    if (key === 'reachable') return isWindowOpen(contact);
+    if (key === 'with_email') return !!contact.email;
+    if (key === 'linked') return !!contact.linked_contact_id;
+    return true;
+  };
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
     return contacts.filter((c) => {
@@ -237,35 +253,36 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
         && !(c.name || '').toLowerCase().includes(term)
         && !(c.email || '').toLowerCase().includes(term)) return false;
 
-      if (filter === 'reachable') return isWindowOpen(c);
-      if (filter === 'with_email') return !!c.email;
-      if (filter === 'linked') return !!c.linked_contact_id;
-      return true;
+      return matchesFilter(c, filter);
     });
   }, [contacts, search, filter]);
 
-  const reachable = useMemo(() => contacts.filter(isWindowOpen).length, [contacts]);
+  // O número em cada chip: o filtro deixa de ser uma aposta — dá para ver que
+  // "com e-mail" tem 12 antes de clicar e voltar.
+  const counts = useMemo(() => ({
+    all: contacts.length,
+    reachable: contacts.filter((c) => isWindowOpen(c)).length,
+    with_email: contacts.filter((c) => !!c.email).length,
+    linked: contacts.filter((c) => !!c.linked_contact_id).length,
+  }), [contacts]);
 
   if (connectedAccounts === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="py-6 text-center text-sm text-muted-foreground">
-          Conecte uma conta do Instagram em Configurações para ver os contatos.
-        </CardContent>
-      </Card>
+      <EngageNotConnected purpose="Os contatos aparecem sozinhos quando alguém comenta ou manda mensagem para a conta." />
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {contacts.length.toLocaleString('pt-BR')}{' '}
-          {contacts.length === 1 ? 'contato' : 'contatos'} do Instagram ·{' '}
-          <span className="font-medium text-foreground">{reachable}</span> alcançáveis agora
+        <p className="text-[15px] tracking-[-0.011em] text-muted-foreground">
+          <span className="font-medium tabular-nums text-foreground">
+            {counts.reachable.toLocaleString('pt-BR')}
+          </span>{' '}
+          de {counts.all.toLocaleString('pt-BR')} podem receber DM agora
         </p>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -277,44 +294,45 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
 
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
-          <button
+          <EngageFilterChip
             key={f.key}
-            type="button"
+            active={filter === f.key}
+            count={counts[f.key]}
             onClick={() => setFilter(f.key)}
-            // O estado ativo vem da borda e do fundo, não da cor do texto: o
-            // magenta da marca em 12px não chega aos 4.5:1 exigidos, e um
-            // filtro que não se lê não é um filtro.
-            className={cn(
-              'rounded-full border px-3 py-1 text-xs transition-colors duration-150',
-              filter === f.key
-                ? 'border-primary bg-primary/10 font-medium text-foreground'
-                : 'text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
-            )}
           >
             {f.label}
-          </button>
+          </EngageFilterChip>
         ))}
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>
+        <EngageTableSkeleton columns={5} rows={6} />
       ) : !visible.length ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-            <Users className="h-7 w-7 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              {contacts.length
-                ? 'Nenhum contato com esse filtro.'
-                : 'Ninguém interagiu com a conta ainda. Os contatos aparecem aqui quando alguém comenta ou manda mensagem.'}
-            </p>
-          </CardContent>
-        </Card>
+        <EngageEmptyState
+          icon={Users}
+          title={contacts.length ? 'Nada com esse filtro' : 'Ninguém interagiu ainda'}
+          description={
+            contacts.length
+              ? 'Nenhum contato combina com a busca e o filtro atuais.'
+              : 'Os contatos entram sozinhos quando alguém comenta num post, responde um story ou manda uma mensagem no direct.'
+          }
+          action={
+            contacts.length ? (
+              <Button
+                variant="outline"
+                onClick={() => { setSearch(''); setFilter('all'); }}
+              >
+                Limpar filtros
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <Card>
-          <CardContent className="p-0">
+        <EngagePanel>
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableHead>Perfil</TableHead>
                   <TableHead>E-mail</TableHead>
                   <TableHead>Etiquetas</TableHead>
@@ -331,16 +349,18 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
                     .filter(Boolean);
 
                   return (
-                    <TableRow key={contact.id}>
+                    <TableRow key={contact.id} className="group">
                       <TableCell>
                         <div className="flex items-center gap-2.5">
                           <Avatar contact={contact} />
                           <div className="min-w-0">
-                            <p className="truncate font-medium">
+                            <p className="truncate text-[15px] font-medium tracking-[-0.011em]">
                               @{contact.username || contact.igsid}
                             </p>
                             {contact.name && (
-                              <p className="truncate text-xs text-muted-foreground">{contact.name}</p>
+                              <p className="truncate text-[13px] tracking-[-0.006em] text-muted-foreground">
+                                {contact.name}
+                              </p>
                             )}
                           </div>
                         </div>
@@ -370,7 +390,7 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
                       <TableCell className="text-sm">
                         {contact.contacts ? (
                           <span className="inline-flex items-center gap-1.5">
-                            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             {contact.contacts.name || contact.contacts.phone}
                           </span>
                         ) : (
@@ -379,7 +399,12 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
                       </TableCell>
 
                       <TableCell>
-                        <div className="flex justify-end gap-1">
+                        {/* Os ícones recuam para 60% e voltam ao cheio no hover
+                            ou no foco do teclado — dois botões em brasa por
+                            linha multiplicam o ruído por cada contato. Recuar,
+                            e não esconder: sem hover no toque, um botão em
+                            opacidade zero é um botão que não existe. */}
+                        <div className="flex justify-end gap-1 opacity-100 transition-opacity duration-150 focus-within:opacity-100 motion-reduce:transition-none sm:opacity-60 sm:group-hover:opacity-100">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -404,8 +429,8 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
                 })}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+          </div>
+        </EngagePanel>
       )}
 
       <LinkDialog contact={linking} onClose={() => setLinking(null)} />
