@@ -6,6 +6,7 @@ import { buildKnowledgeBlock } from '../_shared/agentKnowledge.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 import { resumeFlow } from '../_shared/flowResume.ts';
 import { signContactFileUrl } from '../_shared/storageDownload.ts';
+import { mergeConversationMetadata } from '../_shared/conversationMetadata.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -175,6 +176,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // B9: lock por conversa (ver acquireAiRunLock). Declarado fora do try para
+  // o finally soltar o lock em QUALQUER saída — retorno normal, erro, throw.
+  let aiLock: { supabase: any; conversationId: string; token: string } | null = null;
+
   try {
     const payload = await req.json();
     console.log(`[ORCHESTRATOR] Received request: ${req.method}`);
@@ -304,6 +309,24 @@ Deno.serve(async (req) => {
         status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // B9: só um orquestrador por conversa de cada vez. O debounce do webhook
+    // cobre a janela de 8 s antes do disparo; durante a execução (5–40 s+)
+    // uma mensagem nova abria um segundo run em paralelo — duas respostas ao
+    // contato e o estado de um atropelando o do outro. Se a conversa está
+    // ocupada, a mensagem fica anotada em metadata.ai_rerun_pending e o run
+    // que está rodando dispara UM novo ao terminar (ver o finally).
+    const lockResult = await acquireAiRunLock(supabase, conversationId);
+    if (lockResult === 'busy') {
+      await mergeConversationMetadata(supabase, conversationId, {
+        ai_rerun_pending: { payload, queued_at: new Date().toISOString() },
+      });
+      console.log(`[ORCHESTRATOR] Conversa ${conversationId} já tem um run em andamento — mensagem enfileirada para rerun`);
+      return new Response(JSON.stringify({ success: false, reason: 'ai_run_in_progress', queued: true }), {
+        status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (lockResult) aiLock = { supabase, conversationId, token: lockResult };
 
     // 2. Resolve the active master prompt
     let masterPrompt = null;
@@ -578,6 +601,12 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  } finally {
+    if (aiLock) {
+      const lock = aiLock;
+      aiLock = null;
+      await releaseAiRunLockAndRerun(lock.supabase, lock.conversationId, lock.token);
+    }
   }
 });
 
@@ -1787,10 +1816,8 @@ async function invokeAgentAI(
             variables: state.variables,
             completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
-          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
-          const metadata = { ...(convData?.metadata || {}) };
-          delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
+          await mergeConversationMetadata(supabase, ctx.conversationId, null, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[AGENT] Error stopping flow on rejection-without-handle:', e);
         }
@@ -2592,10 +2619,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               }).eq('id', ctx.flowExecutionId);
 
               // Clear the handoff context from conversation metadata
-              const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
-              const metadata = { ...(convData?.metadata || {}) };
-              delete metadata.ai_handoff_context;
-              await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
+              await mergeConversationMetadata(supabase, ctx.conversationId, null, ['ai_handoff_context']);
 
               // Trigger flow-execute to continue from the next node (creates a fresh execution starting at nextNodeId)
               try {
@@ -2715,10 +2739,8 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           await supabase.from('flow_executions').update({
             status: 'completed', variables, completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
-          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
-          const metadata = { ...(convData?.metadata || {}) };
-          delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
+          await mergeConversationMetadata(supabase, ctx.conversationId, null, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[LEGACY] Error stopping flow on rejection-without-handle:', e);
         }
@@ -2748,10 +2770,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             status: 'completed', variables, completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
 
-          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
-          const metadata = { ...(convData?.metadata || {}) };
-          delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
+          await mergeConversationMetadata(supabase, ctx.conversationId, null, ['ai_handoff_context']);
 
           try {
             await resumeFlow({
@@ -2930,10 +2949,72 @@ function loadOrchestrationState(conversation: any, masterPromptId: string): Orch
 }
 
 async function saveOrchestrationState(supabase: any, conversationId: string, state: OrchestrationState) {
-  const { data: conv } = await supabase.from('conversations').select('metadata').eq('id', conversationId).single();
-  const metadata = { ...(conv?.metadata || {}), orchestration_state: state };
-  await supabase.from('conversations').update({ metadata }).eq('id', conversationId);
+  await mergeConversationMetadata(supabase, conversationId, { orchestration_state: state });
   console.log('State saved:', JSON.stringify(state));
+}
+
+// ==================== LOCK POR CONVERSA (B9) ====================
+
+const AI_RUN_LOCK_TTL_SECONDS = 120;
+
+/**
+ * Devolve o token do lock, 'busy' se outro run está ativo, ou null se as RPCs
+ * do lock ainda não existem no banco (migration 20260830130000 não aplicada) —
+ * nesse caso o orquestrador segue sem serializar, como antes.
+ */
+async function acquireAiRunLock(supabase: any, conversationId: string): Promise<string | 'busy' | null> {
+  const token = crypto.randomUUID();
+  const { data, error } = await supabase.rpc('try_acquire_ai_run_lock', {
+    _conversation: conversationId,
+    _token: token,
+    _ttl_seconds: AI_RUN_LOCK_TTL_SECONDS,
+  });
+  if (error) {
+    console.warn(`[LOCK] try_acquire_ai_run_lock indisponível (${error.message}); seguindo sem lock`);
+    return null;
+  }
+  return data === true ? token : 'busy';
+}
+
+/**
+ * Solta o lock (só se o token ainda for o nosso) e, se chegou mensagem durante
+ * o run, dispara UM orquestrador novo com ela — em background, para não segurar
+ * a resposta deste. A mensagem pendente é apagada antes do disparo: se o rerun
+ * também encontrar a conversa ocupada, ele mesmo se reenfileira.
+ */
+async function releaseAiRunLockAndRerun(supabase: any, conversationId: string, token: string) {
+  try {
+    const { data: metadata, error } = await supabase.rpc('release_ai_run_lock', {
+      _conversation: conversationId,
+      _token: token,
+    });
+    if (error) {
+      console.error(`[LOCK] release_ai_run_lock falhou para ${conversationId}:`, error);
+      return;
+    }
+    const pending = metadata?.ai_rerun_pending;
+    if (!pending?.payload) return;
+
+    await mergeConversationMetadata(supabase, conversationId, null, ['ai_rerun_pending']);
+    console.log(`[LOCK] Mensagem recebida durante o run de ${conversationId} — disparando rerun`);
+
+    const rerun = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!}`,
+      },
+      body: JSON.stringify(pending.payload),
+    }).then(r => r.text()).catch(err => console.error('[LOCK] Rerun falhou:', err));
+
+    // @ts-ignore: EdgeRuntime só existe no runtime do Supabase
+    if (typeof globalThis.EdgeRuntime !== 'undefined' && globalThis.EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      globalThis.EdgeRuntime.waitUntil(rerun);
+    }
+  } catch (e) {
+    console.error(`[LOCK] Erro ao soltar lock de ${conversationId}:`, e);
+  }
 }
 
 // ==================== GRAPH HELPERS ====================
@@ -3728,6 +3809,14 @@ function getUsagePeriod(date = new Date()) {
 
 async function recordAIUsage(supabase: any, organizationId: string) {
   const period = getUsagePeriod();
+
+  // INSERT ... ON CONFLICT DO UPDATE numa instrução só. O SELECT→UPDATE abaixo
+  // perdia incrementos sob concorrência e, na virada do mês, dois runs
+  // inseriam a mesma (org, período) e um deles violava a unique em silêncio.
+  const { error: rpcError } = await supabase.rpc('increment_ai_usage', { _org: organizationId, _period: period });
+  if (!rpcError) return;
+  console.warn(`[USAGE] increment_ai_usage indisponível (${rpcError.message}); usando caminho antigo`);
+
   const { data: current } = await supabase
     .from('organization_usage')
     .select('ai_requests')
