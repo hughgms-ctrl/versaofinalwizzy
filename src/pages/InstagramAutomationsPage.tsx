@@ -380,6 +380,12 @@ export default function InstagramAutomationsPage() {
           <TabsContent value="home" className="mt-0">
             <InstagramTemplateGallery
               connectedAccounts={connectedAccounts.length}
+              account={
+                connectedAccounts[0] && {
+                  username: connectedAccounts[0].ig_username,
+                  avatarUrl: connectedAccounts[0].ig_profile_pic_url,
+                }
+              }
               onPick={openTemplate}
               onOpenFlows={() => setTab('flows')}
             />

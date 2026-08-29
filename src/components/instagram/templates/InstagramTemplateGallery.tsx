@@ -41,6 +41,17 @@ import {
  * representa o aplicativo, não a interface da Wizzy. Um balão magenta pareceria
  * parte do formulário.
  *
+ * E se aquele retângulo representa o Instagram, ele usa as cores do Instagram
+ * inteiras — fundo branco ou preto, balão #efefef ou #262626 —, não os tokens
+ * da Wizzy. Tentar desenhá-lo com `bg-card` sobre `bg-background` produzia, no
+ * tema escuro, 10% de luz sobre 7%: uma diferença que existe no código e não
+ * existe no olho. A conversa desaparecia dentro do próprio cartão, e a tela
+ * inteira virava preto sobre preto.
+ *
+ * O ganho não é só de contraste. Uma tela de Instagram dentro de um cartão da
+ * Wizzy lê como captura de tela — a pessoa reconhece o que está vendo antes de
+ * ler o título, que é exatamente o trabalho que se espera de uma prévia.
+ *
  * A prévia ocupa o topo inteiro e tem altura mínima fixa. As duas coisas andam
  * juntas: sendo ela o conteúdo que decide a escolha, ganha a área; tendo altura
  * fixa, os títulos de uma fileira de cartões caem todos na mesma linha, e a
@@ -63,50 +74,94 @@ import {
 
 interface InstagramTemplateGalleryProps {
   connectedAccounts: number;
+  /** A conta que aparece no topo de cada prévia. Ausente antes de conectar. */
+  account?: GalleryAccount;
   onPick: (template: InstagramTemplate) => void;
   onOpenFlows: () => void;
 }
 
-/** A conversa em miniatura, no topo do cartão. */
-function ConversationPreview({ template }: { template: InstagramTemplate }) {
-  const { message, reply } = templatePreview(template);
+/** Quem a pessoa vê do outro lado da conversa: a conta conectada. */
+export interface GalleryAccount {
+  username?: string | null;
+  avatarUrl?: string | null;
+}
 
+/**
+ * O topo do thread — foto e @ de quem está falando.
+ *
+ * É o que transforma dois balões soltos em uma conversa. Sem ele o retângulo é
+ * uma ilustração de mensagem; com ele é a tela que o lead vai ver, e a foto
+ * real da conta é o que faz o cliente reconhecer a si mesmo ali.
+ *
+ * A foto é a da conta conectada, e não de um contato fictício, porque a prévia
+ * é desenhada do ponto de vista de QUEM RECEBE: os balões cinza à esquerda são
+ * a automação falando, o azul à direita é a pessoa respondendo. Do lado de lá,
+ * o thread se chama pelo nome do negócio.
+ */
+function ThreadHeader({ account }: { account?: GalleryAccount }) {
   return (
-    <div className="flex min-h-[168px] flex-col justify-center gap-2.5 border-b bg-background px-5 py-8 transition-colors duration-200 ease-out group-hover:bg-muted/50">
-      <div className="flex items-end gap-2">
+    <div className="flex items-center gap-2 border-b border-black/[0.07] px-4 py-2.5 dark:border-white/10">
+      {account?.avatarUrl ? (
+        <img src={account.avatarUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+      ) : (
         <span
           className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600"
           aria-hidden
         />
-        <p className="max-w-[85%] rounded-[18px] rounded-bl-[6px] border bg-card px-3.5 py-2.5 text-[13px] leading-relaxed tracking-[-0.006em] text-foreground">
-          {message}
-        </p>
-      </div>
+      )}
+      <span className="truncate text-[12px] font-semibold tracking-[-0.01em] text-[#262626] dark:text-white">
+        {account?.username ? `@${account.username}` : 'seu perfil'}
+      </span>
+    </div>
+  );
+}
 
-      {reply?.kind === 'text' && (
-        <div className="flex justify-end">
-          <p className="max-w-[78%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
-            {reply.label}
+/** A conversa em miniatura, no topo do cartão. */
+function ConversationPreview({
+  template,
+  account,
+}: {
+  template: InstagramTemplate;
+  account?: GalleryAccount;
+}) {
+  const { message, reply } = templatePreview(template);
+
+  return (
+    <div className="border-b bg-white dark:bg-black">
+      <ThreadHeader account={account} />
+
+      <div className="flex min-h-[128px] flex-col justify-center gap-2 px-4 py-5">
+        <div className="flex">
+          <p className="max-w-[86%] rounded-[18px] rounded-bl-[6px] bg-[#efefef] px-3.5 py-2.5 text-[13px] leading-relaxed tracking-[-0.006em] text-[#111] dark:bg-[#262626] dark:text-white">
+            {message}
           </p>
         </div>
-      )}
 
-      {reply?.kind === 'chip' && (
-        <div className="flex justify-end">
-          <span className="rounded-full border border-[#3797f0] bg-[#3797f0]/10 px-3 py-1.5 text-[12px] font-medium tracking-[-0.01em] text-[#3797f0]">
-            {reply.label}
-          </span>
-        </div>
-      )}
+        {reply?.kind === 'text' && (
+          <div className="flex justify-end">
+            <p className="max-w-[78%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
+              {reply.label}
+            </p>
+          </div>
+        )}
 
-      {/* Sem resposta da pessoa não há janela de 24h aberta, e a conversa
-          termina na primeira mensagem. O espaço vazio seria uma mentira
-          silenciosa sobre o alcance do modelo. */}
-      {!reply && (
-        <p className="pl-8 text-[12px] tracking-[-0.02em] text-muted-foreground">
-          conversa fica aberta para o time
-        </p>
-      )}
+        {reply?.kind === 'chip' && (
+          <div className="flex justify-end">
+            <span className="rounded-full border border-[#3797f0] bg-[#3797f0]/10 px-3 py-1.5 text-[12px] font-semibold tracking-[-0.01em] text-[#0074cc] dark:text-[#5ab0f7]">
+              {reply.label}
+            </span>
+          </div>
+        )}
+
+        {/* Sem resposta da pessoa não há janela de 24h aberta, e a conversa
+            termina na primeira mensagem. O espaço vazio seria uma mentira
+            silenciosa sobre o alcance do modelo. */}
+        {!reply && (
+          <p className="text-[12px] tracking-[-0.02em] text-[#8e8e8e]">
+            conversa fica aberta para o time
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -127,9 +182,11 @@ function Mechanism({ steps }: { steps: readonly string[] }) {
 
 function TemplateCard({
   template,
+  account,
   onPick,
 }: {
   template: InstagramTemplate;
+  account?: GalleryAccount;
   onPick: (t: InstagramTemplate) => void;
 }) {
   const featured = !!template.badge;
@@ -148,9 +205,11 @@ function TemplateCard({
         featured && 'border-primary/40',
       )}
     >
-      <ConversationPreview template={template} />
+      <ConversationPreview template={template} account={account} />
 
-      <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
+      {/* O hover mora no corpo, não na prévia: a prévia é a captura de tela, e
+          uma captura que muda de cor ao passar o mouse deixa de ser captura. */}
+      <div className="flex flex-1 flex-col gap-3 p-5 transition-colors duration-200 ease-out group-hover:bg-muted/40 sm:p-6">
         <div className="flex items-start justify-between gap-2">
           <h4 className="text-[15px] font-medium leading-snug tracking-[-0.011em]">
             {template.title}
@@ -174,6 +233,7 @@ function TemplateCard({
 
 export function InstagramTemplateGallery({
   connectedAccounts,
+  account,
   onPick,
   onOpenFlows,
 }: InstagramTemplateGalleryProps) {
@@ -186,7 +246,7 @@ export function InstagramTemplateGallery({
       {/* O estado da conta e o total de contatos ficam na faixa acima das abas,
           onde valem para as seis telas. Repeti-los aqui seria dizer duas vezes
           a mesma coisa a 200px de distância. */}
-      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+      <header className="flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
         <div className="space-y-2.5">
           <EngageDisplay>{firstName ? `Olá, ${firstName}` : 'Comece por aqui'}</EngageDisplay>
           <EngageLede>
@@ -198,7 +258,7 @@ export function InstagramTemplateGallery({
         <button
           type="button"
           onClick={onOpenFlows}
-          className="mb-1.5 inline-flex items-center gap-1 rounded-md text-[14px] tracking-[-0.009em] text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="mt-3 inline-flex items-center gap-1 rounded-md text-[14px] tracking-[-0.009em] text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           Prefiro montar um fluxo
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
@@ -217,7 +277,12 @@ export function InstagramTemplateGallery({
                 real do conteúdo, que muda quando a barra lateral recolhe. */}
             <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
               {items.map((template) => (
-                <TemplateCard key={template.id} template={template} onPick={onPick} />
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  account={account}
+                  onPick={onPick}
+                />
               ))}
             </div>
           </section>
