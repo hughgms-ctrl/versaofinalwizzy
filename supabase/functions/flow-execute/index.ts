@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resumeFlow } from '../_shared/flowResume.ts';
+import { mergeConversationMetadata } from '../_shared/conversationMetadata.ts';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
@@ -586,23 +587,10 @@ async function cleanupFlowEnd(
   const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
 
   if (!hasParentFlow) {
-    const { data: convData } = await supabase
-      .from('conversations')
-      .select('metadata')
-      .eq('id', conversationId)
-      .single();
-
-    const cleanMetadata = { ...(convData?.metadata || {}) };
-    delete cleanMetadata.ai_handoff_context;
-    cleanMetadata.flow_ended_at = new Date().toISOString();
-
+    await mergeConversationMetadata(supabase, conversationId, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
     await supabase
       .from('conversations')
-      .update({
-        service_mode: 'ativo',
-        ai_agent_id: null,
-        metadata: cleanMetadata,
-      })
+      .update({ service_mode: 'ativo', ai_agent_id: null })
       .eq('id', conversationId);
 
     console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to ativo, cleared ai_agent_id`);
@@ -691,17 +679,10 @@ async function resumeParentFlow(
 
   if (!nextEdge?.target) {
     console.log(`[FLOW EXECUTE] Nó ${parkedNode.id} não tem saída ligada — o fluxo pai termina aqui.`);
-    const { data: convData } = await supabase
-      .from('conversations')
-      .select('metadata')
-      .eq('id', conversationId)
-      .single();
-    const cleanMetadata = { ...(convData?.metadata || {}) };
-    delete cleanMetadata.ai_handoff_context;
-    cleanMetadata.flow_ended_at = new Date().toISOString();
+    await mergeConversationMetadata(supabase, conversationId, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
     await supabase
       .from('conversations')
-      .update({ service_mode: 'ativo', ai_agent_id: null, metadata: cleanMetadata })
+      .update({ service_mode: 'ativo', ai_agent_id: null })
       .eq('id', conversationId);
     return;
   }
@@ -2064,10 +2045,7 @@ async function executeAIHandoff(
     }
 
     // Save flow context to conversation metadata for the webhook to use
-    const { data: convData } = await supabase
-      .from('conversations').select('metadata').eq('id', context.conversationId).single();
-    const metadata = { ...(convData?.metadata || {}), ai_handoff_context: flowContext };
-    await supabase.from('conversations').update({ metadata }).eq('id', context.conversationId);
+    await mergeConversationMetadata(supabase, context.conversationId, { ai_handoff_context: flowContext });
 
     console.log(`[FLOW EXECUTE] AI Handoff: pausing flow, waiting for user message. Agent: ${agentId || 'default'}`);
     
@@ -2142,19 +2120,10 @@ async function executeAIReturn(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const { data: convData } = await supabase
-      .from('conversations')
-      .select('metadata')
-      .eq('id', context.conversationId)
-      .single();
-
-    const cleanMetadata = { ...((convData?.metadata as Record<string, unknown>) || {}) };
-    delete cleanMetadata.ai_handoff_context;
-
+    await mergeConversationMetadata(supabase, context.conversationId, null, ['ai_handoff_context']);
     await supabase.from('conversations').update({
       service_mode: 'ativo',
       ai_agent_id: null,
-      metadata: cleanMetadata,
     }).eq('id', context.conversationId);
 
     console.log('[FLOW EXECUTE] AI Return: handoff encerrado, fluxo continua nos nós seguintes');
@@ -2403,11 +2372,7 @@ async function executeDocumentAction(
       }
 
       // Store document context in metadata
-      const { data: convData } = await supabase
-        .from('conversations').select('metadata').eq('id', context.conversationId).single();
-      
-      const metadata = {
-        ...(convData?.metadata || {}),
+      const handoffPatch = {
         ai_handoff_context: {
           additionalContext: promptParts.join('\n\n'),
           agentId: agentId || undefined,
@@ -2427,7 +2392,7 @@ async function executeDocumentAction(
         },
       };
 
-      await supabase.from('conversations').update({ metadata }).eq('id', context.conversationId);
+      await mergeConversationMetadata(supabase, context.conversationId, handoffPatch);
 
       console.log(`[FLOW EXECUTE] action-document AI mode: agent=${agentId || 'default'}, fields=${fieldNames.length}, waiting for input`);
       return { 
@@ -2469,18 +2434,8 @@ async function executeTransfer(
     // do atendente. O único freio que o webhook respeita antes disso é
     // ai_paused_until (isAIPaused), então é ele que precisa ser gravado.
     if (stopAI) {
-      const { data: convData } = await supabase
-        .from('conversations')
-        .select('metadata')
-        .eq('id', context.conversationId)
-        .single();
-
-      const metadata = { ...((convData?.metadata as Record<string, unknown>) || {}) };
-      delete metadata.ai_handoff_context;
-      metadata.ai_paused_until = 'permanent';
-
+      await mergeConversationMetadata(supabase, context.conversationId, { ai_paused_until: 'permanent' }, ['ai_handoff_context']);
       updateData.ai_agent_id = null;
-      updateData.metadata = metadata;
     }
 
     await supabase.from('conversations').update(updateData).eq('id', context.conversationId);

@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
 import { resumeFlow } from '../_shared/flowResume.ts';
+import { mergeConversationMetadata } from '../_shared/conversationMetadata.ts';
 
 declare const EdgeRuntime: any;
 
@@ -59,14 +60,9 @@ function scheduleDebouncedOrchestrator(
   const task = (async () => {
     try {
       // 1. Tag conversation with our pending trigger token
-      const { data: convNow } = await supabase
-        .from('conversations')
-        .select('metadata')
-        .eq('id', conversationId)
-        .single();
-      const meta = { ...(convNow?.metadata || {}) };
-      meta.pending_ai_trigger = { token, scheduled_for: scheduledFor };
-      await supabase.from('conversations').update({ metadata: meta }).eq('id', conversationId);
+      await mergeConversationMetadata(supabase, conversationId, {
+        pending_ai_trigger: { token, scheduled_for: scheduledFor },
+      });
 
       // 2. Wait the debounce window
       await new Promise(r => setTimeout(r, AI_DEBOUNCE_MS));
@@ -100,9 +96,7 @@ function scheduleDebouncedOrchestrator(
       const finalContent = combined || initialMessageContent || '[mídia]';
 
       // 5. Clear the pending trigger marker
-      const cleanedMeta = { ...(convAfter?.metadata || {}) };
-      delete cleanedMeta.pending_ai_trigger;
-      await supabase.from('conversations').update({ metadata: cleanedMeta }).eq('id', conversationId);
+      await mergeConversationMetadata(supabase, conversationId, null, ['pending_ai_trigger']);
 
       // 6. Fire the orchestrator
       const finalBody = { ...orchestratorBody, messageContent: finalContent };
@@ -2663,10 +2657,22 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     });
   }
 
-  // Update conversation timestamps
-  const updateData: any = { last_message_at: new Date().toISOString(), status: 'open' };
-  if (!fromMe) updateData.unread_count = (conversation.unread_count || 0) + 1;
-  await supabase.from('conversations').update(updateData).eq('id', conversation.id);
+  // Update conversation timestamps. Inbound: unread_count incrementado no
+  // banco (RPC increment_unread) — o `lido + 1` no cliente perdia contagem
+  // quando duas mensagens chegavam juntas e ressuscitava zero que o atendente
+  // acabara de marcar.
+  const lastMessageAt = new Date().toISOString();
+  if (!fromMe) {
+    const { error: unreadError } = await supabase.rpc('increment_unread', { _conversation: conversation.id, _at: lastMessageAt });
+    if (unreadError) {
+      console.warn(`[WEBHOOK] increment_unread indisponível (${unreadError.message}); usando update direto`);
+      await supabase.from('conversations')
+        .update({ last_message_at: lastMessageAt, status: 'open', unread_count: (conversation.unread_count || 0) + 1 })
+        .eq('id', conversation.id);
+    }
+  } else {
+    await supabase.from('conversations').update({ last_message_at: lastMessageAt, status: 'open' }).eq('id', conversation.id);
+  }
 
   console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
 
@@ -2852,13 +2858,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           }
 
           // Cleanup: reset service_mode and ai_agent_id
-          const { data: convMeta } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
-          const cleanMeta = { ...(convMeta?.metadata || {}) };
-          delete cleanMeta.ai_handoff_context;
-          cleanMeta.flow_ended_at = new Date().toISOString();
-          await supabase.from('conversations').update({
-            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta,
-          }).eq('id', conversation.id);
+          await mergeConversationMetadata(supabase, conversation.id, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
         }
       } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
         // Content block is waiting for user response — save variable and resume flow via 'responded' handle
@@ -2915,13 +2916,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           }
 
           // Cleanup: reset service_mode and ai_agent_id
-          const { data: convMeta2 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
-          const cleanMeta2 = { ...(convMeta2?.metadata || {}) };
-          delete cleanMeta2.ai_handoff_context;
-          cleanMeta2.flow_ended_at = new Date().toISOString();
-          await supabase.from('conversations').update({
-            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta2,
-          }).eq('id', conversation.id);
+          await mergeConversationMetadata(supabase, conversation.id, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
         }
       } else if ((isAtMessageButtons || isAtMessageList) && activeFlowExec.status === 'waiting_input') {
         // Message buttons/list waiting for user choice — match response to specific option handle
@@ -3034,13 +3030,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
           }
 
-          const { data: convMetaBtn } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
-          const cleanMetaBtn = { ...(convMetaBtn?.metadata || {}) };
-          delete cleanMetaBtn.ai_handoff_context;
-          cleanMetaBtn.flow_ended_at = new Date().toISOString();
-          await supabase.from('conversations').update({
-            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMetaBtn,
-          }).eq('id', conversation.id);
+          await mergeConversationMetadata(supabase, conversation.id, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
         // Flow is waiting for input at a non-AI node (e.g., user-input)
@@ -3089,13 +3080,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             return respond({ success: true, ignored: true, reason: 'execution_already_claimed', executionId: activeFlowExec.id });
           }
 
-          const { data: convMeta3 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
-          const cleanMeta3 = { ...(convMeta3?.metadata || {}) };
-          delete cleanMeta3.ai_handoff_context;
-          cleanMeta3.flow_ended_at = new Date().toISOString();
-          await supabase.from('conversations').update({
-            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta3,
-          }).eq('id', conversation.id);
+          await mergeConversationMetadata(supabase, conversation.id, { flow_ended_at: new Date().toISOString() }, ['ai_handoff_context']);
+          await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
         } else {
           console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
 
