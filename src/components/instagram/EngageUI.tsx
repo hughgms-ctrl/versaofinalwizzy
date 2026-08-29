@@ -19,6 +19,61 @@ import { cn } from '@/lib/utils';
  * telas ensina o cliente a desconfiar da tela.
  */
 
+/* ── Cor ──────────────────────────────────────────────────────────────── */
+
+/**
+ * As duas cores do módulo — e de onde elas vêm.
+ *
+ * O Engage nasceu monocromático por disciplina: cor só no ponto de estado,
+ * nunca no texto. A disciplina estava certa e o resultado, errado. Sobre o
+ * fundo escuro (7% de luz) e o cartão (10%), uma tela inteira de cinza sobre
+ * cinza com dois selos coloridos não lê como sóbria, lê como apagada — e os
+ * poucos acentos, sem nada em volta, parecem enfeite solto.
+ *
+ * A saída não é espalhar magenta. É dar à cor um TRABALHO, e o trabalho existe:
+ * cada automação nasce em um lugar do Instagram. Comentário é a praça pública;
+ * direct e story são a conversa. São duas famílias, e a galeria já as separa em
+ * duas seções — a cor só torna visível uma divisão que o texto já faz.
+ *
+ * Os dois tons não são escolhidos, são herdados: comentário fica com o magenta
+ * da marca, e mensagem com o violeta que JÁ está na tela, no degradê do balão
+ * de saída do Direct (#a334e0 → #7b46f2). Os dois cabem dentro do degradê do
+ * Instagram (âmbar → rosa → roxo) que marca a conta no topo. Nenhuma cor
+ * estrangeira entra.
+ *
+ * Dosagem: a cor mora em superfície e borda, nunca em corpo de texto. Magenta
+ * 340 82% 55% sobre cartão branco dá ~4.2:1 — reprova para 13px. Como tinta de
+ * fundo a 10% e como fio de 1px, ela colore a tela sem nunca ser lida.
+ */
+export type EngageAccent = 'comment' | 'message';
+
+export const ENGAGE_ACCENT: Record<
+  EngageAccent,
+  {
+    /** Ladrilho do ícone que abre a seção. */
+    tile: string;
+    /** O fio da régua, que sai da cor e morre no cinza da borda. */
+    rule: string;
+    /** A luz no topo do cartão, atrás da prévia. */
+    wash: string;
+    /** Borda em repouso e no hover. */
+    border: string;
+  }
+> = {
+  comment: {
+    tile: 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/20',
+    rule: 'from-primary/50',
+    wash: 'from-primary/[0.20] via-primary/[0.11] to-primary/[0.05]',
+    border: 'border-primary/20 hover:border-primary/50',
+  },
+  message: {
+    tile: 'bg-violet-500/10 text-violet-600 ring-1 ring-inset ring-violet-500/20 dark:text-violet-400',
+    rule: 'from-violet-500/50',
+    wash: 'from-violet-500/[0.22] via-violet-500/[0.12] to-violet-500/[0.06]',
+    border: 'border-violet-500/20 hover:border-violet-500/50',
+  },
+};
+
 /* ── Tipografia ───────────────────────────────────────────────────────── */
 
 /**
@@ -104,12 +159,42 @@ export function EngageLede({
  * Separar com uma linha custa 1px; separar com um contêiner custa uma borda, um
  * fundo e um padding que empurra todo o conteúdo para dentro — e produz o
  * cartão dentro de cartão que este arquivo existe para evitar.
+ *
+ * Com `accent`, a régua passa a carregar a cor da família: o ícone num ladrilho
+ * tingido e o fio saindo dessa cor até morrer no cinza da borda. É onde a cor
+ * rende mais por pixel gasto — a régua já existia, já estava no lugar de
+ * "aqui começa outra coisa", e só faltava dizer QUE outra coisa é.
  */
-export function EngageSectionHeader({ label, meta }: { label: string; meta?: React.ReactNode }) {
+export function EngageSectionHeader({
+  label,
+  meta,
+  accent,
+  icon: Icon,
+}: {
+  label: string;
+  meta?: React.ReactNode;
+  accent?: EngageAccent;
+  icon?: LucideIcon;
+}) {
+  const tone = accent ? ENGAGE_ACCENT[accent] : null;
+
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-3">
+      {tone && Icon && (
+        <span
+          className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', tone.tile)}
+        >
+          <Icon className="h-3.5 w-3.5" aria-hidden />
+        </span>
+      )}
       <h4 className="shrink-0 text-[13px] font-medium tracking-[-0.006em]">{label}</h4>
-      <span className="h-px flex-1 bg-border" aria-hidden />
+      <span
+        className={cn(
+          'h-px flex-1 bg-gradient-to-r to-border',
+          tone ? tone.rule : 'from-border',
+        )}
+        aria-hidden
+      />
       {meta && (
         <span className="shrink-0 text-[12px] tracking-[-0.02em] text-muted-foreground">{meta}</span>
       )}
@@ -179,7 +264,11 @@ export function EngageEmptyState({
 }) {
   return (
     <div className="rounded-xl border bg-muted/30 px-6 py-16 text-center">
-      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-card text-muted-foreground">
+      {/* O ícone tingido é o único ponto de cor do bloco: um vazio inteiramente
+          cinza dentro de uma tela cinza não se distingue de um erro de
+          carregamento. A tinta a 10% custa nada em legibilidade e devolve ao
+          bloco a aparência de coisa desenhada. */}
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
         <Icon className="h-5 w-5" aria-hidden />
       </span>
       <p className="mt-5 text-[21px] font-semibold leading-[1.24] tracking-[-0.017em]">{title}</p>

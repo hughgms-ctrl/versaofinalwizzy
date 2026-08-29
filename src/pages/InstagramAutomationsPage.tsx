@@ -194,15 +194,23 @@ function AccountStrip({
   const others = accounts.length - 1;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border bg-card px-5 py-4">
+    // A faixa é o único lugar do módulo que fala do Instagram e não de uma
+    // automação — então é ela que carrega o degradê do Instagram, a 10% de
+    // opacidade sobre a superfície do cartão. Acima das abas, ela dá cor às
+    // seis telas de uma vez, sem que nenhuma delas precise se pintar.
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border bg-card px-5 py-4 [background-image:linear-gradient(100deg,hsl(38_92%_50%/0.10)_0%,hsl(330_81%_60%/0.10)_45%,hsl(271_81%_56%/0.12)_100%)]">
+      {/* O anel do story em volta da foto: o gesto que o Instagram usa para
+          dizer "esta conta está ativa" é o mesmo que precisamos dizer aqui. */}
       {primary.ig_profile_pic_url ? (
-        <img
-          src={primary.ig_profile_pic_url}
-          alt=""
-          className="h-10 w-10 shrink-0 rounded-full object-cover"
-        />
+        <span className="shrink-0 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[2px]">
+          <img
+            src={primary.ig_profile_pic_url}
+            alt=""
+            className="h-10 w-10 rounded-full border-2 border-card object-cover"
+          />
+        </span>
       ) : (
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 text-white">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 text-white">
           <Instagram className="h-4 w-4" aria-hidden />
         </span>
       )}
@@ -239,6 +247,23 @@ function AccountStrip({
     </div>
   );
 }
+
+/**
+ * A aba ativa, marcada por cor.
+ *
+ * O padrão do componente troca o fundo da aba ativa por `background` — que, no
+ * tema escuro, é MAIS escuro que a barra que a contém: a aba selecionada virava
+ * um buraco na régua em vez de uma pastilha em relevo. Agora ela sobe para a
+ * superfície de cartão, ganha um fio da marca e acende o próprio ícone.
+ *
+ * A cor está no ícone e no fio, nunca no rótulo: magenta em 14px sobre cartão
+ * claro fica em ~4.2:1, abaixo do mínimo de leitura. Ícone é componente de
+ * interface e passa com 3:1 — mesma cor, exigência diferente.
+ */
+const TAB_TRIGGER =
+  'group gap-2 rounded-lg px-3 py-2 data-[state=active]:bg-card data-[state=active]:ring-1 data-[state=active]:ring-inset data-[state=active]:ring-primary/25';
+
+const TAB_ICON = 'h-4 w-4 transition-colors group-data-[state=active]:text-primary';
 
 /** Contador ao lado do nome da aba. Zero não vira selo: nada a contar, nada a mostrar. */
 function TabCount({ value }: { value: number }) {
@@ -349,30 +374,30 @@ export default function InstagramAutomationsPage() {
 
         <Tabs value={tab} onValueChange={setTab} className="space-y-8">
           <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-muted/70 p-1">
-            <TabsTrigger value="home" className="gap-2 rounded-lg px-3 py-2">
-              <Home className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="home" className={TAB_TRIGGER}>
+              <Home className={TAB_ICON} aria-hidden />
               Início
             </TabsTrigger>
-            <TabsTrigger value="rules" className="gap-2 rounded-lg px-3 py-2">
-              <Instagram className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="rules" className={TAB_TRIGGER}>
+              <Instagram className={TAB_ICON} aria-hidden />
               Automações
               <TabCount value={rules.length} />
             </TabsTrigger>
-            <TabsTrigger value="flows" className="gap-2 rounded-lg px-3 py-2">
-              <Workflow className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="flows" className={TAB_TRIGGER}>
+              <Workflow className={TAB_ICON} aria-hidden />
               Fluxos
             </TabsTrigger>
-            <TabsTrigger value="contacts" className="gap-2 rounded-lg px-3 py-2">
-              <Users className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="contacts" className={TAB_TRIGGER}>
+              <Users className={TAB_ICON} aria-hidden />
               Contatos
               <TabCount value={contactCount} />
             </TabsTrigger>
-            <TabsTrigger value="broadcast" className="gap-2 rounded-lg px-3 py-2">
-              <Megaphone className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="broadcast" className={TAB_TRIGGER}>
+              <Megaphone className={TAB_ICON} aria-hidden />
               Disparos
             </TabsTrigger>
-            <TabsTrigger value="logs" className="gap-2 rounded-lg px-3 py-2">
-              <ListChecks className="h-4 w-4" aria-hidden />
+            <TabsTrigger value="logs" className={TAB_TRIGGER}>
+              <ListChecks className={TAB_ICON} aria-hidden />
               Logs
             </TabsTrigger>
           </TabsList>

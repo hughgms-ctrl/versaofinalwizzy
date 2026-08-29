@@ -1,9 +1,10 @@
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight, MessageSquare, Plus, Send, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
+  ENGAGE_ACCENT,
   EngageDisplay,
   EngageLede,
   EngageSectionHeader,
@@ -82,6 +83,17 @@ interface InstagramTemplateGalleryProps {
   onOpenFlows: () => void;
 }
 
+/**
+ * O ícone de cada família, no ladrilho colorido que abre a seção.
+ *
+ * Fica aqui e não em `instagramTemplates.ts` porque é decisão de tela: o dado
+ * sabe que existem duas famílias, não com que desenho elas aparecem.
+ */
+const GROUP_ICON: Record<InstagramTemplate['group'], LucideIcon> = {
+  comment: MessageSquare,
+  message: Send,
+};
+
 /** Quem a pessoa vê do outro lado da conversa: a conta conectada. */
 export interface GalleryAccount {
   username?: string | null;
@@ -129,7 +141,7 @@ function ConversationPreview({
   const { message, reply } = templatePreview(template);
 
   return (
-    <div className="border-b bg-white dark:bg-black">
+    <div className="bg-white dark:bg-black">
       <ThreadHeader account={account} />
 
       <div className="flex min-h-[128px] flex-col justify-center gap-2 px-4 py-5">
@@ -182,6 +194,21 @@ function Mechanism({ steps }: { steps: readonly string[] }) {
   );
 }
 
+/**
+ * O cartão: uma tela apoiada sobre a luz da própria família.
+ *
+ * A prévia sangrava até a borda do cartão, e no tema escuro isso punha um
+ * retângulo de preto puro — mais escuro que o fundo da página — encostado na
+ * moldura. Sete deles numa grade, e a tela vira um paredão de buracos: era
+ * disso que vinha a impressão de "está tudo preto".
+ *
+ * Agora a prévia é recuada em 12px sobre uma faixa tingida com a cor da
+ * família. Duas coisas mudam de uma vez. O preto vira um retângulo menor,
+ * emoldurado por luz em vez de encostado no vazio — e a tela do Instagram passa
+ * a parecer um aparelho pousado numa superfície, que é exatamente o que ela é.
+ * A fidelidade da captura não é arranhada: a cor fica FORA do fio da conversa,
+ * nunca dentro dela. Os balões continuam sendo os do Direct.
+ */
 function TemplateCard({
   template,
   account,
@@ -192,6 +219,7 @@ function TemplateCard({
   onPick: (t: InstagramTemplate) => void;
 }) {
   const featured = !!template.badge;
+  const tone = ENGAGE_ACCENT[template.group];
 
   return (
     <button
@@ -199,19 +227,24 @@ function TemplateCard({
       onClick={() => onPick(template)}
       className={cn(
         'group flex flex-col overflow-hidden rounded-xl border bg-card text-left',
-        'transition-colors duration-200 ease-out hover:border-foreground/25',
+        'transition-colors duration-200 ease-out',
+        tone.border,
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         'motion-reduce:transition-none',
         // O destaque vem da borda, não de fundo colorido: um cartão tingido
         // entre seis brancos vira propaganda, não hierarquia.
-        featured && 'border-primary/40',
+        featured && 'border-primary/45',
       )}
     >
-      <ConversationPreview template={template} account={account} />
+      <div className={cn('bg-gradient-to-b p-3', tone.wash)}>
+        <div className="overflow-hidden rounded-lg ring-1 ring-black/[0.06] dark:ring-white/10">
+          <ConversationPreview template={template} account={account} />
+        </div>
+      </div>
 
       {/* O hover mora no corpo, não na prévia: a prévia é a captura de tela, e
           uma captura que muda de cor ao passar o mouse deixa de ser captura. */}
-      <div className="flex flex-1 flex-col gap-3 p-5 transition-colors duration-200 ease-out group-hover:bg-muted/40 sm:p-6">
+      <div className="flex flex-1 flex-col gap-3 px-5 pb-5 pt-2 transition-colors duration-200 ease-out group-hover:bg-muted/40 sm:px-6 sm:pb-6">
         <div className="flex items-start justify-between gap-2">
           <h4 className="text-[15px] font-medium leading-snug tracking-[-0.011em]">
             {template.title}
@@ -273,7 +306,12 @@ export function InstagramTemplateGallery({
 
         return (
           <section key={group.key} className="space-y-5">
-            <EngageSectionHeader label={group.label} meta={`${items.length} modelos`} />
+            <EngageSectionHeader
+              label={group.label}
+              meta={`${items.length} modelos`}
+              accent={group.key}
+              icon={GROUP_ICON[group.key]}
+            />
 
             {/* auto-fit em vez de breakpoints: os cartões se acomodam à largura
                 real do conteúdo, que muda quando a barra lateral recolhe. */}
