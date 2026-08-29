@@ -716,7 +716,56 @@ function receiptPatchFromStatus(statusValue: any) {
   return patch;
 }
 
-async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statusValue: any, conversationId?: string | null) {
+// B1: ack/leitura/revogação chegam uma vez por mensagem enviada, por número —
+// é o evento mais frequente do webhook. O UPDATE filtrava só por
+// zapi_message_id, coluna que não tinha índice próprio (varredura completa de
+// messages, 3x por mensagem), e sem escopo: dois provedores/orgs com o mesmo
+// id de mensagem se atropelavam. Agora o índice idx_messages_zapi_message_id
+// (Semana 1) resolve o custo, e o escopo é a INSTÂNCIA do payload: só mensagens
+// de conversas daquele número são tocadas.
+
+type InstanceRef = { id: string; organization_id: string } | null;
+const instanceRefCache = new Map<string, { value: InstanceRef; expiresAt: number }>();
+const INSTANCE_REF_CACHE_MS = 60_000;
+
+/** Resolve a instância pelos identificadores do payload. Ambiguidade (dois
+ *  registros com o mesmo nome) devolve null em vez de escolher um ao acaso. */
+async function resolveInstanceRef(supabase: any, instanceId: string, instanceName: string): Promise<InstanceRef> {
+  const key = `${instanceId}|${instanceName}`;
+  if (!instanceId && !instanceName) return null;
+  const cached = instanceRefCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const { data, error } = await supabase
+    .from('whatsapp_instances')
+    .select('id, organization_id')
+    .or([
+      instanceId ? `zapi_instance_id.eq.${instanceId}` : '',
+      instanceName ? `zapi_instance_id.eq.${instanceName}` : '',
+      instanceName ? `evolution_instance_name.eq.${instanceName}` : '',
+      instanceId ? `evolution_instance_id.eq.${instanceId}` : '',
+    ].filter(Boolean).join(','))
+    .limit(2);
+
+  let value: InstanceRef = null;
+  if (error) {
+    console.error('[INSTANCE] Falha ao resolver instância do payload:', error);
+  } else if ((data || []).length === 1) {
+    value = data[0];
+  } else if ((data || []).length > 1) {
+    console.warn(`[INSTANCE] Identificador ambíguo (id=${instanceId}, name=${instanceName}): ${data.length} instâncias — evento não escopado`);
+  }
+  instanceRefCache.set(key, { value, expiresAt: Date.now() + INSTANCE_REF_CACHE_MS });
+  return value;
+}
+
+async function updateMessageReceiptByProviderId(
+  supabase: any,
+  msgId: any,
+  statusValue: any,
+  conversationId?: string | null,
+  instanceRef?: { instanceId: string; instanceName: string } | null,
+) {
   const rawId = String(msgId || '').trim();
   const normalizedId = normalizeProviderMessageId(msgId);
   if (!normalizedId) return false;
@@ -731,28 +780,43 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
     `false_${normalizedId}`,
   ].filter(Boolean)));
 
-  if (updateData.metadata) {
-    let existingQuery = supabase
-      .from('messages')
-      .select('metadata')
-      .in('zapi_message_id', idCandidates);
-    if (conversationId) existingQuery = existingQuery.eq('conversation_id', conversationId);
-    const { data: existing } = await existingQuery.maybeSingle();
-    updateData.metadata = { ...(existing?.metadata || {}), ...updateData.metadata };
+  // Uma busca só (pelo índice de zapi_message_id) traz os candidatos com a
+  // instância da conversa; o UPDATE depois é por id de mensagem.
+  let query = supabase
+    .from('messages')
+    .select('id, metadata, conversation:conversations!inner(whatsapp_instance_id)')
+    .in('zapi_message_id', idCandidates)
+    .limit(5);
+  if (conversationId) {
+    query = query.eq('conversation_id', conversationId);
+  } else if (instanceRef) {
+    const instance = await resolveInstanceRef(supabase, instanceRef.instanceId, instanceRef.instanceName);
+    if (instance) {
+      query = query.eq('conversation.whatsapp_instance_id', instance.id);
+    } else {
+      console.warn(`[RECEIPT] Instância não resolvida (id=${instanceRef.instanceId}, name=${instanceRef.instanceName}); ack sem escopo de instância`);
+    }
   }
 
-  let updateQuery = supabase
-    .from('messages')
-    .update(updateData)
-    .in('zapi_message_id', idCandidates);
-  if (conversationId) updateQuery = updateQuery.eq('conversation_id', conversationId);
-  const { error } = await updateQuery;
-
-  if (error) {
-    console.error('[RECEIPT] Failed to update message receipt:', error);
+  const { data: candidates, error: selectError } = await query;
+  if (selectError) {
+    console.error('[RECEIPT] Failed to locate message for receipt:', selectError);
     return false;
   }
-  return true;
+  if (!candidates || candidates.length === 0) return false;
+
+  let failed = false;
+  for (const row of candidates) {
+    const patch = updateData.metadata
+      ? { ...updateData, metadata: { ...(row.metadata || {}), ...updateData.metadata } }
+      : updateData;
+    const { error } = await supabase.from('messages').update(patch).eq('id', row.id);
+    if (error) {
+      console.error('[RECEIPT] Failed to update message receipt:', error);
+      failed = true;
+    }
+  }
+  return !failed;
 }
 
 function extractRevokedMessageInfo(payload: any): { messageId: string; fromMe: boolean | null } {
@@ -798,7 +862,7 @@ function extractRevokedMessageInfo(payload: any): { messageId: string; fromMe: b
   return { messageId: String(messageId || ''), fromMe };
 }
 
-async function handleRevokedMessage(supabase: any, payload: any) {
+async function handleRevokedMessage(supabase: any, payload: any, instanceId = '', instanceName = '') {
   const { messageId, fromMe } = extractRevokedMessageInfo(payload);
   const normalizedId = normalizeProviderMessageId(messageId);
   if (!normalizedId) {
@@ -812,13 +876,20 @@ async function handleRevokedMessage(supabase: any, payload: any) {
     `false_${normalizedId}`,
   ].filter(Boolean)));
 
-  const { data: message } = await supabase
+  // B1: só mensagens de conversas da instância que mandou o evento.
+  let revokeQuery = supabase
     .from('messages')
-    .select('id, direction, content, type, media_url, metadata')
+    .select('id, direction, content, type, media_url, metadata, conversation:conversations!inner(whatsapp_instance_id)')
     .in('zapi_message_id', idCandidates)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  const revokeInstance = await resolveInstanceRef(supabase, instanceId, instanceName);
+  if (revokeInstance) {
+    revokeQuery = revokeQuery.eq('conversation.whatsapp_instance_id', revokeInstance.id);
+  } else {
+    console.warn(`[REVOKE] Instância não resolvida (id=${instanceId}, name=${instanceName}); revogação sem escopo de instância`);
+  }
+  const { data: message } = await revokeQuery.maybeSingle();
 
   if (!message) {
     return respond({ success: true, ignored: true, reason: 'revoked_message_not_found' });
@@ -1090,7 +1161,7 @@ Deno.serve(async (req) => {
     }
 
     if (eventType.includes('revoked') || eventType.includes('revoke')) {
-      return await handleRevokedMessage(supabase, payload);
+      return await handleRevokedMessage(supabase, payload, instanceId, instanceName);
     }
 
     const payloadHasProtocolRevoke =
@@ -1098,7 +1169,7 @@ Deno.serve(async (req) => {
       payload?.message?.protocolMessage?.type ||
       payload?.event?.Message?.protocolMessage?.type;
     if (payloadHasProtocolRevoke && String(payloadHasProtocolRevoke).toLowerCase().includes('revoke')) {
-      return await handleRevokedMessage(supabase, payload);
+      return await handleRevokedMessage(supabase, payload, instanceId, instanceName);
     }
 
     // System events to ignore
@@ -3070,7 +3141,7 @@ async function handleReadReceipt(supabase: any, payload: any) {
 
   if (!msgId) return respond({ success: true, ignored: true, reason: 'receipt_without_message_id' });
 
-  const updated = await updateMessageReceiptByProviderId(supabase, msgId, status);
+  const updated = await updateMessageReceiptByProviderId(supabase, msgId, status, null, { instanceId, instanceName });
   const normalizedStatus = String(status || '').toLowerCase();
   const remoteJid = data.remoteJid || key.remoteJidAlt || key.remoteJid || payload.remoteJid || '';
   if (remoteJid && ['read', 'read_ack', 'played', 'played_ack'].includes(normalizedStatus)) {
