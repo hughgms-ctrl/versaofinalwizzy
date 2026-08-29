@@ -21,6 +21,13 @@ function sanitizeInstanceIdentifier(value: unknown): string {
   return /^[A-Za-z0-9_-]+$/.test(v) ? v : '';
 }
 
+// B2: nenhuma chamada ao provedor por mídia sem prazo, e no máximo dois
+// corpos por endpoint. Antes eram até 7 chamadas sequenciais sem timeout ANTES
+// de gravar a mensagem: Evolution lenta = isolate morto = mídia de todas as
+// orgs perdida, sem retry.
+const MEDIA_FETCH_TIMEOUT_MS = 10_000;
+const MAX_MEDIA_DOWNLOAD_ATTEMPTS = 2;
+
 function runBackground(promise: Promise<any>) {
   if (typeof EdgeRuntime !== 'undefined' && typeof EdgeRuntime.waitUntil === 'function') {
     EdgeRuntime.waitUntil(promise);
@@ -1343,6 +1350,34 @@ Deno.serve(async (req) => {
   }
 });
 
+async function triggerMediaAnalysis(messageId: string, mediaUrl: string, messageType: string, organizationId: string): Promise<string | null> {
+  console.log(`[WEBHOOK] Triggering auto-transcription for ${messageType} message ${messageId}`);
+  try {
+    // Call transcribe-media with service role key. The function resolves
+    // whether this org uses platform AI or its own API key.
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/transcribe-media`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({ messageId, mediaUrl, mediaType: messageType, organizationId }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (resp.ok) {
+      const result = await resp.json();
+      console.log(`[WEBHOOK] Auto-transcription result for ${messageId}: ${result.transcription?.substring(0, 80) || 'empty'}`);
+      return result.transcription || null;
+    }
+    console.log(`[WEBHOOK] Auto-transcription failed: ${resp.status}`);
+    return null;
+  } catch (e) {
+    console.error('[WEBHOOK] Auto-transcription error:', e);
+    return null;
+  }
+}
+
 function respond(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -1795,6 +1830,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     base64Data = null;
   }
 
+  // B2: toda a recuperação de mídia (download no provedor, busca da URL
+  // externa, upload para o Storage) fica nesta função. Quando o payload já
+  // traz o base64, ela roda aqui (só o upload). Quando é preciso ir ao
+  // provedor, ela roda DEPOIS da mensagem estar gravada — em background para
+  // imagem/vídeo/documento/figurinha, inline para áudio do contato (a
+  // transcrição decide o roteamento). Isolate morto no meio não perde mais a
+  // mensagem: fica a linha com media_pending para reprocessar.
+  // (O corpo mantém a indentação original para o diff ficar legível.)
+  const recoverMedia = async (): Promise<void> => {
   // Fetch missing Base64 directly from UAZAPI if not in payload
   if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
     try {
@@ -1832,9 +1876,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         },
       ].filter(candidate => !candidate.endpoint.endsWith('/'));
 
-      for (const candidate of requestCandidates) {
+      for (const candidate of requestCandidates.slice(0, MAX_MEDIA_DOWNLOAD_ATTEMPTS)) {
         const resp = await fetch(candidate.endpoint, {
           method: 'POST',
+          signal: AbortSignal.timeout(MEDIA_FETCH_TIMEOUT_MS),
           headers: {
             'Content-Type': 'application/json',
             'token': whatsappInstance.zapi_token,
@@ -1946,10 +1991,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           },
         ];
 
-        for (const requestBody of bodyCandidates) {
+        for (const requestBody of bodyCandidates.slice(0, MAX_MEDIA_DOWNLOAD_ATTEMPTS)) {
           const { label, ...evolutionRequestBody } = requestBody as any;
           const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
             method: 'POST',
+            signal: AbortSignal.timeout(MEDIA_FETCH_TIMEOUT_MS),
             headers: {
               'Content-Type': 'application/json',
               'apikey': evolutionApiKey,
@@ -2059,7 +2105,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       } else if (whatsappInstance.zapi_token) {
         headers.token = whatsappInstance.zapi_token;
       }
-      const resp = await fetch(directMediaUrl, { headers });
+      const resp = await fetch(directMediaUrl, { headers, signal: AbortSignal.timeout(MEDIA_FETCH_TIMEOUT_MS) });
       const contentType = resp.headers.get('content-type') || '';
       if (resp.ok && !contentType.toLowerCase().includes('text/html') && !contentType.toLowerCase().includes('application/json')) {
         const buffer = await resp.arrayBuffer();
@@ -2172,6 +2218,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     mediaUrl = null;
   }
 
+  };
+
+  const applyMissingMediaPlaceholder = () => {
   if (isMediaType && !mediaUrl) {
     console.warn(`[WEBHOOK] WARNING: Media message type=${messageType} but no base64 or URL found! Payload keys: ${Object.keys(payload).join(', ')}`);
     // Still save the message so user sees it (even without actual media file)
@@ -2179,6 +2228,19 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       textContent = messageType === 'audio' ? '🎵 Áudio' : messageType === 'document' ? '📄 Documento' : `📎 ${messageType}`;
     }
   }
+  };
+
+  const mediaNeedsRemoteFetch = isMediaType && !base64Data && !!whatsappInstance && (
+    !!msgId || (!!directMediaUrl && !isLocalStorageUrl(directMediaUrl))
+  );
+  const mediaDeferred = mediaNeedsRemoteFetch && !(messageType === 'audio' && !fromMe);
+  if (!mediaNeedsRemoteFetch) {
+    await recoverMedia();
+    applyMissingMediaPlaceholder();
+  } else {
+    console.log(`[WEBHOOK] Media ${messageType} needs provider fetch — saving message first (${mediaDeferred ? 'background' : 'inline after insert'})`);
+  }
+
 
   const organizationId = whatsappInstance.organization_id;
   // Workspace "óbvio" do número (só quando exatamente um workspace o atende).
@@ -2206,6 +2268,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     try {
       const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
       const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
+        signal: AbortSignal.timeout(5_000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'token': whatsappInstance.zapi_token },
         body: JSON.stringify({ number: phone }),
@@ -2457,8 +2520,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     };
   }
 
-  if (isMediaType && !mediaUrl && mediaRecoveryDiagnostics.length > 0) {
-    messageMetadata.media_recovery = {
+  const buildMediaRecoveryMetadata = (): Record<string, unknown> | null => {
+    if (!isMediaType || mediaUrl) return null;
+    return {
       provider: webhookProvider,
       messageType,
       msgId,
@@ -2467,19 +2531,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       evolutionInstanceName: whatsappInstance.evolution_instance_name || null,
       evolutionInstanceId: whatsappInstance.evolution_instance_id || null,
       attempts: mediaRecoveryDiagnostics.slice(-5),
+      ...(mediaRecoveryDiagnostics.length === 0 ? { skipped: 'no_recovery_attempt_recorded' } : {}),
     };
-  } else if (isMediaType && !mediaUrl) {
-    messageMetadata.media_recovery = {
-      provider: webhookProvider,
-      messageType,
-      msgId,
-      instanceProvider: whatsappInstance.provider || null,
-      instanceId: whatsappInstance.id || null,
-      evolutionInstanceName: whatsappInstance.evolution_instance_name || null,
-      evolutionInstanceId: whatsappInstance.evolution_instance_id || null,
-      attempts: [],
-      skipped: 'no_recovery_attempt_recorded',
-    };
+  };
+
+  if (mediaNeedsRemoteFetch) {
+    messageMetadata.media_pending = true;
+  } else {
+    const recovery = buildMediaRecoveryMetadata();
+    if (recovery) messageMetadata.media_recovery = recovery;
   }
 
   if (Object.keys(messageMetadata).length === 0) {
@@ -2504,6 +2564,43 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (messageError) {
     console.error('Error inserting message:', messageError);
     throw messageError;
+  }
+
+  // B2: a mensagem já está no banco; agora sim vai ao provedor buscar a mídia
+  // e completa a linha (media_url, placeholder de texto, diagnóstico).
+  if (mediaNeedsRemoteFetch && savedMessage?.id) {
+    const contentAtInsert = savedMessage.content || '';
+    const finalizeMedia = async () => {
+      try {
+        await recoverMedia();
+      } catch (e) {
+        console.error(`[WEBHOOK] Media recovery failed for message ${savedMessage.id}:`, e);
+      }
+      applyMissingMediaPlaceholder();
+      const mergedMeta: Record<string, unknown> = { ...(messageMetadata || {}) };
+      delete mergedMeta.media_pending;
+      const recovery = buildMediaRecoveryMetadata();
+      if (recovery) mergedMeta.media_recovery = recovery;
+      const patch: Record<string, unknown> = {
+        media_url: mediaUrl,
+        metadata: Object.keys(mergedMeta).length > 0 ? mergedMeta : null,
+      };
+      if (!contentAtInsert && textContent) patch.content = textContent;
+      const { error: patchError } = await supabase.from('messages').update(patch).eq('id', savedMessage.id);
+      if (patchError) console.error(`[WEBHOOK] Failed to attach media to message ${savedMessage.id}:`, patchError);
+      savedMessage.media_url = mediaUrl;
+      console.log(`[WEBHOOK] Media ${mediaUrl ? 'attached' : 'NOT recovered'} for message ${savedMessage.id} (${messageType})`);
+    };
+
+    if (mediaDeferred) {
+      runBackground(finalizeMedia().then(async () => {
+        if (mediaUrl && ['image', 'video'].includes(messageType)) {
+          await triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId);
+        }
+      }));
+    } else {
+      await finalizeMedia();
+    }
   }
 
   if (savedMessage?.id) {
@@ -2535,38 +2632,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Auto-transcribe media messages in background (audio, image, video)
   if (savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
-    console.log(`[WEBHOOK] Triggering auto-transcription for ${messageType} message ${savedMessage.id}`);
-    mediaAnalysisPromise = (async () => {
-      try {
-        // Call transcribe-media with service role key. The function resolves
-        // whether this org uses platform AI or its own API key.
-        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/transcribe-media`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${serviceRoleKey}`,
-          },
-          body: JSON.stringify({
-            messageId: savedMessage.id,
-            mediaUrl: mediaUrl,
-            mediaType: messageType,
-            organizationId: organizationId,
-          }),
-        });
-        if (resp.ok) {
-          const result = await resp.json();
-          console.log(`[WEBHOOK] Auto-transcription result for ${savedMessage.id}: ${result.transcription?.substring(0, 80) || 'empty'}`);
-          return result.transcription || null;
-        } else {
-          console.log(`[WEBHOOK] Auto-transcription failed: ${resp.status}`);
-          return null;
-        }
-      } catch (e) {
-        console.error('[WEBHOOK] Auto-transcription error:', e);
-        return null;
-      }
-    })();
+    mediaAnalysisPromise = triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId);
     runBackground(mediaAnalysisPromise);
   }
 
