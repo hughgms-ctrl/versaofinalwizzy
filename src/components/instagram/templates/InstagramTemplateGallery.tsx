@@ -45,6 +45,20 @@ import {
  * juntas: sendo ela o conteúdo que decide a escolha, ganha a área; tendo altura
  * fixa, os títulos de uma fileira de cartões caem todos na mesma linha, e a
  * grade lê como grade em vez de dente de serra.
+ *
+ * SUPERFÍCIE: poço, não elevação. A prévia usa `bg-background` e o balão de
+ * entrada usa `bg-card` — a mesma relação que a página tem com os cartões, uma
+ * escala para dentro. A primeira versão fazia o contrário (`bg-muted/50` no
+ * fundo, `bg-card` no balão) e no tema escuro isso punha o balão em 10% de luz
+ * sobre um fundo de 12%: preto sobre preto, o balão desaparecendo dentro da
+ * própria conversa. Poço funciona nos dois temas porque `background` é mais
+ * escuro que `card` no claro e no escuro — a relação não depende do tema.
+ *
+ * COR: o avatar é o degradê do Instagram, o mesmo que marca a conta na faixa
+ * do topo e na tela de conexão. É a única cor que entra sem ser pedida, e ela
+ * entra porque tem trabalho a fazer: dá vida ao cartão que não tem resposta da
+ * pessoa — sem ele, um modelo de "conversa fica aberta para o time" é um
+ * retângulo cinza com uma frase cinza dentro.
  */
 
 interface InstagramTemplateGalleryProps {
@@ -58,16 +72,20 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
   const { message, reply } = templatePreview(template);
 
   return (
-    <div className="flex min-h-[140px] flex-col justify-center gap-2 border-b bg-muted/50 px-5 py-7 transition-colors duration-200 ease-out group-hover:bg-muted/80">
-      <div className="flex">
-        <p className="max-w-[88%] rounded-[18px] rounded-bl-[6px] border bg-card px-3.5 py-2.5 text-[13px] leading-relaxed tracking-[-0.006em] text-foreground">
+    <div className="flex min-h-[168px] flex-col justify-center gap-2.5 border-b bg-background px-5 py-8 transition-colors duration-200 ease-out group-hover:bg-muted/50">
+      <div className="flex items-end gap-2">
+        <span
+          className="h-6 w-6 shrink-0 rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600"
+          aria-hidden
+        />
+        <p className="max-w-[85%] rounded-[18px] rounded-bl-[6px] border bg-card px-3.5 py-2.5 text-[13px] leading-relaxed tracking-[-0.006em] text-foreground">
           {message}
         </p>
       </div>
 
       {reply?.kind === 'text' && (
         <div className="flex justify-end">
-          <p className="max-w-[80%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
+          <p className="max-w-[78%] rounded-[18px] rounded-br-[6px] bg-[#3797f0] px-3.5 py-2 text-[13px] leading-relaxed tracking-[-0.006em] text-white">
             {reply.label}
           </p>
         </div>
@@ -75,7 +93,7 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
 
       {reply?.kind === 'chip' && (
         <div className="flex justify-end">
-          <span className="rounded-full border border-[#3797f0] px-3 py-1.5 text-[12px] font-medium tracking-[-0.01em] text-[#3797f0]">
+          <span className="rounded-full border border-[#3797f0] bg-[#3797f0]/10 px-3 py-1.5 text-[12px] font-medium tracking-[-0.01em] text-[#3797f0]">
             {reply.label}
           </span>
         </div>
@@ -85,7 +103,7 @@ function ConversationPreview({ template }: { template: InstagramTemplate }) {
           termina na primeira mensagem. O espaço vazio seria uma mentira
           silenciosa sobre o alcance do modelo. */}
       {!reply && (
-        <p className="pl-1 text-[12px] tracking-[-0.02em] text-muted-foreground">
+        <p className="pl-8 text-[12px] tracking-[-0.02em] text-muted-foreground">
           conversa fica aberta para o time
         </p>
       )}
@@ -132,7 +150,7 @@ function TemplateCard({
     >
       <ConversationPreview template={template} />
 
-      <div className="flex flex-1 flex-col gap-2.5 p-5">
+      <div className="flex flex-1 flex-col gap-3 p-5 sm:p-6">
         <div className="flex items-start justify-between gap-2">
           <h4 className="text-[15px] font-medium leading-snug tracking-[-0.011em]">
             {template.title}
@@ -146,7 +164,7 @@ function TemplateCard({
           {template.description}
         </p>
 
-        <div className="mt-auto border-t pt-3.5">
+        <div className="mt-auto border-t pt-4">
           <Mechanism steps={template.steps} />
         </div>
       </div>
@@ -197,7 +215,7 @@ export function InstagramTemplateGallery({
 
             {/* auto-fit em vez de breakpoints: os cartões se acomodam à largura
                 real do conteúdo, que muda quando a barra lateral recolhe. */}
-            <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+            <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(340px,1fr))]">
               {items.map((template) => (
                 <TemplateCard key={template.id} template={template} onPick={onPick} />
               ))}
