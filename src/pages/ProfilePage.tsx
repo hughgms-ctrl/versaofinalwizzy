@@ -375,6 +375,9 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* Bloco de plano/cobranca desligado de proposito ate a cobranca entrar
+            no ar; fica aqui para nao ser reescrito do zero depois. */}
+        {/* eslint-disable-next-line no-constant-binary-expression */}
         {false && (
           <Card>
             <CardHeader className="pb-3 md:pb-6">

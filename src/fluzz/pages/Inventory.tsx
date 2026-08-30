@@ -29,7 +29,8 @@ export default function Inventory() {
       const { data, error } = await supabase
         .from("inventory_events")
         .select("*")
-        .eq("workspace_id", workspace?.id!)
+        // `enabled: !!workspace?.id` abaixo garante o workspace aqui.
+        .eq("workspace_id", workspace!.id)
         .order("date", { ascending: false });
       
       if (error) throw error;
@@ -44,7 +45,7 @@ export default function Inventory() {
       let query = supabase
         .from("inventory_items")
         .select("*, inventory_events(name)")
-        .eq("workspace_id", workspace?.id!);
+        .eq("workspace_id", workspace!.id);
       
       if (selectedEvent && selectedEvent !== "all") {
         query = query.eq("event_id", selectedEvent);

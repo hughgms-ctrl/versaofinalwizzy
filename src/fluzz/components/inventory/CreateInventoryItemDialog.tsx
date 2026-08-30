@@ -33,7 +33,8 @@ export function CreateInventoryItemDialog({ open, onOpenChange }: CreateInventor
       const { data, error } = await supabase
         .from("inventory_events")
         .select("*")
-        .eq("workspace_id", workspace?.id!)
+        // `enabled: !!workspace?.id && open` abaixo garante o workspace aqui.
+        .eq("workspace_id", workspace!.id)
         .order("date", { ascending: false });
       
       if (error) throw error;
@@ -44,13 +45,21 @@ export function CreateInventoryItemDialog({ open, onOpenChange }: CreateInventor
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Sem workspace o insert ia com workspace_id undefined e morria no banco
+    // com erro de coluna obrigatoria — mensagem que nao ajuda ninguem.
+    if (!workspace?.id) {
+      toast.error("Selecione um workspace antes de continuar");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
       const { error } = await supabase.from("inventory_items").insert({
-        workspace_id: workspace?.id!,
+        workspace_id: workspace.id,
         name: formData.name,
         description: formData.description || null,
         quantity: parseInt(formData.quantity) || 0,

@@ -26,13 +26,21 @@ export function CreateInventoryEventDialog({ open, onOpenChange }: CreateInvento
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Sem workspace o insert ia com workspace_id undefined e morria no banco
+    // com erro de coluna obrigatoria — mensagem que nao ajuda ninguem.
+    if (!workspace?.id) {
+      toast.error("Selecione um workspace antes de continuar");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
       const { error } = await supabase.from("inventory_events").insert({
-        workspace_id: workspace?.id!,
+        workspace_id: workspace.id,
         name: formData.name,
         date: formData.date || null,
         description: formData.description || null,

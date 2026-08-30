@@ -382,6 +382,10 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         const w = window as any;
         if (!w.fbq) {
           const fbq: any = function (...args: any[]) {
+            // Formato do snippet oficial do Meta (o `?:` como comando e o
+            // `.apply` sao dele): reescrever para agradar o lint arrisca quebrar
+            // a fila de eventos antes de o fbevents.js carregar.
+            // eslint-disable-next-line @typescript-eslint/no-unused-expressions, prefer-spread
             fbq.callMethod ? fbq.callMethod.apply(fbq, args) : fbq.queue.push(args);
           };
           fbq.push = fbq;
@@ -414,6 +418,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           document.head.appendChild(s);
 
           w.dataLayer = w.dataLayer || [];
+          // Idem: o gtag oficial empurra o proprio `arguments` para a dataLayer.
+          // eslint-disable-next-line prefer-rest-params
           w.gtag = function () { w.dataLayer.push(arguments); };
           w.gtag('js', new Date());
           w.gtag('config', pixelId);
@@ -880,82 +886,15 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
   }
 
   if (block.type === 'quiz-input-file') {
-    const [uploading, setUploading] = useState(false);
-    const [uploadError, setUploadError] = useState<string | null>(null);
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      setUploading(true);
-      setUploadError(null);
-      try {
-        const safeName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const storagePath = `quiz-uploads/${quiz?.id || 'unknown'}/${Date.now()}-${safeName}`;
-        
-        const { error: uploadErr } = await supabase.storage
-          .from('contact-files')
-          .upload(storagePath, file);
-
-        if (uploadErr) throw uploadErr;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('contact-files')
-          .getPublicUrl(storagePath);
-
-        const fileValue = {
-          name: file.name,
-          url: publicUrl,
-          storagePath: storagePath,
-          size: file.size,
-          type: file.type
-        };
-
-        // Garante que o arquivo entre em `variables` mesmo quando o bloco não tem
-        // uma variável configurada — senão o quiz-actions (que linka anexos varrendo
-        // `variables` por `.url`) nunca o vê e ele fica órfão no storage. A chave
-        // sintética inclui o id do bloco para ser única entre múltiplos uploads.
-        onAnswer(fileValue, d.variable || `__file_${block.id}`);
-      } catch (err: any) {
-        console.error('Erro ao enviar arquivo:', err);
-        setUploadError(err.message || 'Erro ao enviar arquivo');
-      } finally {
-        setUploading(false);
-      }
-    };
-
-    const fileAnswer = answer && typeof answer === 'object' ? answer : null;
-
     return (
-      <InputWrapper onNext={onNext} disabled={uploading}>
-        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
-        <label className={cn(
-          "flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 cursor-pointer hover:bg-accent/50 transition-colors",
-          uploading && "opacity-60 cursor-not-allowed pointer-events-none"
-        )}>
-          {uploading ? (
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-          ) : (
-            <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-          )}
-          <span className="text-sm text-muted-foreground">
-            {uploading 
-              ? 'Enviando arquivo...' 
-              : fileAnswer 
-                ? fileAnswer.name || 'Arquivo selecionado' 
-                : 'Clique para enviar arquivo'}
-          </span>
-          {d.accept && <span className="text-xs text-muted-foreground/60 mt-1">Formatos: {d.accept}</span>}
-          {uploadError && <span className="text-xs text-destructive mt-2">{uploadError}</span>}
-          <input
-            type="file"
-            accept={d.accept || undefined}
-            className="hidden"
-            disabled={uploading}
-            onChange={handleFileChange}
-          />
-        </label>
-      </InputWrapper>
+      <FileBlockRenderer
+        block={block}
+        answer={answer}
+        variables={variables}
+        quizId={quiz?.id}
+        onAnswer={onAnswer}
+        onNext={onNext}
+      />
     );
   }
 
@@ -1132,6 +1071,95 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
 // ---- Helpers ----
 
 // Date block with flexible precision (exact, month/year, year only, unknown)
+// O upload ficava dentro do renderizador de blocos, com dois useState DEPOIS de
+// uma dezena de `return` por tipo de bloco. Isso quebra a regra dos hooks: a
+// ordem muda conforme o tipo do bloco que esta na tela, e o React estoura com
+// "rendered fewer hooks than expected" ao avancar de pergunta. Componente
+// proprio resolve — mesmo caminho que o DateBlockRenderer ja seguia.
+function FileBlockRenderer({ block, answer, variables, quizId, onAnswer, onNext }: {
+  block: FlowBlock; answer: any; variables: Record<string, any>; quizId?: string;
+  onAnswer: (val: any, varName?: string) => void; onNext: (h?: string) => void;
+}) {
+  const d = block.data || {};
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const safeName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `quiz-uploads/${quizId || 'unknown'}/${Date.now()}-${safeName}`;
+      
+      const { error: uploadErr } = await supabase.storage
+        .from('contact-files')
+        .upload(storagePath, file);
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('contact-files')
+        .getPublicUrl(storagePath);
+
+      const fileValue = {
+        name: file.name,
+        url: publicUrl,
+        storagePath: storagePath,
+        size: file.size,
+        type: file.type
+      };
+
+      // Garante que o arquivo entre em `variables` mesmo quando o bloco não tem
+      // uma variável configurada — senão o quiz-actions (que linka anexos varrendo
+      // `variables` por `.url`) nunca o vê e ele fica órfão no storage. A chave
+      // sintética inclui o id do bloco para ser única entre múltiplos uploads.
+      onAnswer(fileValue, d.variable || `__file_${block.id}`);
+    } catch (err: any) {
+      console.error('Erro ao enviar arquivo:', err);
+      setUploadError(err.message || 'Erro ao enviar arquivo');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const fileAnswer = answer && typeof answer === 'object' ? answer : null;
+
+  return (
+    <InputWrapper onNext={onNext} disabled={uploading}>
+      {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+      <label className={cn(
+        "flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 cursor-pointer hover:bg-accent/50 transition-colors",
+        uploading && "opacity-60 cursor-not-allowed pointer-events-none"
+      )}>
+        {uploading ? (
+          <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+        ) : (
+          <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+        )}
+        <span className="text-sm text-muted-foreground">
+          {uploading 
+            ? 'Enviando arquivo...' 
+            : fileAnswer 
+              ? fileAnswer.name || 'Arquivo selecionado' 
+              : 'Clique para enviar arquivo'}
+        </span>
+        {d.accept && <span className="text-xs text-muted-foreground/60 mt-1">Formatos: {d.accept}</span>}
+        {uploadError && <span className="text-xs text-destructive mt-2">{uploadError}</span>}
+        <input
+          type="file"
+          accept={d.accept || undefined}
+          className="hidden"
+          disabled={uploading}
+          onChange={handleFileChange}
+        />
+      </label>
+    </InputWrapper>
+  );
+}
+
 function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
   block: FlowBlock; answer: any; variables: Record<string, any>;
   onAnswer: (val: any, varName?: string) => void; onNext: (h?: string) => void;

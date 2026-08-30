@@ -43,7 +43,8 @@ export default function GettingStarted() {
       const { data, error } = await supabase
         .from("getting_started_sections")
         .select("*")
-        .eq("workspace_id", workspace?.id!)
+        // `enabled: !!workspace?.id` abaixo garante o workspace aqui.
+        .eq("workspace_id", workspace!.id)
         .order("section_order", { ascending: true });
       
       if (error) throw error;

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAuth, AuthProvider } from '../useAuth';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
 // Mock Supabase client
@@ -33,8 +34,17 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// O AuthProvider limpa o cache do React Query no logout (`queryClient.clear()`),
+// entao ele precisa do provider por cima — sem isso todo teste que monta o
+// provider morre com "No QueryClient set".
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <AuthProvider>{children}</AuthProvider>
+  <QueryClientProvider client={queryClient}>
+    <AuthProvider>{children}</AuthProvider>
+  </QueryClientProvider>
 );
 
 describe('useAuth', () => {
