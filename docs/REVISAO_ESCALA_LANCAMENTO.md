@@ -253,7 +253,7 @@ HNSW no RAG; `get_boot_context()`.
 ## 5. SQL pronto para aplicar (aditivo — sobrevive ao sync do Lovable)
 
 > Rodar no SQL Editor, um bloco por vez. `CONCURRENTLY` não pode rodar dentro de transação — o SQL Editor já roda
-> cada statement isolado. Substituir `<URL>` por `https://zaobtetbjpuzibjymhzw.supabase.co`.
+> cada statement isolado. Substituir `https://zaobtetbjpuzibjymhzw.supabase.co` por `https://zaobtetbjpuzibjymhzw.supabase.co`.
 
 ```sql
 -- ========== ÍNDICES ==========
@@ -297,17 +297,17 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS organization_usage_org_period_uid
 
 -- ========== CRONS AUSENTES (B6) ==========
 SELECT cron.schedule('process-flow-timeouts', '* * * * *', $cron$
-  SELECT net.http_post(url := '<URL>/functions/v1/process-flow-timeouts',
+  SELECT net.http_post(url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/process-flow-timeouts',
     headers := '{"Content-Type":"application/json"}'::jsonb, body := '{}'::jsonb,
     timeout_milliseconds := 55000);
 $cron$);
 SELECT cron.schedule('auto-close-conversations', '*/10 * * * *', $cron$
-  SELECT net.http_post(url := '<URL>/functions/v1/auto-close-conversations',
+  SELECT net.http_post(url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/auto-close-conversations',
     headers := '{"Content-Type":"application/json"}'::jsonb, body := '{}'::jsonb,
     timeout_milliseconds := 55000);
 $cron$);
 SELECT cron.schedule('reprocess-inbound-events', '*/2 * * * *', $cron$
-  SELECT net.http_post(url := '<URL>/functions/v1/reprocess-inbound-events',
+  SELECT net.http_post(url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/reprocess-inbound-events',
     headers := '{"Content-Type":"application/json"}'::jsonb, body := '{}'::jsonb,
     timeout_milliseconds := 55000);
 $cron$);
@@ -329,7 +329,7 @@ BEGIN
       AND c.match_type = 'tag_added' AND NEW.tag_id = ANY(c.trigger_tag_ids)
   ) THEN RETURN NEW; END IF;
   PERFORM net.http_post(
-    url := '<URL>/functions/v1/trigger-campaign-on-tag',
+    url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/trigger-campaign-on-tag',
     headers := '{"Content-Type":"application/json"}'::jsonb,
     body := json_build_object('record', row_to_json(NEW))::jsonb);
   RETURN NEW;
