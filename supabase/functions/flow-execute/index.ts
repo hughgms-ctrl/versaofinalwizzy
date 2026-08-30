@@ -490,9 +490,13 @@ Deno.serve(async (req) => {
           .single();
 
         if (execError) {
-          // 23505 aqui é a unique parcial idx_flow_executions_one_live (uma
-          // execução viva por conversa): outra já está rodando — esta seria a
-          // duplicata, e desistir é exatamente o comportamento certo.
+          // 23505 aqui é a unique parcial idx_flow_executions_one_live
+          // (conversation_id, flow_id): este MESMO fluxo já está vivo nesta
+          // conversa — esta seria a gêmea, e desistir é o comportamento certo.
+          // O par inclui flow_id de propósito: sub-fluxo com "aguardar
+          // resposta" e campanha interruptora deixam dois fluxos DIFERENTES
+          // vivos na mesma conversa, e isso é legítimo.
+          // Criação do índice: docs/fechar-execucoes-duplicadas.sql.
           if ((execError as { code?: string }).code === '23505') {
             console.warn(`[FLOW EXECUTE] Conversa ${conversationId} já tem execução viva — não inserindo duplicata (flow=${flowId}, resumedFrom=${resumedFromExecutionId || '-'})`);
             return;
