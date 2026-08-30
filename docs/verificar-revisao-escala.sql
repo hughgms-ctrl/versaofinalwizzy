@@ -66,8 +66,10 @@ SELECT table_name, column_name
 FROM information_schema.columns
 WHERE (table_name, column_name) IN (('messages','organization_id'), ('campaign_queue','claimed_at'));
 
--- Trigger de preenchimento (esperado: 1 linha)
-SELECT tgname FROM pg_trigger WHERE tgname = 'trg_messages_fill_org';
+-- Trigger de preenchimento (esperado: 1 linha).
+-- O nome real e o da migration 20260830160000; o rascunho da secao 5 chamava
+-- de trg_messages_fill_org, que NAO existe — procurar por ele dava falso alarme.
+SELECT tgname FROM pg_trigger WHERE tgname = 'trg_set_message_organization_id';
 
 -- Backfill de messages.organization_id: quanto falta? (esperado após o backfill: 0)
 SELECT count(*) AS faltam FROM public.messages WHERE organization_id IS NULL;
@@ -113,3 +115,82 @@ LIMIT 20;
 -- Criação: docs/fechar-execucoes-duplicadas.sql (o par é (conversation_id, flow_id)).
 SELECT indexrelid::regclass AS indice, indisvalid AS valid
 FROM pg_index WHERE indexrelid::regclass::text = 'idx_flow_executions_one_live';
+
+-- ============ 9. SEMANA 3 — B11 E CADENCIA POR NUMERO ============
+-- Migrations 20260830160000 (messages.organization_id) e 20260830170000
+-- (instance_send_slots + try_acquire_send_slot).
+
+-- 9.1 A coluna e o trigger estao de pe? (esperado: sem_org = 0)
+SELECT count(*) FILTER (WHERE organization_id IS NULL) AS sem_org,
+       count(*) AS total_10min
+  FROM public.messages
+ WHERE created_at > now() - interval '10 minutes';
+
+-- 9.2 Cadencia por numero (esperado: t1 = true, t2 = true, t3 = false)
+SELECT public.try_acquire_send_slot(id, 2, 1) AS t1,
+       public.try_acquire_send_slot(id, 2, 1) AS t2,
+       public.try_acquire_send_slot(id, 2, 1) AS t3
+  FROM public.whatsapp_instances
+ LIMIT 1;
+
+-- 9.3 O limite esta sendo exercido de verdade? Linha por instancia que enviou
+-- recentemente. `used` alto e janela de 1 s = varios caminhos falando juntos.
+SELECT s.instance_id, i.phone_number, s.used, s.window_started_at, s.updated_at
+  FROM public.instance_send_slots s
+  LEFT JOIN public.whatsapp_instances i ON i.id = s.instance_id
+ ORDER BY s.updated_at DESC
+ LIMIT 20;
+
+-- 9.4 Telemetria do webhook fora do caminho quente: whatsapp_connection_logs
+-- deve receber SO evento de conexao agora. Antes entrava 1 linha por evento
+-- (presenca, ack, leitura). Esperado: poucas linhas por hora e nenhuma
+-- 'webhook_received' com eventType de mensagem.
+SELECT date_trunc('hour', created_at) AS hora, event_type, count(*)
+  FROM public.whatsapp_connection_logs
+ WHERE created_at > now() - interval '6 hours'
+ GROUP BY 1, 2
+ ORDER BY 1 DESC, 3 DESC
+ LIMIT 20;
+
+-- ============ 10. MIGRATIONS ANTIGAS PENDENTES (checklist da secao 6) ============
+-- Cada linha checa um objeto que SO existe se aquela migration rodou.
+-- Esperado: todas com existe = true. A mais cara da lista e o dispatcher do
+-- agendamento: sem ele o disparo roda em modo varredura — 4 a 5 contatos por
+-- minuto para a plataforma INTEIRA, independente de quantas orgs estao disparando.
+SELECT '20260817120000 dispatcher (scheduled_messages.group_progress)' AS migration,
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'scheduled_messages'
+                  AND column_name = 'group_progress') AS existe
+UNION ALL SELECT '20260817120000 dispatcher (idx_scheduled_messages_dispatch_pending)',
+       to_regclass('public.idx_scheduled_messages_dispatch_pending') IS NOT NULL
+UNION ALL SELECT '20260817230000 (scheduled_messages.paused_at)',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'scheduled_messages'
+                  AND column_name = 'paused_at')
+UNION ALL SELECT '20260819180000 (merge_contact_metadata)',
+       EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'merge_contact_metadata')
+UNION ALL SELECT '20260826120000 (scheduled_message_folders)',
+       to_regclass('public.scheduled_message_folders') IS NOT NULL
+UNION ALL SELECT '20260827120000 (whatsapp_groups_org_instance_jid_key)',
+       to_regclass('public.whatsapp_groups_org_instance_jid_key') IS NOT NULL
+UNION ALL SELECT '20260828120000 (whatsapp_instances.block_calls)',
+       EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'whatsapp_instances'
+                  AND column_name = 'block_calls')
+UNION ALL SELECT '20260829120000 (contact_number_owners)',
+       to_regclass('public.contact_number_owners') IS NOT NULL
+ORDER BY 1;
+
+-- 20260822120000 (gatilho "qualquer mensagem") nao cria objeto nenhum: e so um
+-- COMMENT em campaigns.match_type. Esperado: true depois de aplicada.
+SELECT col_description('public.campaigns'::regclass,
+         (SELECT ordinal_position FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'campaigns'
+             AND column_name = 'match_type')::int) LIKE '%fallback%' AS comentario_aplicado;
+
+-- O dispatcher tambem depende do cron certo: o comando tem que despachar UM
+-- http_post por agendamento vencido (procurar 'scheduled_id' no corpo).
+SELECT jobname, schedule, active, left(command, 160) AS trecho
+  FROM cron.job
+ WHERE command ILIKE '%scheduled%'
+ ORDER BY jobname;
