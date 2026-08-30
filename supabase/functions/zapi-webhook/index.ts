@@ -37,6 +37,86 @@ function runBackground(promise: Promise<any>) {
   }
 }
 
+// B3: caixa-preta da entrada de mensagens. O payload cru é gravado em
+// inbound_events ANTES de processar e marcado 'processed' no fim. O que ficar
+// 'pending' — isolate morto, deploy no meio do processamento, crash sem
+// resposta — é reenviado ao próprio webhook por reprocess-inbound-events.
+// Nada aqui pode derrubar o webhook: sem a tabela (migration não aplicada) ou
+// com erro de escrita, só loga e segue.
+const INBOUND_EVENT_MAX_STRING = 8192;   // acima disso é base64 de mídia, não texto
+const INBOUND_EVENT_MAX_BYTES = 262144;  // 256 KB por evento
+
+function stripHeavyStrings(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') {
+    return value.length > INBOUND_EVENT_MAX_STRING ? `[omitido: ${value.length} chars]` : value;
+  }
+  if (depth > 10) return '[omitido: profundidade]';
+  if (Array.isArray(value)) return value.slice(0, 100).map(v => stripHeavyStrings(v, depth + 1));
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = stripHeavyStrings(v, depth + 1);
+    return out;
+  }
+  return value;
+}
+
+function extractProviderMessageIdFromPayload(payload: any): string | null {
+  const candidates = [
+    payload?.data?.key?.id, payload?.key?.id, payload?.message?.msgid, payload?.message?.id,
+    payload?.event?.Info?.ID, payload?.messageId, payload?.data?.messageId, payload?.msgid,
+  ];
+  for (const c of candidates) if (typeof c === 'string' && c) return c;
+  return null;
+}
+
+async function recordInboundEvent(
+  supabase: any,
+  meta: { eventType: string; instanceId: string; instanceName: string; payload: any },
+): Promise<string | null> {
+  try {
+    let stored: unknown = stripHeavyStrings(meta.payload);
+    if (JSON.stringify(stored).length > INBOUND_EVENT_MAX_BYTES) {
+      stored = { truncated: true, keys: Object.keys(meta.payload || {}) };
+    }
+    const { data, error } = await supabase
+      .from('inbound_events')
+      .insert({
+        provider: meta.payload?.server_url ? 'evolution' : 'uazapi',
+        event_type: meta.eventType,
+        instance_id: meta.instanceId || null,
+        instance_name: meta.instanceName || null,
+        provider_message_id: extractProviderMessageIdFromPayload(meta.payload),
+        payload: stored,
+      })
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      console.warn(`[WEBHOOK] inbound_events indisponível (${error.message}) — seguindo sem caixa-preta`);
+      return null;
+    }
+    return data?.id || null;
+  } catch (e) {
+    console.warn('[WEBHOOK] Falha ao gravar inbound_event — seguindo sem caixa-preta:', e);
+    return null;
+  }
+}
+
+async function finishInboundEvent(supabase: any, eventId: string | null, status: 'processed' | 'failed', lastError?: string) {
+  if (!eventId) return;
+  try {
+    await supabase
+      .from('inbound_events')
+      .update({
+        status,
+        processed_at: new Date().toISOString(),
+        ...(lastError ? { last_error: lastError.substring(0, 2000) } : {}),
+      })
+      .eq('id', eventId);
+  } catch (e) {
+    console.warn(`[WEBHOOK] Falha ao fechar inbound_event ${eventId}:`, e);
+  }
+}
+
 // 8 seconds debounce window — coalesces fragmented inbound messages so AI sees one input.
 const AI_DEBOUNCE_MS = 8000;
 
@@ -1303,19 +1383,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // B3: todo evento de mensagem passa pela caixa-preta. O header
+    // x-inbound-event-id vem do reprocesso — nele não se cria linha nova, a
+    // linha antiga é que fecha. Evento que fica 'pending' é reenviado depois.
+    const dispatchMessageEvent = async (label: string): Promise<Response> => {
+      const replayEventId = req.headers.get('x-inbound-event-id');
+      const eventId = replayEventId || await recordInboundEvent(supabase, { eventType, instanceId, instanceName, payload });
+      try {
+        const response = await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+        if (response.status < 400) await finishInboundEvent(supabase, eventId, 'processed');
+        return response;
+      } catch (msgError) {
+        if (isInfraError(msgError)) {
+          // Fica 'pending': o provedor reenvia pelo 503 e, se nem isso vier, o
+          // reprocesso pega. A unique de messages impede a cópia dobrada.
+          console.error(`[WEBHOOK] handleMessage${label} falhou por infraestrutura — 503 para o provedor reenviar:`, msgError);
+          return respond({ success: false, error: 'message_handler_infra_error', retry: true, detail: String(msgError) }, 503);
+        }
+        // Bug no handler: reenviar não resolve, mas o payload fica guardado.
+        await finishInboundEvent(supabase, eventId, 'failed', String(msgError));
+        console.error(`[WEBHOOK] handleMessage${label} crashed but returning 200 to prevent retry loop:`, msgError);
+        return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
+      }
+    };
+
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert', 'messages_upsert', 'send_message'];
     if (messageEventTypes.includes(eventType)) {
-      try {
-        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
-      } catch (msgError) {
-        if (isInfraError(msgError)) {
-          console.error('[WEBHOOK] handleMessage falhou por infraestrutura — 503 para o provedor reenviar:', msgError);
-          return respond({ success: false, error: 'message_handler_infra_error', retry: true, detail: String(msgError) }, 503);
-        }
-        console.error('[WEBHOOK] handleMessage crashed but returning 200 to prevent retry loop:', msgError);
-        return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
-      }
+      return await dispatchMessageEvent('');
     }
 
     // Handle call events
@@ -1327,16 +1422,7 @@ Deno.serve(async (req) => {
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
       if (payload.message?.msgid || payload.event?.Info?.ID) {
-        try {
-          return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
-        } catch (msgError) {
-          if (isInfraError(msgError)) {
-            console.error('[WEBHOOK] handleMessage (chat) falhou por infraestrutura — 503:', msgError);
-            return respond({ success: false, error: 'message_handler_infra_error', retry: true, detail: String(msgError) }, 503);
-          }
-          console.error('[WEBHOOK] handleMessage (chat) crashed:', msgError);
-          return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
-        }
+        return await dispatchMessageEvent(' (chat)');
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
@@ -2268,7 +2354,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     await recoverMedia();
     applyMissingMediaPlaceholder();
   } else {
-    console.log(`[WEBHOOK] Media ${messageType} needs provider fetch — saving message first (${mediaDeferred ? 'background' : 'inline after insert'})`);
+    console.log(`[WEBHOOK] Media ${messageType} needs provider fetch — saving message first (${mediaDeferred ? 'background' : 'depois do INSERT'})`);
   }
 
 
@@ -2602,11 +2688,18 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     throw new InfraError(`Falha ao gravar mensagem: ${messageError.message}`, messageError);
   }
 
+  // Áudio do contato: quem decide o roteamento é a transcrição, e ela leva
+  // segundos (download no provedor + Whisper). Em vez de segurar o isolate —
+  // e o provedor esperando o 200 — respondemos assim que a mensagem está
+  // gravada e rodamos mídia → transcrição → roteamento no background.
+  const deferAudioRouting = !fromMe && !textContent && messageType === 'audio';
+
   // B2: a mensagem já está no banco; agora sim vai ao provedor buscar a mídia
   // e completa a linha (media_url, placeholder de texto, diagnóstico).
+  let finalizeMedia: (() => Promise<void>) | null = null;
   if (mediaNeedsRemoteFetch && savedMessage?.id) {
     const contentAtInsert = savedMessage.content || '';
-    const finalizeMedia = async () => {
+    finalizeMedia = async () => {
       try {
         await recoverMedia();
       } catch (e) {
@@ -2628,14 +2721,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       console.log(`[WEBHOOK] Media ${mediaUrl ? 'attached' : 'NOT recovered'} for message ${savedMessage.id} (${messageType})`);
     };
 
-    if (mediaDeferred) {
-      runBackground(finalizeMedia().then(async () => {
+    if (deferAudioRouting) {
+      // Roda dentro da cadeia de background montada no fim da função: a
+      // transcrição precisa do arquivo e o roteamento precisa da transcrição.
+    } else if (mediaDeferred) {
+      const downloadMedia = finalizeMedia;
+      finalizeMedia = null;
+      runBackground(downloadMedia().then(async () => {
         if (mediaUrl && ['image', 'video'].includes(messageType)) {
           await triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId);
         }
       }));
     } else {
       await finalizeMedia();
+      finalizeMedia = null;
     }
   }
 
@@ -2676,27 +2775,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
 
-  let mediaAnalysisPromise: Promise<string | null> | null = null;
-
-  // Auto-transcribe media messages in background (audio, image, video)
-  if (savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
-    mediaAnalysisPromise = triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId);
-    runBackground(mediaAnalysisPromise);
+  // Auto-transcribe media messages in background (audio, image, video).
+  // No caminho de áudio adiado isso acontece na cadeia do fim da função.
+  if (!deferAudioRouting && savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
+    runBackground(triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId));
   }
 
-  if (!fromMe && !textContent && messageType === 'audio' && mediaAnalysisPromise) {
-    const transcription = await Promise.race([
-      mediaAnalysisPromise,
-      new Promise<null>(resolve => setTimeout(() => resolve(null), 12000)),
-    ]);
-    if (isUsefulMediaAnalysis(transcription)) {
-      textContent = transcription;
-      console.log(`[WEBHOOK] Using audio transcription as trigger text: "${String(transcription).substring(0, 80)}"`);
-    } else {
-      console.log('[WEBHOOK] Audio transcription not available before trigger routing; falling back to media placeholder');
-    }
-  }
-
+  // Roteamento (fluxo ativo, campanhas, IA). Devolve a Response do webhook; no
+  // caminho de áudio adiado ela é descartada, porque o 200 já foi enviado.
+  const routeInbound = async (): Promise<Response> => {
   // Trigger AI agent or Campaigns if needed
   if (!fromMe) {
     const triggerText = textContent || '';
@@ -3204,6 +3291,27 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
   return respond({ success: true, messageId: savedMessage.id });
+  };
+
+  if (deferAudioRouting) {
+    const audioChain = (async () => {
+      if (finalizeMedia) await finalizeMedia();
+      if (savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
+        const transcription = await triggerMediaAnalysis(savedMessage.id, mediaUrl, messageType, organizationId);
+        if (isUsefulMediaAnalysis(transcription)) {
+          textContent = transcription;
+          console.log(`[WEBHOOK] Using audio transcription as trigger text: "${String(transcription).substring(0, 80)}"`);
+        } else {
+          console.log('[WEBHOOK] Audio transcription not available before trigger routing; falling back to media placeholder');
+        }
+      }
+      await routeInbound();
+    })().catch((e) => console.error(`[WEBHOOK] Roteamento de áudio em background falhou (mensagem ${savedMessage?.id}):`, e));
+    runBackground(audioChain);
+    return respond({ success: true, messageId: savedMessage.id, routing: 'background' });
+  }
+
+  return await routeInbound();
 }
 
 async function handleReadReceipt(supabase: any, payload: any) {

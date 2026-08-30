@@ -107,6 +107,10 @@ verify_jwt = false
 [functions.process-flow-timeouts]
 verify_jwt = false
 
+# Chamada pelo cron (pg_cron/pg_net), sem JWT — igual aos demais jobs.
+[functions.reprocess-inbound-events]
+verify_jwt = false
+
 [functions.generate-remarketing-messages]
 verify_jwt = false
 
