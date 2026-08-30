@@ -55,6 +55,7 @@ import {
 } from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
 import { ShareConversationDialog } from './ShareConversationDialog';
+import { TagPickerSubContent } from './TagPickerSubContent';
 
 interface ConversationActionsMenuProps {
   conversation: DbConversation;
@@ -230,6 +231,11 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
       setIsUpdating(false);
     }
   };
+
+  const selectedTagIds = useMemo(
+    () => new Set((contactTags || []).map((ct) => ct.tag_id)),
+    [contactTags]
+  );
 
   const handleTagToggle = async (tagId: string) => {
     if (!conversation.contact?.id) return;
@@ -571,28 +577,11 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
             <Tag className="h-4 w-4 mr-2" />
             Tags
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-48">
-            {!tags || tags.length === 0 ? (
-              <DropdownMenuItem disabled>Nenhuma tag criada</DropdownMenuItem>
-            ) : (
-              tags.map(tag => {
-                const isTagged = contactTags?.some(ct => ct.tag_id === tag.id);
-                return (
-                  <DropdownMenuItem
-                    key={tag.id}
-                    onClick={() => handleTagToggle(tag.id)}
-                  >
-                    <div
-                      className="h-3 w-3 rounded-full mr-2"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    <span className="flex-1">{tag.name}</span>
-                    {isTagged && <CheckCircle className="h-3 w-3 text-primary" />}
-                  </DropdownMenuItem>
-                );
-              })
-            )}
-          </DropdownMenuSubContent>
+          <TagPickerSubContent
+            tags={tags}
+            selectedTagIds={selectedTagIds}
+            onToggle={handleTagToggle}
+          />
         </DropdownMenuSub>
 
         {/* Pipeline Submenu */}

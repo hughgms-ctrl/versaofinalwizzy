@@ -53,6 +53,7 @@ import { Workspace } from '@/hooks/useWorkspaces';
 import { useTags, useAllContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag } from '@/hooks/useTags';
 import { useNavigate } from 'react-router-dom';
 import { ShareConversationDialog } from './ShareConversationDialog';
+import { TagPickerSubContent } from './TagPickerSubContent';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 const TAG_PRESET_COLORS = [
@@ -109,6 +110,10 @@ export function ConversationCardActions({
   const contactTags = useMemo(
     () => (contactId ? allContactTags?.filter((ct) => ct.contact_id === contactId) : undefined),
     [allContactTags, contactId]
+  );
+  const selectedTagIds = useMemo(
+    () => new Set((contactTags || []).map((ct) => ct.tag_id)),
+    [contactTags]
   );
   const addTag = useAddTagToContact();
   const removeTag = useRemoveTagFromContact();
@@ -379,41 +384,13 @@ export function ConversationCardActions({
             <Tag className="h-4 w-4 mr-2 text-blue-500" />
             Adicionar tags
           </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-52">
-            {!contactId ? (
-              <DropdownMenuItem disabled>Contato indisponível</DropdownMenuItem>
-            ) : (
-              <>
-                {(!tags || tags.length === 0) ? (
-                  <DropdownMenuItem disabled>Nenhuma tag criada</DropdownMenuItem>
-                ) : (
-                  tags.map(tag => {
-                    const isTagged = contactTags?.some(ct => ct.tag_id === tag.id);
-                    return (
-                      <DropdownMenuItem
-                        key={tag.id}
-                        onClick={(e) => { e.stopPropagation(); handleTagToggle(tag.id); }}
-                      >
-                        <div
-                          className="h-3 w-3 rounded-full mr-2 shrink-0"
-                          style={{ backgroundColor: tag.color }}
-                        />
-                        <span className="flex-1 truncate">{tag.name}</span>
-                        {isTagged && <CheckCircle className="h-3 w-3 text-primary ml-2 shrink-0" />}
-                      </DropdownMenuItem>
-                    );
-                  })
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => { e.stopPropagation(); setShowCreateTagDialog(true); }}
-                >
-                  <Plus className="h-4 w-4 mr-2 text-emerald-500" />
-                  Criar nova tag
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuSubContent>
+          <TagPickerSubContent
+            tags={tags}
+            selectedTagIds={selectedTagIds}
+            onToggle={handleTagToggle}
+            onCreate={() => setShowCreateTagDialog(true)}
+            emptyMessage={!contactId ? 'Contato indisponível' : undefined}
+          />
         </DropdownMenuSub>
 
         <DropdownMenuSeparator />
