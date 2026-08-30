@@ -15,30 +15,54 @@ que está rodando** — que é a fonte de verdade de qualquer jeito.
 > ambiente de teste. Fora a questão legal, dado real em staging vira mensagem real quando alguém esbarra num
 > fluxo com envio ligado.
 
+## 0. O que precisa estar pronto
+
+- **Docker rodando** (Docker Desktop aberto). É ele que empresta o `pg_dump`/`psql` — não precisa instalar
+  cliente de Postgres na máquina.
+- **CLI do Supabase** logado: `supabase login`.
+- **Senha do banco de produção**: Dashboard → Settings → Database → Database password.
+- **Projeto de staging já criado** no Dashboard, com a senha dele anotada.
+
+> **Tamanho da máquina.** Para o número medido valer, o compute do staging tem que ser o MESMO da produção.
+> Num projeto free (micro) o resultado sai pior do que a realidade — serve para achar erro, não para dizer
+> "aguenta 98 números". Se for medir capacidade, suba o staging no mesmo plano e derrube depois do teste.
+
+As duas URLs de conexão saem do Dashboard → **Connect** → aba **Session pooler** (a conexão direta
+`db.<ref>.supabase.co` é IPv6 e costuma falhar em rede doméstica). O formato é:
+
+```
+postgresql://postgres.<ref>:[SENHA]@aws-0-<regiao>.pooler.supabase.com:5432/postgres
+```
+
 ## 1. Extrair o schema de produção
 
-Precisa da senha do banco (Supabase → Settings → Database → Database password) e do CLI do Supabase.
-
 ```bash
-supabase db dump \
-  --db-url "postgresql://postgres:[SENHA]@db.zaobtetbjpuzibjymhzw.supabase.co:5432/postgres" \
-  --schema-only \
-  -f staging-schema.sql
+# guarde a URL numa variável para a senha não ficar no histórico
+export PROD_URL='postgresql://postgres.zaobtetbjpuzibjymhzw:[SENHA]@aws-0-<regiao>.pooler.supabase.com:5432/postgres'
+
+supabase db dump --db-url "$PROD_URL" --schema-only -f staging-schema.sql
 ```
 
-O arquivo tem senha na linha de comando: rode num terminal seu, não em CI, e **não commite o dump**.
+Confira o tamanho (`ls -lh staging-schema.sql`): alguns MB é o esperado. **Não commite o arquivo** — ele
+descreve o banco inteiro.
 
-## 2. Criar o projeto e restaurar
+O dump traz o schema `public` (tabelas, índices, funções, triggers, RLS). Não traz `auth`/`storage` (o projeto
+novo já vem com eles), nem os crons, nem os buckets de Storage — esses três são recriados nos passos 4 e 5.
 
-1. Novo projeto no Supabase (mesma região da produção, para a latência medida fazer sentido).
-2. Restaurar:
+## 2. Restaurar no staging
 
 ```bash
-psql "postgresql://postgres:[SENHA-STAGING]@db.<ref-staging>.supabase.co:5432/postgres" \
-  -f staging-schema.sql
+export STAGING_URL='postgresql://postgres.<ref-staging>:[SENHA-STAGING]@aws-0-<regiao>.pooler.supabase.com:5432/postgres'
+
+docker run --rm -i -v "$(pwd):/work" postgres:17   psql "$STAGING_URL" -v ON_ERROR_STOP=0 -f /work/staging-schema.sql
 ```
 
-3. Extensões que o dump pode não trazer, se derem erro no passo seguinte:
+`ON_ERROR_STOP=0` é de propósito: o dump tenta recriar coisas que o projeto novo já tem (extensões, papéis) e
+esses erros são esperados. O que importa é o passo 6 confirmar que as tabelas existem.
+
+Se o `psql` reclamar de versão, troque a imagem para `postgres:15`.
+
+Extensões que podem faltar (rode no SQL Editor do staging):
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_cron;
@@ -53,6 +77,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```bash
 supabase functions deploy --project-ref <ref-staging>
 ```
+
+(São ~90 functions; leva alguns minutos.)
 
 E os secrets (Supabase → Edge Functions → Secrets). O mínimo para o teste de **entrada**:
 
