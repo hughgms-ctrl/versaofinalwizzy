@@ -173,7 +173,7 @@ export function useContactPresence(contactId: string | null) {
   const [presence, setPresence] = useState<ContactPresence | null>(null);
 
   useEffect(() => {
-    if (!session || !orgId || !contactId) {
+    if (!session?.user?.id || !orgId || !contactId) {
       setPresence(null);
       return;
     }
@@ -186,7 +186,7 @@ export function useContactPresence(contactId: string | null) {
     });
 
     return unsubscribe;
-  }, [session, orgId, contactId]);
+  }, [session?.user?.id, orgId, contactId]);
 
   return {
     presence,

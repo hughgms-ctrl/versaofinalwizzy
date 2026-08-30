@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { highlightTerm } from '@/lib/highlightTerm';
 import { ConversationCardActions } from './ConversationCardActions';
 import { ContactAvatar } from './ContactAvatar';
+import { ContactPresenceDot } from './ContactPresenceDot';
 import { getDerivedStatusInfo } from '@/lib/conversationStatus';
 
 interface ConversationListProps {
@@ -46,12 +47,6 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
   const stripMarkdown = (text: string | null) => {
     if (!text) return null;
     return text.replace(/[*_~`]/g, '');
-  };
-
-  const getPresenceLabel = (isOnline: boolean, isTyping: boolean, isRecording: boolean) => {
-    if (isTyping) return 'digitando';
-    if (isRecording) return 'gravando audio';
-    return isOnline ? 'online' : 'offline';
   };
 
   const formatCompactTimeAgo = (date: string) => {
@@ -117,14 +112,6 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
             return stripMarkdown(lastMessage.content);
           })();
 
-          // Real presence logic using contact_presence table
-          const presenceData = conversation.contact?.contact_presence;
-          const presence = Array.isArray(presenceData) ? presenceData[0] : presenceData;
-          const isActive = presence ? new Date(presence.expires_at) > new Date() : false;
-          const isOnline = isActive && presence?.presence_type !== 'offline';
-          const isTyping = isActive && presence?.presence_type === 'typing';
-          const isRecording = isActive && presence?.presence_type === 'recording';
-
           const contactWorkspaceId = (conversation as any).workspace_id || (conversation.contact as any)?.workspace_id;
           const workspace = contactWorkspaceId ? workspaces.find(w => w.id === contactWorkspaceId) : null;
 
@@ -167,14 +154,9 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                       // on every list render — hundreds at a time.
                       autoRefetch={false}
                     />
-                    <div
-                      className={cn(
-                        "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
-                        isTyping ? "bg-blue-500 animate-pulse" :
-                          isRecording ? "bg-red-500 animate-pulse" :
-                            isOnline ? "bg-green-500" : "bg-muted-foreground/40"
-                      )}
-                      title={getPresenceLabel(isOnline, isTyping, isRecording)}
+                    <ContactPresenceDot
+                      contactId={conversation.contact?.id}
+                      className="absolute top-0 right-0 h-2.5 w-2.5 ring-2 ring-card"
                     />
                   </div>
 

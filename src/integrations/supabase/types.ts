@@ -6864,6 +6864,7 @@ export type Database = {
           is_from_bot: boolean
           media_url: string | null
           metadata: Json | null
+          organization_id: string | null
           read_at: string | null
           sent_by: string | null
           type: Database["public"]["Enums"]["message_type"]
@@ -6882,6 +6883,7 @@ export type Database = {
           is_from_bot?: boolean
           media_url?: string | null
           metadata?: Json | null
+          organization_id?: string | null
           read_at?: string | null
           sent_by?: string | null
           type?: Database["public"]["Enums"]["message_type"]
@@ -6900,6 +6902,7 @@ export type Database = {
           is_from_bot?: boolean
           media_url?: string | null
           metadata?: Json | null
+          organization_id?: string | null
           read_at?: string | null
           sent_by?: string | null
           type?: Database["public"]["Enums"]["message_type"]

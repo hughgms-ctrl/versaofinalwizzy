@@ -1,12 +1,36 @@
-import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient, useMutation, QueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { withCountryCode } from '@/lib/phoneVariants';
+import {
+  ConversationListFilters,
+  ConversationsCache,
+  dedupeConversationsById,
+  findCachedConversation,
+  patchCachedConversation,
+  removeCachedConversation,
+  sortConversationsByRecency,
+  upsertCachedConversation,
+} from '@/lib/conversationsCache';
 
 const CONVERSATION_LIST_LIMIT = 1000;
+
+// Um unico lugar para a forma da linha: a busca pontual do realtime precisa
+// devolver exatamente o mesmo shape da listagem, senao a linha hidratada entra
+// no cache sem os joins e a lista pisca.
+//
+// `contact_presence` saiu do embed de proposito (B12): o indicador de
+// "digitando..." agora vem do PresenceStore (useContactPresence), que ja mantem
+// UM canal por organizacao. Enquanto o dado vinha no join, cada evento de
+// presenca precisava invalidar a lista inteira para nao ficar velho.
+const CONVERSATION_SELECT = `
+  *,
+  contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata),
+  last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
+`;
 
 export interface DbConversation {
   id: string;
@@ -33,10 +57,6 @@ export interface DbConversation {
     workspace_id?: string | null;
     created_at: string;
     metadata: { note?: string; description?: string } | null;
-    contact_presence?: {
-      presence_type: string;
-      expires_at: string;
-    } | { presence_type: string; expires_at: string }[] | null;
   } | null;
   last_message: {
     id: string;
@@ -74,109 +94,196 @@ export interface DbMessage {
   metadata?: any;
 }
 
-export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
-  const { session, profile } = useAuth();
-  const { selectedWorkspaceId } = useWorkspaceContext();
+type ConversationsQueryRoot = 'conversations' | 'conversations-paginated';
+
+/** Janela para agrupar as buscas pontuais das linhas que precisam dos joins. */
+const HYDRATE_DEBOUNCE_MS = 600;
+
+/**
+ * Procura uma conversa nos caches da lista (paginada e completa) sem ir ao banco.
+ * Usado pelas notificacoes (B11) para nao fazer um SELECT por mensagem recebida.
+ */
+export function findConversationInListCache(
+  queryClient: QueryClient,
+  conversationId: string
+): DbConversation | null {
+  const roots: ConversationsQueryRoot[] = ['conversations-paginated', 'conversations'];
+  for (const root of roots) {
+    for (const entry of queryClient.getQueryCache().findAll({ queryKey: [root] })) {
+      const cached = queryClient.getQueryData<ConversationsCache<DbConversation>>(entry.queryKey);
+      const hit = findCachedConversation(cached, conversationId);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/**
+ * B12 — realtime da lista de conversas sem invalidar a query.
+ *
+ * Um unico binding por organizacao. UPDATE vira patch no cache (as colunas do
+ * payload por cima da linha que ja esta la, preservando `contact` e
+ * `last_message`); so cai para a rede quem precisa dos joins:
+ *
+ *   - conversa nova (INSERT);
+ *   - conversa que ainda nao esta carregada (fora das paginas em memoria);
+ *   - `last_message_at` mudou, ou seja, o preview da lista ficou velho.
+ *
+ * Essas buscas sao agrupadas por HYDRATE_DEBOUNCE_MS e saem num `.in('id', ...)`
+ * so — uma consulta pequena, nao a lista inteira.
+ *
+ * `contact_presence` nao e mais assinado aqui: era ele quem gerava a enxurrada
+ * de refetches ("digitando..." a cada tecla do contato).
+ */
+function startConversationsSync(
+  queryClient: QueryClient,
+  organizationId: string,
+  queryKeyRoot: ConversationsQueryRoot
+): () => void {
+  let cancelled = false;
+
+  const listQueries = () => queryClient.getQueryCache().findAll({ queryKey: [queryKeyRoot] });
+  const filtersOf = (queryKey: readonly unknown[]): ConversationListFilters =>
+    (queryKey[1] as ConversationListFilters) ?? {};
+
+  const patchEverywhere = (patch: Partial<DbConversation> & { id: string }) => {
+    let previous: DbConversation | null = null;
+
+    for (const entry of listQueries()) {
+      const cached = queryClient.getQueryData<ConversationsCache<DbConversation>>(entry.queryKey);
+      const hit = findCachedConversation(cached, patch.id);
+      if (!hit) continue;
+      previous = previous ?? hit;
+      queryClient.setQueryData<ConversationsCache<DbConversation>>(entry.queryKey, (old) =>
+        patchCachedConversation(old, patch, filtersOf(entry.queryKey))
+      );
+    }
+
+    return previous;
+  };
+
+  const upsertEverywhere = (row: DbConversation) => {
+    for (const entry of listQueries()) {
+      queryClient.setQueryData<ConversationsCache<DbConversation>>(entry.queryKey, (old) =>
+        upsertCachedConversation(old, row, filtersOf(entry.queryKey))
+      );
+    }
+  };
+
+  const removeEverywhere = (id: string) => {
+    for (const entry of listQueries()) {
+      queryClient.setQueryData<ConversationsCache<DbConversation>>(entry.queryKey, (old) =>
+        removeCachedConversation(old, id)
+      );
+    }
+  };
+
+  const pendingIds = new Set<string>();
+  let hydrateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const hydrate = async () => {
+    hydrateTimer = null;
+    const ids = Array.from(pendingIds);
+    pendingIds.clear();
+    if (!ids.length || cancelled) return;
+
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(CONVERSATION_SELECT)
+      .eq('organization_id', organizationId)
+      .in('id', ids)
+      .order('created_at', { referencedTable: 'messages', ascending: false })
+      .limit(1, { referencedTable: 'messages' });
+
+    if (cancelled || error || !data) return;
+    for (const row of data as unknown as DbConversation[]) upsertEverywhere(row);
+  };
+
+  const scheduleHydrate = (id: string) => {
+    pendingIds.add(id);
+    if (!hydrateTimer) hydrateTimer = setTimeout(hydrate, HYDRATE_DEBOUNCE_MS);
+  };
+
+  const channel = createRealtimeChannel(`${queryKeyRoot}-realtime-${organizationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'conversations',
+        filter: `organization_id=eq.${organizationId}`,
+      },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const removed = payload.old as { id?: string };
+          if (removed?.id) removeEverywhere(removed.id);
+          return;
+        }
+
+        const row = payload.new as (Partial<DbConversation> & { id?: string }) | null;
+        if (!row?.id) return;
+
+        if (payload.eventType === 'INSERT') {
+          scheduleHydrate(row.id);
+          return;
+        }
+
+        const previous = patchEverywhere(row as Partial<DbConversation> & { id: string });
+        const previewChanged = previous?.last_message_at !== row.last_message_at;
+        if (!previous || previewChanged) scheduleHydrate(row.id);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    cancelled = true;
+    if (hydrateTimer) clearTimeout(hydrateTimer);
+    supabase.removeChannel(channel);
+  };
+}
+
+/**
+ * Um canal por (organizacao x lista), independente de quantos componentes
+ * montarem o hook. `useConversations` e montado tambem por dialogos e pelo
+ * pipeline: sem o refcount, cada mensagem recebida viraria uma busca pontual
+ * POR MONTAGEM — trocando a invalidacao antiga por um punhado de requisicoes.
+ */
+interface ConversationsSyncEntry {
+  refCount: number;
+  teardown: () => void;
+}
+
+const conversationsSyncRegistry = new Map<string, ConversationsSyncEntry>();
+
+function useConversationsRealtimeSync(
+  userId: string | undefined,
+  organizationId: string | undefined,
+  queryKeyRoot: ConversationsQueryRoot
+) {
   const queryClient = useQueryClient();
-  const includeArchived = options?.includeArchived ?? false;
-  const onlyArchived = options?.onlyArchived ?? false;
-  const includeClosed = options?.includeClosed ?? false;
-  const onlyClosed = options?.onlyClosed ?? false;
 
-  const query = useQuery({
-    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId, orgId: profile?.organization_id }],
-    queryFn: async (): Promise<DbConversation[]> => {
-      let query = supabase
-        .from('conversations')
-        .select(`
-          *,
-          contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
-          last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
-        `)
-        .eq('organization_id', profile!.organization_id)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-        .range(0, CONVERSATION_LIST_LIMIT - 1)
-        .order('created_at', { referencedTable: 'messages', ascending: false })
-        .limit(1, { referencedTable: 'messages' });
-
-      if (onlyArchived) {
-        query = query.eq('status', 'archived');
-      } else if (onlyClosed) {
-        query = query.eq('status', 'closed' as any);
-      } else {
-        // Hide archived by default
-        if (!includeArchived) query = query.neq('status', 'archived');
-        // Hide closed by default
-        if (!includeClosed) query = query.neq('status', 'closed' as any);
-      }
-
-      if (selectedWorkspaceId) {
-        if (selectedWorkspaceId === 'unassigned') {
-          query = query.is('workspace_id', null);
-        } else {
-          query = query.eq('workspace_id', selectedWorkspaceId);
-        }
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      return (data || []) as unknown as DbConversation[];
-    },
-    enabled: !!session && !!profile?.organization_id,
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
-    refetchInterval: 30_000, // Poll every 30s as fallback when realtime fails
-  });
-
-  // Subscribe to realtime updates for conversations
   useEffect(() => {
-    if (!session || !profile?.organization_id) return;
+    if (!userId || !organizationId) return;
 
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleConversationsRefresh = () => {
-      if (refreshTimer) return;
+    const key = `${queryKeyRoot}:${organizationId}`;
+    let entry = conversationsSyncRegistry.get(key);
 
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      }, 1500);
-    };
+    if (!entry) {
+      entry = { refCount: 0, teardown: startConversationsSync(queryClient, organizationId, queryKeyRoot) };
+      conversationsSyncRegistry.set(key, entry);
+    }
 
-    const channel = createRealtimeChannel(`conversations-realtime-${profile.organization_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-          filter: `organization_id=eq.${profile.organization_id}`,
-        },
-        () => {
-          scheduleConversationsRefresh();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'contact_presence',
-          filter: `organization_id=eq.${profile.organization_id}`,
-        },
-        () => {
-          scheduleConversationsRefresh();
-        }
-      )
-      .subscribe();
+    entry.refCount++;
 
     return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      supabase.removeChannel(channel);
+      const current = conversationsSyncRegistry.get(key);
+      if (!current) return;
+      current.refCount--;
+      if (current.refCount > 0) return;
+      conversationsSyncRegistry.delete(key);
+      current.teardown();
     };
-  }, [session, profile?.organization_id, queryClient]);
-
-  return query;
+  }, [userId, organizationId, queryClient, queryKeyRoot]);
 }
 
 const CONVERSATIONS_PAGE_SIZE = 100;
@@ -188,11 +295,7 @@ function buildConversationsPageQuery(
 ) {
   let query = supabase
     .from('conversations')
-    .select(`
-      *,
-      contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
-      last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
-    `)
+    .select(CONVERSATION_SELECT)
     .eq('organization_id', organizationId)
     .order('last_message_at', { ascending: false, nullsFirst: false });
 
@@ -216,6 +319,48 @@ function buildConversationsPageQuery(
   return query;
 }
 
+export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
+  const { session, profile } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+  const includeArchived = options?.includeArchived ?? false;
+  const onlyArchived = options?.onlyArchived ?? false;
+  const includeClosed = options?.includeClosed ?? false;
+  const onlyClosed = options?.onlyClosed ?? false;
+
+  const query = useQuery({
+    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId, orgId: profile?.organization_id }],
+    queryFn: async (): Promise<DbConversation[]> => {
+      const { data, error } = await buildConversationsPageQuery(profile!.organization_id, selectedWorkspaceId, {
+        includeArchived,
+        onlyArchived,
+        includeClosed,
+        onlyClosed,
+      })
+        .range(0, CONVERSATION_LIST_LIMIT - 1)
+        .order('created_at', { referencedTable: 'messages', ascending: false })
+        .limit(1, { referencedTable: 'messages' });
+
+      if (error) throw error;
+      return (data || []) as unknown as DbConversation[];
+    },
+    enabled: !!session && !!profile?.organization_id,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000, // Poll every 30s as fallback when realtime fails
+  });
+
+  useConversationsRealtimeSync(session?.user?.id, profile?.organization_id, 'conversations');
+
+  // A ordem vem do servidor, mas o patch do realtime muda `last_message_at` no
+  // cache: reordenar na leitura e o que faz a conversa subir sem refetch.
+  const conversations = useMemo(
+    () => (query.data ? sortConversationsByRecency(query.data) : query.data),
+    [query.data]
+  );
+
+  return { ...query, data: conversations };
+}
+
 // Paginated version of useConversations for the main inbox list: fetching
 // all ~1000 conversations with embedded contact/last-message joins in one
 // request took 4+ seconds. This fetches CONVERSATIONS_PAGE_SIZE at a time
@@ -226,7 +371,6 @@ function buildConversationsPageQuery(
 export function usePaginatedConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
   const { session, profile } = useAuth();
   const { selectedWorkspaceId } = useWorkspaceContext();
-  const queryClient = useQueryClient();
   const includeArchived = options?.includeArchived ?? false;
   const onlyArchived = options?.onlyArchived ?? false;
   const includeClosed = options?.includeClosed ?? false;
@@ -259,61 +403,21 @@ export function usePaginatedConversations(options?: { includeArchived?: boolean;
     refetchInterval: 30_000,
   });
 
-  // Subscribe to realtime updates, same as useConversations but scoped to
-  // this hook's own query key so it doesn't touch the non-paginated cache.
-  useEffect(() => {
-    if (!session || !profile?.organization_id) return;
+  useConversationsRealtimeSync(session?.user?.id, profile?.organization_id, 'conversations-paginated');
 
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleConversationsRefresh = () => {
-      if (refreshTimer) return;
-
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        queryClient.invalidateQueries({ queryKey: ['conversations-paginated'] });
-      }, 1500);
-    };
-
-    const channel = createRealtimeChannel(`conversations-paginated-realtime-${profile.organization_id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversations',
-          filter: `organization_id=eq.${profile.organization_id}`,
-        },
-        () => {
-          scheduleConversationsRefresh();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'contact_presence',
-          filter: `organization_id=eq.${profile.organization_id}`,
-        },
-        () => {
-          scheduleConversationsRefresh();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      supabase.removeChannel(channel);
-    };
-  }, [session, profile?.organization_id, queryClient]);
-
-  const conversations = useMemo(() => query.data?.pages.flat() ?? [], [query.data]);
+  // A linha hidratada pelo realtime entra na primeira pagina; a paginacao por
+  // offset pode repeti-la enquanto a pagina seguinte nao e rebuscada.
+  const conversations = useMemo(
+    () => dedupeConversationsById(sortConversationsByRecency(query.data?.pages.flat() ?? [])),
+    [query.data]
+  );
 
   return {
     ...query,
     data: conversations,
   };
 }
+
 
 const MESSAGES_PAGE_SIZE = 50;
 
@@ -389,7 +493,7 @@ export function useMessages(conversationId: string | null) {
   // DELETE continua via invalidate manual no chamador (o evento de DELETE não
   // chega pelo filtro sem REPLICA IDENTITY FULL).
   useEffect(() => {
-    if (!session || !conversationId) return;
+    if (!session?.user?.id || !conversationId) return;
 
     const channel = createRealtimeChannel(`messages-realtime-${conversationId}`)
       .on(
@@ -426,7 +530,7 @@ export function useMessages(conversationId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, conversationId, queryClient]);
+  }, [session?.user?.id, conversationId, queryClient]);
 
   return {
     data: messages,

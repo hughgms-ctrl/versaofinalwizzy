@@ -133,7 +133,7 @@ const PipelinePage = () => {
         .from('conversations')
         .select(`
           *,
-          contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
+          contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata),
           last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
         `)
         .eq('id', conversation.id)

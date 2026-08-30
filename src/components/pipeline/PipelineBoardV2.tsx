@@ -38,6 +38,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
+import { ContactPresenceDot } from '@/components/conversations/ContactPresenceDot';
+import { useContactPresence } from '@/hooks/useContactPresence';
 import { cn } from '@/lib/utils';
 import { highlightTerm } from '@/lib/highlightTerm';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -226,6 +228,32 @@ function getCardChecklists(conversation: DbConversation): CardChecklist[] {
     return [{ id: 'legacy', templateId: legacyTemplateId, name: 'Checklist', items: legacyItems }];
   }
   return [];
+}
+
+/**
+ * Linha de atividade do card ("Digitando...", "Gravando audio...", follow-up).
+ *
+ * Componente proprio porque a presenca agora vem do PresenceStore por contato
+ * (B12): so este pedaco do card re-renderiza quando o contato comeca a digitar,
+ * em vez de a lista inteira ser rebuscada do banco.
+ */
+function CardActivityLine({ contactId, followUpStep }: { contactId?: string | null; followUpStep?: number | null }) {
+  const { isTyping, isRecording } = useContactPresence(contactId ?? null);
+
+  if (!isTyping && !isRecording && !followUpStep) return null;
+
+  return (
+    <div className="mt-1.5 flex items-center gap-1 text-[10px] text-zinc-300">
+      {isTyping || isRecording ? (
+        <span className="font-medium text-green-300">{isTyping ? 'Digitando...' : 'Gravando audio...'}</span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-300 animate-pulse">
+          <RefreshCw className="h-2.5 w-2.5" />
+          Follow-up #{followUpStep}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
@@ -1012,12 +1040,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     return text.replace(/[*_~`]/g, '');
   };
 
-  const getPresenceLabel = (isOnline: boolean, isTyping: boolean, isRecording: boolean) => {
-    if (isTyping) return 'digitando';
-    if (isRecording) return 'gravando audio';
-    return isOnline ? 'online' : 'offline';
-  };
-
   const renderMessageStatus = (lastMessage: NonNullable<DbConversation['last_message']>[number]) => {
     if (lastMessage.read_at) {
       return <CheckCheck className="text-[#53bdeb] h-3 w-3 stroke-[3]" />;
@@ -1087,13 +1109,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const hasUnread = conversation.unread_count > 0;
     const lastMessage = conversation.last_message?.[0];
     const isAIActive = lastMessage?.is_from_bot;
-    // Real presence logic using contact_presence table
-    const presenceData = conversation.contact?.contact_presence;
-    const presence = Array.isArray(presenceData) ? presenceData[0] : presenceData;
-    const isActive = presence ? new Date(presence.expires_at) > new Date() : false;
-    const isOnline = isActive && presence?.presence_type !== 'offline';
-    const isTyping = isActive && presence?.presence_type === 'typing';
-    const isRecording = isActive && presence?.presence_type === 'recording';
     const contactId = conversation.contact?.id;
     const note = (conversation.contact?.metadata as { note?: string } | null)?.note;
     // Campos personalizados nao aparecem no card: poluiam demais. Ficam so no
@@ -1154,14 +1169,10 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               // per card across every pipeline column.
               autoRefetch={false}
             />
-            <span
-              className={cn(
-                "absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-1 ring-zinc-800",
-                isTyping ? "bg-blue-400 animate-pulse" :
-                  isRecording ? "bg-red-400 animate-pulse" :
-                    isOnline ? "bg-green-400" : "bg-zinc-500"
-              )}
-              title={getPresenceLabel(isOnline, isTyping, isRecording)}
+            <ContactPresenceDot
+              contactId={contactId}
+              variant="pipeline"
+              className="absolute -right-0.5 -bottom-0.5 h-2 w-2 ring-1 ring-zinc-800"
             />
           </div>
 
@@ -1222,18 +1233,10 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               </div>
             </div>
 
-            {(isTyping || isRecording || followUpMap?.[conversation.id]) && (
-              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-zinc-300">
-                {isTyping || isRecording ? (
-                  <span className="font-medium text-green-300">{isTyping ? 'Digitando...' : 'Gravando audio...'}</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-300 animate-pulse">
-                    <RefreshCw className="h-2.5 w-2.5" />
-                    Follow-up #{followUpMap[conversation.id].step}
-                  </span>
-                )}
-              </div>
-            )}
+            <CardActivityLine
+              contactId={contactId}
+              followUpStep={followUpMap?.[conversation.id]?.step}
+            />
 
             <div className="mt-1.5 flex items-center gap-2.5 text-[10px] text-zinc-400">
               <CardMetric

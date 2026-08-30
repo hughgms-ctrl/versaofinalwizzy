@@ -79,6 +79,18 @@ hosting do Lovable por custo, sem perder o sync.
 > `(conversation_id, flow_id)` — a versão por conversa do texto abaixo quebraria sub-fluxo e campanha
 > interruptora. Pendente da Semana 1: backfill de `messages.organization_id` (entra junto com o B11).
 > **Próximo: Semana 3.**
+>
+> **Semana 3 em andamento — B12 e B11 FECHADOS no código (frontend).** B12: `contact_presence` saiu dos
+> canais da lista (o indicador por linha vem do `PresenceStore` via `ContactPresenceDot`) e o evento de
+> `conversations` virou patch cirúrgico no cache (`src/lib/conversationsCache.ts`, com teste) — só conversa
+> nova, conversa fora das páginas carregadas ou `last_message_at` mudado disparam uma busca pontual por id,
+> agrupada em 600 ms num `.in('id', ...)`. Um canal por (org × lista) com refcount, porque `useConversations`
+> é montado por vários diálogos ao mesmo tempo. B11: canal de notificação passa a filtrar
+> `organization_id=eq.<org>` em `messages`, pula o que não é `inbound` e lê a conversa do cache da lista antes
+> de ir ao banco; o `invalidate(['conversations'])` por mensagem recebida saiu (o patch do B12 cobre o
+> não-lido). **PENDENTE À MÃO: migration `20260830160000_messages_organization_id.sql`** (coluna + trigger) e,
+> depois, o backfill de `docs/backfill-messages-organization-id.sql`. Enquanto ela não for aplicada, o hook
+> detecta a ausência da coluna e mantém o comportamento antigo — notificação continua funcionando, sem o ganho.
 
 Também bloqueador, mas **operacional** (não é código): confirmar no banco vivo se as migrations
 `20260817120000` + `20260817230000` (dispatcher de agendamento) e `20260829120000` (`contact_number_owners`)
