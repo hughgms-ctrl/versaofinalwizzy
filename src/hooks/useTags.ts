@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchAllContactTagLinks } from '@/lib/contactTagLinks';
+import { fetchAllContactTagLinks, type ContactTagLink } from '@/lib/contactTagLinks';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { normalizeWorkspaceId } from '@/lib/workspaceId';
 
 export interface Tag {
   id: string;
@@ -23,15 +25,6 @@ export interface ContactTag {
   added_by_type: 'manual' | 'flow' | 'ai';
   created_at: string;
   tag?: Tag;
-}
-
-// O seletor de workspace usa a string 'unassigned' como sentinela de "Sem
-// Workspace" — ela NÃO é um uuid. Mandá-la pro PostgREST derruba a query inteira
-// (`invalid input syntax for type uuid`), e num insert derruba a criação da tag.
-// Aqui ela vira NULL, que é como "sem workspace" é gravado no banco.
-function normalizeWorkspaceId(workspaceId: string | null | undefined): string | null {
-  if (!workspaceId || workspaceId === 'unassigned') return null;
-  return workspaceId;
 }
 
 export function useTags() {
@@ -91,6 +84,47 @@ export function useAllContactTags() {
     queryKey: ['all-contact-tags'],
     queryFn: fetchAllContactTagLinks,
   });
+}
+
+// Indice contato -> ids de tag, montado UMA vez por resposta de
+// `all-contact-tags`.
+//
+// Cada linha da lista de conversas e cada card do funil faziam
+// `allContactTags.filter(ct => ct.contact_id === id)` — uma varredura de TODOS
+// os vinculos da organizacao por linha renderizada (O(conversas x vinculos) a
+// cada render). Com o indice, a leitura por contato e direta.
+//
+// O WeakMap e chaveado pelo proprio array do cache: enquanto a resposta nao
+// muda, todos os componentes reaproveitam o mesmo indice.
+const contactTagIdsIndex = new WeakMap<ContactTagLink[], Map<string, string[]>>();
+const EMPTY_TAG_IDS_MAP: Map<string, string[]> = new Map();
+const EMPTY_TAG_IDS: string[] = [];
+
+export function useContactTagIdsMap(): Map<string, string[]> {
+  const { data } = useAllContactTags();
+
+  return useMemo(() => {
+    if (!data || data.length === 0) return EMPTY_TAG_IDS_MAP;
+
+    const cached = contactTagIdsIndex.get(data);
+    if (cached) return cached;
+
+    const map = new Map<string, string[]>();
+    for (const link of data) {
+      const current = map.get(link.contact_id);
+      if (current) current.push(link.tag_id);
+      else map.set(link.contact_id, [link.tag_id]);
+    }
+
+    contactTagIdsIndex.set(data, map);
+    return map;
+  }, [data]);
+}
+
+/** Ids das tags de um contato, sem varrer a lista inteira. */
+export function tagIdsOfContact(map: Map<string, string[]>, contactId: string | null | undefined): string[] {
+  if (!contactId) return EMPTY_TAG_IDS;
+  return map.get(contactId) ?? EMPTY_TAG_IDS;
 }
 
 export function useContactTags(contactId: string | null) {

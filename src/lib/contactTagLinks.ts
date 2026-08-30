@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 
 // Acesso em lote a contact_tags, a tabela de ligação contato↔tag.
 //
@@ -20,33 +21,12 @@ export interface ContactTagLink {
 // `.in()` com milhares de uuids monta uma URL grande demais.
 const ID_CHUNK_SIZE = 200;
 
-// Tamanho da página, igual ao teto do PostgREST: página cheia é o sinal de que
-// pode haver mais, página curta encerra a varredura.
-const PAGE_SIZE = 1000;
 
 const chunk = <T,>(items: T[], size: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
 };
-
-// Varre uma página de cada vez até vir página curta.
-//
-// O `.order('id')` não é enfeite: sem ordem determinística o banco pode devolver
-// as linhas em ordens diferentes entre as páginas, e aí `.range()` repete umas e
-// pula outras.
-async function fetchAllPages<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await build(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    const page = data || [];
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) return rows;
-  }
-}
 
 /** Todas as ligações contato↔tag visíveis para o usuário (escopo = RLS). */
 export async function fetchAllContactTagLinks(): Promise<ContactTagLink[]> {

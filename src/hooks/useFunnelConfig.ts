@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { normalizeWorkspaceId } from '@/lib/workspaceId';
 import { toast } from './use-toast';
 
 export interface FunnelConfig {
@@ -31,8 +32,11 @@ export function useFunnelConfig() {
         .select('*')
         .eq('organization_id', profile.organization_id);
 
-      if (selectedWorkspaceId) {
-        query = query.eq('workspace_id', selectedWorkspaceId);
+      // 'unassigned' e sentinela de "Sem Workspace", nao um uuid: mandada ao
+      // PostgREST derrubava a consulta inteira.
+      const workspaceId = normalizeWorkspaceId(selectedWorkspaceId);
+      if (workspaceId) {
+        query = query.eq('workspace_id', workspaceId);
       } else {
         query = query.is('workspace_id', null);
       }
@@ -60,8 +64,9 @@ export function useSaveFunnelConfig() {
         .select('id')
         .eq('organization_id', profile.organization_id);
 
-      if (selectedWorkspaceId) {
-        existingQuery = existingQuery.eq('workspace_id', selectedWorkspaceId);
+      const workspaceId = normalizeWorkspaceId(selectedWorkspaceId);
+      if (workspaceId) {
+        existingQuery = existingQuery.eq('workspace_id', workspaceId);
       } else {
         existingQuery = existingQuery.is('workspace_id', null);
       }
@@ -79,7 +84,7 @@ export function useSaveFunnelConfig() {
           .from('workspace_funnel_configs')
           .insert({
             organization_id: profile.organization_id,
-            workspace_id: selectedWorkspaceId,
+            workspace_id: workspaceId,
             pipeline_id,
             column_ids,
             created_by: profile.id,

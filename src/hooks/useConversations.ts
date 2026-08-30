@@ -2,6 +2,7 @@ import { useQuery, useInfiniteQuery, useQueryClient, useMutation, QueryClient } 
 import { useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { createRealtimeChannel } from '@/lib/realtimeChannel';
+import { useSharedRealtimeSubscription } from '@/lib/sharedRealtime';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { withCountryCode } from '@/lib/phoneVariants';
@@ -116,6 +117,25 @@ export function findConversationInListCache(
     }
   }
   return null;
+}
+
+/**
+ * Aplica um patch em uma conversa nos caches da lista (paginada e completa),
+ * como o realtime faz. Serve para a acao local do usuario aparecer na hora —
+ * marcar como lida, por exemplo — sem refazer a lista inteira.
+ */
+export function applyConversationPatch(
+  queryClient: QueryClient,
+  patch: Partial<DbConversation> & { id: string }
+) {
+  const roots: ConversationsQueryRoot[] = ['conversations-paginated', 'conversations'];
+  for (const root of roots) {
+    for (const entry of queryClient.getQueryCache().findAll({ queryKey: [root] })) {
+      queryClient.setQueryData<ConversationsCache<DbConversation>>(entry.queryKey, (old) =>
+        patchCachedConversation(old, patch, (entry.queryKey[1] as ConversationListFilters) ?? {})
+      );
+    }
+  }
 }
 
 /**
@@ -248,13 +268,6 @@ function startConversationsSync(
  * pipeline: sem o refcount, cada mensagem recebida viraria uma busca pontual
  * POR MONTAGEM — trocando a invalidacao antiga por um punhado de requisicoes.
  */
-interface ConversationsSyncEntry {
-  refCount: number;
-  teardown: () => void;
-}
-
-const conversationsSyncRegistry = new Map<string, ConversationsSyncEntry>();
-
 function useConversationsRealtimeSync(
   userId: string | undefined,
   organizationId: string | undefined,
@@ -262,28 +275,10 @@ function useConversationsRealtimeSync(
 ) {
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (!userId || !organizationId) return;
-
-    const key = `${queryKeyRoot}:${organizationId}`;
-    let entry = conversationsSyncRegistry.get(key);
-
-    if (!entry) {
-      entry = { refCount: 0, teardown: startConversationsSync(queryClient, organizationId, queryKeyRoot) };
-      conversationsSyncRegistry.set(key, entry);
-    }
-
-    entry.refCount++;
-
-    return () => {
-      const current = conversationsSyncRegistry.get(key);
-      if (!current) return;
-      current.refCount--;
-      if (current.refCount > 0) return;
-      conversationsSyncRegistry.delete(key);
-      current.teardown();
-    };
-  }, [userId, organizationId, queryClient, queryKeyRoot]);
+  useSharedRealtimeSubscription(
+    userId && organizationId ? `${queryKeyRoot}:${organizationId}` : null,
+    () => startConversationsSync(queryClient, organizationId!, queryKeyRoot)
+  );
 }
 
 const CONVERSATIONS_PAGE_SIZE = 100;

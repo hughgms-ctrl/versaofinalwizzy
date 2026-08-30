@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { normalizeWorkspaceId, isUnassignedWorkspace } from '@/lib/workspaceId';
 import { toast } from 'sonner';
 
 export interface Campaign {
@@ -57,9 +58,14 @@ export function useCampaigns() {
                 .eq('organization_id', currentOrganizationId)
                 .order('created_at', { ascending: false });
 
-            // Filter by workspace: show campaigns for this workspace or without workspace
-            if (selectedWorkspaceId) {
-                query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_id.is.null`);
+            // Filter by workspace: show campaigns for this workspace or without workspace.
+            // "Sem Workspace" e a sentinela 'unassigned', que nao e uuid: mandada
+            // ao PostgREST derrubava a consulta inteira e a tela ficava vazia.
+            const workspaceId = normalizeWorkspaceId(selectedWorkspaceId);
+            if (workspaceId) {
+                query = query.or(`workspace_id.eq.${workspaceId},workspace_id.is.null`);
+            } else if (isUnassignedWorkspace(selectedWorkspaceId)) {
+                query = query.is('workspace_id', null);
             }
 
             const { data, error } = await query;

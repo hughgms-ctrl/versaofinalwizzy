@@ -4,7 +4,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationDetail } from '@/components/conversations/ConversationDetail';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
-import { usePaginatedConversations, DbConversation } from '@/hooks/useConversations';
+import { usePaginatedConversations, applyConversationPatch, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { isWithinInterval, parseISO } from 'date-fns';
@@ -12,8 +12,9 @@ import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLe
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
-import { useTags, useAllContactTags } from '@/hooks/useTags';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchAllPages } from '@/lib/fetchAllPages';
+import { useTags, useContactTagIdsMap, tagIdsOfContact } from '@/hooks/useTags';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
@@ -44,6 +45,7 @@ const ConversationsPage = () => {
   const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
   const [activeChannel, setActiveChannel] = useState<'whatsapp' | 'instagram'>('whatsapp');
   const [selectedInstagramConversation, setSelectedInstagramConversation] = useState<InstagramConversationRow | null>(null);
+  const queryClient = useQueryClient();
   const { data: instagramAccounts = [], isLoading: instagramAccountsLoading } = useInstagramAccounts();
   const { data: instagramConversations = [], isLoading: instagramConversationsLoading } = useInstagramConversations();
   const hasConnectedInstagram = instagramAccounts.some((a) => a.status === 'connected');
@@ -73,8 +75,9 @@ const ConversationsPage = () => {
   const { data: myShares = [] } = useConversationShares();
   const { data: messageSearchResult } = useMessageSearch(searchQuery);
 
-  // Fetch contact tags for filtering (shared cache with ConversationList badges)
-  const { data: allContactTags = [] } = useAllContactTags();
+  // Indice contato -> tags (mesmo cache dos craches da lista), para nao varrer
+  // todos os vinculos da organizacao a cada conversa filtrada.
+  const contactTagIdsMap = useContactTagIdsMap();
 
   // Fetch pipeline positions to filter conversations by pipeline access
   const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
@@ -83,14 +86,31 @@ const ConversationsPage = () => {
   const { data: pipelinePositions = [] } = useQuery({
     queryKey: ['conversation-pipeline-positions-for-permissions'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('conversation_pipeline_positions')
-        .select('conversation_id, pipeline_id');
-      if (error) throw error;
-      return data || [];
+      // Sem paginacao isto vinha cortado em 1000 linhas COMO SUCESSO — e como a
+      // regra abaixo so barra a conversa que TEM card fora dos funis liberados,
+      // o corte silencioso liberava conversa que deveria estar escondida.
+      // (A tabela nao tem organization_id: o escopo vem da RLS.)
+      return fetchAllPages<{ conversation_id: string; pipeline_id: string }>((from, to) =>
+        supabase
+          .from('conversation_pipeline_positions')
+          .select('conversation_id, pipeline_id')
+          .order('id')
+          .range(from, to)
+      );
     },
     enabled: !!hasPipelineRestriction,
   });
+
+  // Indice conversa -> funis, pelo mesmo motivo do indice de tags.
+  const pipelineIdsByConversation = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const position of pipelinePositions) {
+      const current = map.get(position.conversation_id);
+      if (current) current.push(position.pipeline_id);
+      else map.set(position.conversation_id, [position.pipeline_id]);
+    }
+    return map;
+  }, [pipelinePositions]);
 
   // Filter conversations by search query, all filters, and service mode
   const filteredConversations = useMemo(() => {
@@ -109,7 +129,7 @@ const ConversationsPage = () => {
       // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
       if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
-        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const contactTagIds = tagIdsOfContact(contactTagIdsMap, conv.contact?.id);
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
 
         if (filterType === 'assigned' && !isAssigned) return false;
@@ -119,9 +139,9 @@ const ConversationsPage = () => {
 
       // === PIPELINE-BASED FILTER (for restricted users with specific pipeline access) ===
       if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
-        const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
+        const convPipelines = pipelineIdsByConversation.get(conv.id) ?? [];
         if (convPipelines.length > 0) {
-          const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
+          const isInAllowedPipeline = convPipelines.some(pipelineId => allowedPipelineIds.includes(pipelineId));
           if (!isInAllowedPipeline) return false;
         }
       }
@@ -166,7 +186,7 @@ const ConversationsPage = () => {
 
       // Tag filter
       if (filters.tagFilter !== 'all' && conv.contact?.id) {
-        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const contactTagIds = tagIdsOfContact(contactTagIdsMap, conv.contact?.id);
         if (!contactTagIds.includes(filters.tagFilter)) return false;
       }
 
@@ -191,7 +211,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares, messageSearchResult]);
+  }, [conversations, searchQuery, filters, contactTagIdsMap, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelineIdsByConversation, hasPipelineRestriction, myShares, messageSearchResult]);
 
   const filteredInstagramConversations = useMemo(() => {
     if (!searchQuery.trim()) return instagramConversations;
@@ -223,7 +243,7 @@ const ConversationsPage = () => {
       // Permission filter
       if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
-        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const contactTagIds = tagIdsOfContact(contactTagIdsMap, conv.contact?.id);
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
 
         if (filterType === 'assigned' && !isAssigned) return false;
@@ -233,9 +253,9 @@ const ConversationsPage = () => {
 
       // Pipeline permission filter
       if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
-        const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
+        const convPipelines = pipelineIdsByConversation.get(conv.id) ?? [];
         if (convPipelines.length > 0) {
-          const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
+          const isInAllowedPipeline = convPipelines.some(pipelineId => allowedPipelineIds.includes(pipelineId));
           if (!isInAllowedPipeline) return false;
         }
       }
@@ -258,7 +278,7 @@ const ConversationsPage = () => {
       }
       return acc;
     }, { ia: 0, ativo: 0, pendente: 0 });
-  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares]);
+  }, [conversations, selectedWorkspaceId, selectedWorkspace, contactTagIdsMap, userRole, userPermissions, user?.id, pipelineIdsByConversation, hasPipelineRestriction, myShares]);
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
@@ -268,19 +288,23 @@ const ConversationsPage = () => {
 
     // If there are unread messages, mark as read
     if (conversation.unread_count > 0) {
-      try {
-        await supabase
-          .from('conversations')
-          .update({ unread_count: 0 })
-          .eq('id', conversation.id);
+      // O cracha some na hora por patch no cache. Antes disso era `refetch()`:
+      // a lista inteira, com 3 joins, a cada conversa aberta — e o try/catch em
+      // volta nunca capturava nada, porque o cliente devolve o erro em vez de
+      // lanca-lo.
+      applyConversationPatch(queryClient, { id: conversation.id, unread_count: 0 });
 
-        // Refetch to update the list
-        refetch();
-      } catch (error) {
+      const { error } = await supabase
+        .from('conversations')
+        .update({ unread_count: 0 })
+        .eq('id', conversation.id);
+
+      if (error) {
         console.error('Error marking conversation as read:', error);
+        applyConversationPatch(queryClient, { id: conversation.id, unread_count: conversation.unread_count });
       }
     }
-  }, [refetch]);
+  }, [queryClient]);
 
   // Spy mode: view conversation without marking as read
   const handleSpyView = useCallback((conversation: DbConversation) => {
@@ -609,11 +633,11 @@ const ConversationsPage = () => {
                         setIsSpyMode(false);
                         // Now mark as read
                         if (selectedConversation.unread_count > 0) {
+                          applyConversationPatch(queryClient, { id: selectedConversation.id, unread_count: 0 });
                           supabase
                             .from('conversations')
                             .update({ unread_count: 0 })
-                            .eq('id', selectedConversation.id)
-                            .then(() => refetch());
+                            .eq('id', selectedConversation.id);
                         }
                       }}
                     >

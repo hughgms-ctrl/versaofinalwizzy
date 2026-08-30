@@ -267,32 +267,35 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingSentRef = useRef<number>(0);
 
-  // Sync messages when conversation changes (lazy-load)
+  // Troca de conversa: zera o estado de paginacao na hora.
   useEffect(() => {
-    if (conversation.id && hasSyncedRef.current !== conversation.id) {
-      hasSyncedRef.current = conversation.id;
-      setShowHistoryLimitMessage(false);
-      resetPagination();
-      syncMessages().then((result) => {
-        // If we got the multi-device limitation, show a message
-        if (result?.multiDeviceLimitation) {
-          setShowHistoryLimitMessage(true);
-        }
-      });
+    if (!conversation.id) return;
+    setShowHistoryLimitMessage(false);
+    resetPagination();
+  }, [conversation.id, resetPagination]);
 
-      // Auto-fetch contact profile picture from UAZAPI
-      if (contactId && session?.access_token) {
-        supabase.functions.invoke('zapi-contact-profile', {
-          body: { contactId, instanceId: (conversation as any).whatsapp_instance_id },
-          headers: { Authorization: `Bearer ${session.access_token}` }
-        }).then(({ data }) => {
-          if (data?.avatarUrl && data.avatarUrl !== conversation.contact?.avatar_url) {
-            queryClient.invalidateQueries({ queryKey: ['conversations'] });
-          }
-        }).catch(() => { /* silent */ });
+  // Sincronizacao com o provedor ao abrir a conversa.
+  //
+  // Antes, TODA abertura chamava `zapi-sync-messages` (que bate na Evolution) —
+  // e o perfil do contato era buscado junto, em duplicidade com o ContactAvatar,
+  // que ja faz isso sozinho, so quando falta avatar e com guarda de chamada em
+  // voo. Agora o sync so acontece quando nao ha nada no banco para mostrar: com
+  // historico ja gravado, abrir a conversa nao gera nenhuma chamada externa.
+  // Historico mais antigo continua sob demanda, no "carregar mensagens antigas".
+  useEffect(() => {
+    if (!conversation.id || loadingMessages) return;
+    if (hasSyncedRef.current === conversation.id) return;
+
+    hasSyncedRef.current = conversation.id;
+    if (messages && messages.length > 0) return;
+
+    syncMessages().then((result) => {
+      // If we got the multi-device limitation, show a message
+      if (result?.multiDeviceLimitation) {
+        setShowHistoryLimitMessage(true);
       }
-    }
-  }, [conversation.id, syncMessages, resetPagination, session?.access_token, queryClient, contactId]);
+    });
+  }, [conversation.id, loadingMessages, messages, syncMessages]);
 
   useEffect(() => {
     if (!contactId || !notificationRecipient) return;

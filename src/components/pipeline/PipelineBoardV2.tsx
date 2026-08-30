@@ -53,7 +53,7 @@ import { usePipelineRealtime } from '@/hooks/usePipelineRealtime';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
-import { useTags, useAllContactTags } from '@/hooks/useTags';
+import { useTags, useContactTagIdsMap, tagIdsOfContact } from '@/hooks/useTags';
 import { ContactCustomFieldsSection } from '@/components/contacts/ContactCustomFieldsSection';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
@@ -445,7 +445,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // passando do teto de linhas do PostgREST a resposta vinha cortada COMO
   // SUCESSO, e todo filtro montado em cima dela (tag, permissao por tag, chips
   // do card) escondia card sem dar erro.
-  const { data: allContactTags = [] } = useAllContactTags();
+  const contactTagIdsMap = useContactTagIdsMap();
 
   // Apply all filters to conversations (including search)
   const filteredConversations = useMemo(() => {
@@ -461,9 +461,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       if (isRestricted && filterType !== 'all') {
         const isAssigned = conv.assigned_to === user?.id;
         const allowedTags = userPermissions?.conversations_allowed_tags || [];
-        const contactTagIds = allContactTags
-          ?.filter(ct => ct.contact_id === conv.contact?.id)
-          .map(ct => ct.tag_id) || [];
+        const contactTagIds = tagIdsOfContact(contactTagIdsMap, conv.contact?.id);
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
 
         if (filterType === 'assigned' && !isAssigned) return false;
@@ -499,7 +497,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       // Tag filter
       if (filters.tagFilter !== 'all' && conv.contact?.id) {
-        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const contactTagIds = tagIdsOfContact(contactTagIdsMap, conv.contact?.id);
         if (!contactTagIds.includes(filters.tagFilter)) return false;
       }
 
@@ -524,7 +522,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       return true;
     });
-  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds, userRole, userPermissions, user?.id]);
+  }, [conversations, filters, searchQuery, contactTagIdsMap, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds, userRole, userPermissions, user?.id]);
 
   const filteredContactIds = useMemo(() => (
     Array.from(new Set(filteredConversations.map(conv => conv.contact?.id).filter(Boolean) as string[]))
@@ -1113,7 +1111,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const note = (conversation.contact?.metadata as { note?: string } | null)?.note;
     // Campos personalizados nao aparecem no card: poluiam demais. Ficam so no
     // detalhe do card (ContactCustomFieldsSection), que ja resolve tudo sozinho.
-    const contactTagIds = allContactTags?.filter(ct => ct.contact_id === contactId).map(ct => ct.tag_id) || [];
+    const contactTagIds = tagIdsOfContact(contactTagIdsMap, contactId);
     const contactTags = tags.filter(t => contactTagIds.includes(t.id));
     const visibleTags = contactTags.slice(0, 5);
     const fileCount = contactId ? contactFileCounts.get(contactId) || 0 : 0;

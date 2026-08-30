@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { useInstagramAccounts } from './useInstagramAccounts';
 
 export interface InstagramConversationContact {
   id: string;
@@ -47,8 +48,15 @@ export interface InstagramMessageRow {
 const CONVERSATIONS = 'instagram_conversations' as 'contacts';
 const MESSAGES = 'instagram_messages' as 'contacts';
 
+// Teto de linhas por consulta. Sem `.range()` o PostgREST corta em 1000 COMO
+// SUCESSO; aqui a lista e ordenada por recencia, entao o corte explicito e a
+// janela que a tela usa de verdade.
+const INSTAGRAM_CONVERSATIONS_LIMIT = 200;
+
 export function useInstagramConversations() {
   const { profile } = useAuth();
+  const { data: instagramAccounts = [] } = useInstagramAccounts();
+  const hasInstagram = instagramAccounts.length > 0;
 
   return useQuery({
     queryKey: ['instagram-conversations', profile?.organization_id],
@@ -57,12 +65,15 @@ export function useInstagramConversations() {
       const { data, error } = await (supabase.from(CONVERSATIONS) as any)
         .select('*, contact:instagram_contacts(id, igsid, username, name, profile_pic_url)')
         .eq('organization_id', profile.organization_id)
-        .order('last_message_at', { ascending: false, nullsFirst: false });
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .range(0, INSTAGRAM_CONVERSATIONS_LIMIT - 1);
       if (error) throw error;
       return (data || []) as InstagramConversationRow[];
     },
-    enabled: !!profile?.organization_id,
-    refetchInterval: 10_000,
+    // O polling de 10 s rodava em TODA org, tivesse ou nao Instagram ligado —
+    // 6 requisicoes por minuto por usuario para uma tabela quase sempre vazia.
+    enabled: !!profile?.organization_id && hasInstagram,
+    refetchInterval: hasInstagram ? 10_000 : false,
   });
 }
 

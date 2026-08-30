@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
 
@@ -283,14 +284,21 @@ export function useConversationPositions(pipelineId: string | null) {
     queryFn: async (): Promise<ConversationPipelinePosition[]> => {
       if (!pipelineId) return [];
 
-      const { data, error } = await (supabase as any)
-        .from('conversation_pipeline_positions')
-        .select('*')
-        .eq('pipeline_id', pipelineId)
-        .order('order', { ascending: true });
+      // Sem paginacao isto vinha cortado em 1000 linhas COMO SUCESSO: um funil
+      // grande simplesmente perdia cards no board, sem erro nenhum. O `.order`
+      // por `order` nao e deterministico entre paginas (ha empates), entao o
+      // desempate por `id` entra junto.
+      const rows = await fetchAllPages<ConversationPipelinePosition>((from, to) =>
+        (supabase as any)
+          .from('conversation_pipeline_positions')
+          .select('*')
+          .eq('pipeline_id', pipelineId)
+          .order('order', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to)
+      );
 
-      if (error) throw error;
-      return (data || []) as ConversationPipelinePosition[];
+      return rows;
     },
     enabled: !!session && !!pipelineId,
   });

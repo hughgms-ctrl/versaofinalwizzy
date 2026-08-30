@@ -1,5 +1,5 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
-import { useAllContactTags, useTags } from '@/hooks/useTags';
+import { useContactTagIdsMap, useTags, tagIdsOfContact } from '@/hooks/useTags';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
@@ -317,14 +317,14 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
 // request per row — with hundreds of conversations rendered at once, a
 // per-contact query here used to mean hundreds of network calls per load.
 function ContactTagsDisplay({ contactId }: { contactId: string }) {
-  const { data: allContactTags } = useAllContactTags();
+  const contactTagIds = useContactTagIdsMap();
   const { data: allTags } = useTags();
 
-  if (!allContactTags?.length || !allTags) return null;
+  if (!allTags) return null;
 
-  const matchedTagDetails = allContactTags
-    .filter((ct) => ct.contact_id === contactId)
-    .map((ct) => allTags.find((t: { id: string }) => t.id === ct.tag_id))
+  // Indice por contato em vez de varrer TODOS os vinculos da org por linha.
+  const matchedTagDetails = tagIdsOfContact(contactTagIds, contactId)
+    .map((tagId) => allTags.find((t: { id: string }) => t.id === tagId))
     .filter(Boolean);
   const tagDetails = matchedTagDetails.slice(0, 3);
 
