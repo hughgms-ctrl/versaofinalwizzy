@@ -113,7 +113,11 @@ hosting do Lovable por custo, sem perder o sync.
 > `docs/backfill-messages-organization-id.sql` concluído. Ou seja: o canal de notificação já filtra por
 > organização (o hook detecta a coluna sozinho no carregamento) e a cadência por número já age nos dois
 > caminhos de envio. Com isso a Semana 3 está fechada, código e banco.
-> **Próximo: Semana 4 (teste de carga e observabilidade).**
+> **Semana 4 em andamento:** script de carga em `scripts/load-test-webhook.mjs` e roteiro completo (preparo do
+> staging, execução, medição, critério de "passou", limpeza e alertas) em `docs/teste-de-carga.md`. Falta rodar
+> contra o staging e ligar os alertas. Confirmado no banco em 2026-08-30: as 8 migrations antigas do checklist
+> estão aplicadas e o cron `process-scheduled-messages` já é a versão fan-out (`DISTINCT ON (organization_id)`),
+> ou seja, o agendamento NÃO está em modo varredura.
 
 Também bloqueador, mas **operacional** (não é código): confirmar no banco vivo se as migrations
 `20260817120000` + `20260817230000` (dispatcher de agendamento) e `20260829120000` (`contact_number_owners`)
