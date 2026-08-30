@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getPlatformSetting } from '../_shared/platformSettings.ts';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
@@ -87,12 +88,7 @@ function normalizeBaseUrl(value?: string | null): string {
 }
 
 async function loadWhatsAppConnectionSettings(supabase: any) {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_connection_settings')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_connection_settings')) || {};
   return {
     uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
@@ -106,12 +102,7 @@ async function loadWhatsAppProviderStrategy(supabase: any): Promise<{
   evolutionEnabled: boolean;
   uazapiEnabled: boolean;
 }> {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_provider_strategy')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_provider_strategy')) || {};
   return {
     primaryProvider: value.primary_provider === 'uazapi' ? 'uazapi' : 'evolution',
     backupProvider: value.backup_provider === 'evolution' ? 'evolution' : 'uazapi',

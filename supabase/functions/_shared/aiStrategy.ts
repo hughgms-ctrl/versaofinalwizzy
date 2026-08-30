@@ -1,3 +1,4 @@
+import { getPlatformSetting } from './platformSettings.ts';
 export const OPENAI_CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 export const DEFAULT_AI_MODEL_STRATEGY = {
@@ -56,13 +57,7 @@ function resolvePlanAIMode(plan?: any) {
 }
 
 export async function getAIModelStrategy(supabase: any) {
-  const { data } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'ai_model_strategy')
-    .maybeSingle();
-
-  const saved = data?.value || {};
+  const saved = (await getPlatformSetting(supabase, 'ai_model_strategy')) || {};
   return {
     ...DEFAULT_AI_MODEL_STRATEGY,
     ...saved,
@@ -78,13 +73,8 @@ export async function getPlatformOpenAIKey(supabase: any) {
   const envKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
   if (envKey) return envKey;
 
-  const { data } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'ai_usage_connection_settings')
-    .maybeSingle();
-
-  return data?.value?.openai_api_key || '';
+  const value = await getPlatformSetting(supabase, 'ai_usage_connection_settings');
+  return value?.openai_api_key || '';
 }
 
 export async function getOrganizationIdFromRequest(supabase: any, req: Request, explicitOrgId?: string | null) {

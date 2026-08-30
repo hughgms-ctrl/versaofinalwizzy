@@ -91,6 +91,26 @@ hosting do Lovable por custo, sem perder o sync.
 > não-lido). **PENDENTE À MÃO: migration `20260830160000_messages_organization_id.sql`** (coluna + trigger) e,
 > depois, o backfill de `docs/backfill-messages-organization-id.sql`. Enquanto ela não for aplicada, o hook
 > detecta a ausência da coluna e mantém o comportamento antigo — notificação continua funcionando, sem o ganho.
+>
+> **Semana 3 — frontend FECHADO.** Além de B12/B11: `useFollowUpStatus` (org + paginação + patch + 1 canal),
+> sync do provedor ao abrir conversa só quando o banco está vazio (e a busca de perfil duplicada saiu),
+> `usePipelineRealtime` sem a assinatura paralela de `conversations`, índices `contato→tags` e `conversa→funis`
+> no lugar de varredura por linha, posições do funil paginadas, Instagram só com conta conectada,
+> `useWhatsAppStatus` como query compartilhada + realtime de `whatsapp_instances` (era 1 `setInterval` de 30 s
+> por montagem batendo no provedor), lista de conversas virtualizada, marcar como lida por patch, sentinela
+> `'unassigned'` tratada em campanhas e funil. Novos utilitários: `src/lib/conversationsCache.ts` (com teste),
+> `src/lib/sharedRealtime.ts`, `src/lib/fetchAllPages.ts`, `src/lib/workspaceId.ts`.
+>
+> **Semana 3 — backend FECHADO no código.** Telemetria do webhook (`whatsapp_connection_logs`) só em evento de
+> conexão e em `runBackground`; log do payload sem base64 e truncado; `contacts` só é atualizado quando algo
+> mudou de verdade; `platform_settings` com cache de 60 s por isolate (`_shared/platformSettings.ts`) usado no
+> envio, no orquestrador e na estratégia de IA; cadência por número (`try_acquire_send_slot`, migration
+> `20260830170000`) chamada nos dois caminhos de envio; timeouts em validação de mídia, `whatsappNumbers` e nos
+> POSTs ao provedor de `zapi-send-message`, que também pula a validação para URL do nosso próprio Storage.
+>
+> **PENDENTE (à mão / deploy):** migrations `20260830160000` e `20260830170000` no SQL Editor; backfill de
+> `docs/backfill-messages-organization-id.sql`; deploy de `zapi-webhook`, `zapi-send-message` e
+> `agent-orchestrator` (mudaram junto com `_shared`). **Próximo: Semana 4 (teste de carga e observabilidade).**
 
 Também bloqueador, mas **operacional** (não é código): confirmar no banco vivo se as migrations
 `20260817120000` + `20260817230000` (dispatcher de agendamento) e `20260829120000` (`contact_number_owners`)

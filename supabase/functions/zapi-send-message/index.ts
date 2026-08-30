@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getPlatformSetting } from '../_shared/platformSettings.ts';
+import { waitForSendSlot } from '../_shared/whatsappProvider.ts';
 import { AccessError, assertActiveOrganizationAccess } from '../_shared/access.ts';
 
 const corsHeaders = {
@@ -20,6 +22,11 @@ interface SendMessageRequest {
 
 type Provider = 'evolution' | 'uazapi';
 
+// Mesmos tetos do _shared/whatsappProvider.ts: sem eles, um provedor que aceita
+// a conexao e nao responde pendura o envio ate o limite do isolate.
+const SEND_TIMEOUT_MS = 30_000;
+const SEND_TIMEOUT_MEDIA_MS = 90_000;
+
 // Build UAZAPI URL with token as query parameter
 function uazapiUrl(baseUrl: string, path: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -31,12 +38,7 @@ function normalizeBaseUrl(value?: string | null): string {
 }
 
 async function loadConnectionSettings(supabase: any) {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_connection_settings')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_connection_settings')) || {};
   return {
     uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
@@ -50,12 +52,7 @@ async function loadProviderStrategy(supabase: any): Promise<{
   evolutionEnabled: boolean;
   uazapiEnabled: boolean;
 }> {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_provider_strategy')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_provider_strategy')) || {};
   return {
     primaryProvider: value.primary_provider === 'uazapi' ? 'uazapi' : 'evolution',
     backupProvider: value.backup_provider === 'evolution' ? 'evolution' : 'uazapi',
@@ -96,14 +93,30 @@ function fileNameFromUrl(mediaUrl?: string, fallback = 'arquivo') {
   }
 }
 
+// Teto de tempo da validacao de midia: e uma checagem de conveniencia no
+// caminho quente do envio; sem timeout, uma URL que aceita a conexao e nao
+// responde pendura o envio inteiro.
+const MEDIA_CHECK_TIMEOUT_MS = 5_000;
+
+/** A URL e do nosso proprio Storage? Entao nao ha o que validar. */
+function isOwnStorageUrl(mediaUrl: string): boolean {
+  const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '');
+  if (!supabaseUrl) return false;
+  return mediaUrl.startsWith(`${supabaseUrl}/storage/v1/`);
+}
+
 async function validatePublicMediaUrl(mediaUrl: string): Promise<{
   ok: boolean;
   status?: number;
   contentType?: string | null;
   error?: string;
 }> {
+  if (isOwnStorageUrl(mediaUrl)) {
+    return { ok: true, status: 200, contentType: null };
+  }
+
   try {
-    const headResponse = await fetch(mediaUrl, { method: 'HEAD' });
+    const headResponse = await fetch(mediaUrl, { method: 'HEAD', signal: AbortSignal.timeout(MEDIA_CHECK_TIMEOUT_MS) });
     if (headResponse.ok) {
       return {
         ok: true,
@@ -128,6 +141,7 @@ async function validatePublicMediaUrl(mediaUrl: string): Promise<{
     const getResponse = await fetch(mediaUrl, {
       method: 'GET',
       headers: { Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(MEDIA_CHECK_TIMEOUT_MS),
     });
     return {
       ok: getResponse.ok || getResponse.status === 206,
@@ -253,6 +267,7 @@ async function resolveEvolutionTarget(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: apiKey },
       body: JSON.stringify({ numbers: candidates.map((item) => `${item}@s.whatsapp.net`) }),
+      signal: AbortSignal.timeout(MEDIA_CHECK_TIMEOUT_MS),
     });
     if (!response.ok) {
       const error = await response.text().catch(() => '');
@@ -689,6 +704,10 @@ Deno.serve(async (req) => {
         mediaSendDiagnostics.request_body = sanitizeSendBody(body);
       }
 
+      // Cadencia do numero: chat, fluxo, notificacao e disparo saem pela mesma
+      // instancia sem saber um do outro (migration 20260830170000).
+      await waitForSendSlot(supabase, instance.id);
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -696,6 +715,7 @@ Deno.serve(async (req) => {
           apikey: evolutionApiKey,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(type === 'text' ? SEND_TIMEOUT_MS : SEND_TIMEOUT_MEDIA_MS),
       });
 
       let evolutionResult: any = null;
@@ -851,6 +871,8 @@ Deno.serve(async (req) => {
       mediaSendDiagnostics.request_body = sanitizeSendBody(body);
     }
 
+    await waitForSendSlot(supabase, instance.id);
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -858,6 +880,7 @@ Deno.serve(async (req) => {
         'token': instanceToken
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(type === 'text' ? SEND_TIMEOUT_MS : SEND_TIMEOUT_MEDIA_MS),
     });
 
     let uazapiResult: any = null;

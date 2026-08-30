@@ -1,3 +1,4 @@
+import { getPlatformSetting } from './platformSettings.ts';
 export type WhatsAppProvider = 'evolution' | 'uazapi';
 
 export type WhatsAppSendType = 'text' | 'image' | 'video' | 'audio' | 'document';
@@ -91,12 +92,7 @@ function extractMessageId(payload: any): string | null {
 }
 
 async function loadConnectionSettings(supabase: any) {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_connection_settings')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_connection_settings')) || {};
   return {
     uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
@@ -110,12 +106,7 @@ async function loadProviderStrategy(supabase: any): Promise<{
   evolutionEnabled: boolean;
   uazapiEnabled: boolean;
 }> {
-  const { data: row } = await supabase
-    .from('platform_settings')
-    .select('value')
-    .eq('key', 'whatsapp_provider_strategy')
-    .maybeSingle();
-  const value = row?.value || {};
+  const value = (await getPlatformSetting(supabase, 'whatsapp_provider_strategy')) || {};
   return {
     primaryProvider: value.primary_provider === 'uazapi' ? 'uazapi' : 'evolution',
     backupProvider: value.backup_provider === 'evolution' ? 'evolution' : 'uazapi',
@@ -235,6 +226,61 @@ export async function getEvolutionConfig(
   return { baseUrl: settings.evolutionBaseUrl, apiKey, instanceName };
 }
 
+// Cadencia por NUMERO (migration 20260830170000).
+//
+// Chat, fluxo, notificacao e disparo agendado saem todos pela mesma instancia e
+// nenhum sabe do outro. `try_acquire_send_slot` e o unico ponto onde eles se
+// enxergam: uma janela por instancia, no banco, atomica entre isolates.
+//
+// A regra e esperar, nunca descartar — se depois das tentativas ainda nao houver
+// vaga, a mensagem sai assim mesmo e fica o aviso no log. Mensagem perdida seria
+// pior que um pico de cadencia.
+const SEND_SLOT_RETRIES = 6;
+const SEND_SLOT_RETRY_DELAY_MS = 350;
+
+interface SendRateLimitConfig {
+  enabled: boolean;
+  maxPerWindow: number;
+  windowSeconds: number;
+}
+
+async function loadSendRateLimit(supabase: any): Promise<SendRateLimitConfig> {
+  const value = (await getPlatformSetting(supabase, 'whatsapp_send_rate_limit')) || {};
+  return {
+    enabled: value.enabled ?? true,
+    maxPerWindow: Number(value.max_per_window) > 0 ? Number(value.max_per_window) : 4,
+    windowSeconds: Number(value.window_seconds) > 0 ? Number(value.window_seconds) : 1,
+  };
+}
+
+export async function waitForSendSlot(supabase: any, instanceId: string | null | undefined) {
+  if (!instanceId) return;
+
+  const config = await loadSendRateLimit(supabase);
+  if (!config.enabled) return;
+
+  for (let attempt = 0; attempt < SEND_SLOT_RETRIES; attempt++) {
+    const { data, error } = await supabase.rpc('try_acquire_send_slot', {
+      _instance_id: instanceId,
+      _max_per_window: config.maxPerWindow,
+      _window_seconds: config.windowSeconds,
+    });
+
+    // Migration ainda nao aplicada (ou erro de banco): nao e motivo para segurar
+    // envio — o limite e uma protecao, nao um requisito.
+    if (error) {
+      console.warn('[SEND_RATE_LIMIT] try_acquire_send_slot indisponivel:', error.message);
+      return;
+    }
+
+    if (data === true) return;
+
+    await new Promise((resolve) => setTimeout(resolve, SEND_SLOT_RETRY_DELAY_MS));
+  }
+
+  console.warn(`[SEND_RATE_LIMIT] Instancia ${instanceId} segue sem vaga apos a espera; enviando mesmo assim.`);
+}
+
 export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRequest): Promise<WhatsAppSendResult> {
   const settings = await loadConnectionSettings(supabase);
   const instance = await resolveWhatsAppInstance(
@@ -309,6 +355,9 @@ export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRe
       }
     }
   }
+
+  // Cadencia do numero antes de falar com o provedor (ver waitForSendSlot).
+  await waitForSendSlot(supabase, instance.id);
 
   // Teto de tempo por envio. Sem isto, um provedor que aceita a conexão e nunca
   // responde pendura o caller indefinidamente — no disparo agendado isso queimava

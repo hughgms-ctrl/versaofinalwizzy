@@ -60,6 +60,21 @@ function stripHeavyStrings(value: unknown, depth = 0): unknown {
   return value;
 }
 
+// Log do payload sem mídia. Com webhookBase64=true um único áudio de 1 min vira
+// centenas de KB de base64 dentro do log — por evento, em 98 números. O
+// stripHeavyStrings já troca string gigante por um marcador; aqui só falta o
+// teto do texto final.
+const PAYLOAD_LOG_MAX_CHARS = 4000;
+
+function payloadForLog(payload: unknown): string {
+  try {
+    const text = JSON.stringify(stripHeavyStrings(payload));
+    return text.length > PAYLOAD_LOG_MAX_CHARS ? `${text.slice(0, PAYLOAD_LOG_MAX_CHARS)}…[truncado]` : text;
+  } catch {
+    return '[payload não serializável]';
+  }
+}
+
 function extractProviderMessageIdFromPayload(payload: any): string | null {
   const candidates = [
     payload?.data?.key?.id, payload?.key?.id, payload?.message?.msgid, payload?.message?.id,
@@ -1192,7 +1207,7 @@ Deno.serve(async (req) => {
     const payload = await req.json();
 
     // UAZAPI uses EventType, not type
-    console.log('UAZAPI Full Payload:', JSON.stringify(payload, null, 2));
+    console.log('UAZAPI payload:', payloadForLog(payload));
 
     const eventType = (payload.EventType || payload.eventType || payload.type || payload.event || '').toLowerCase();
     const instanceId = sanitizeInstanceIdentifier(payload.instanceId);
@@ -1202,22 +1217,39 @@ Deno.serve(async (req) => {
     console.log('=== UAZAPI WEBHOOK ===');
     console.log('EventType:', eventType, '| InstanceId:', instanceId, '| InstanceName:', instanceName);
 
-    if (lookupIdentifier) {
-      try {
-        const auditFilters = [];
-        if (instanceId) auditFilters.push(`zapi_instance_id.eq.${instanceId}`);
-        if (instanceName) auditFilters.push(`zapi_instance_id.eq.${instanceName}`);
-        if (instanceName) auditFilters.push(`evolution_instance_name.eq.${instanceName}`);
-        if (instanceId) auditFilters.push(`evolution_instance_id.eq.${instanceId}`);
+    // Auditoria de recebimento: era 1 SELECT + 1 INSERT SINCRONOS em TODO evento
+    // — presença ("digitando"), ack de entrega, leitura — antes de qualquer
+    // trabalho útil. Isso é o dobro de ida e volta ao banco por evento, e a
+    // maioria dos eventos nem é mensagem.
+    //
+    // O que a auditoria existe para responder ("o webhook está chegando neste
+    // número?") é evento de CONEXÃO; mensagem já tem rastro completo em
+    // inbound_events (B3). E mesmo o de conexão sai do caminho crítico.
+    const isConnectionAuditEvent =
+      eventType.includes('connect') ||
+      eventType.includes('disconnect') ||
+      eventType.includes('logout') ||
+      eventType.includes('pairsuccess') ||
+      eventType.includes('qr');
 
-        if (auditFilters.length > 0) {
-          const { data: auditInstance } = await supabase
-            .from('whatsapp_instances')
-            .select('id, organization_id, phone_number')
-            .or(auditFilters.join(','))
-            .maybeSingle();
+    if (lookupIdentifier && isConnectionAuditEvent) {
+      const auditFilters = [];
+      if (instanceId) auditFilters.push(`zapi_instance_id.eq.${instanceId}`);
+      if (instanceName) auditFilters.push(`zapi_instance_id.eq.${instanceName}`);
+      if (instanceName) auditFilters.push(`evolution_instance_name.eq.${instanceName}`);
+      if (instanceId) auditFilters.push(`evolution_instance_id.eq.${instanceId}`);
 
-          if (auditInstance) {
+      if (auditFilters.length > 0) {
+        runBackground((async () => {
+          try {
+            const { data: auditInstance } = await supabase
+              .from('whatsapp_instances')
+              .select('id, organization_id, phone_number')
+              .or(auditFilters.join(','))
+              .maybeSingle();
+
+            if (!auditInstance) return;
+
             await supabase.from('whatsapp_connection_logs').insert({
               organization_id: auditInstance.organization_id,
               instance_id: auditInstance.id,
@@ -1229,15 +1261,14 @@ Deno.serve(async (req) => {
                 instanceName,
                 payloadKeys: Object.keys(payload || {}),
                 dataKeys: payload?.data ? Object.keys(payload.data) : [],
-                messageKeys: payload?.data?.message ? Object.keys(payload.data.message) : [],
-                key: payload?.data?.key || null,
+                state: payload?.data?.state || payload?.state || payload?.status || null,
                 received_at: new Date().toISOString(),
               },
             });
+          } catch (auditError) {
+            console.error('[WEBHOOK_AUDIT] Failed to record webhook receipt:', auditError);
           }
-        }
-      } catch (auditError) {
-        console.error('[WEBHOOK_AUDIT] Failed to record webhook receipt:', auditError);
+        })());
       }
     }
 
@@ -1926,7 +1957,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
   if (!whatsappInstance) {
     console.error(`[WEBHOOK] Instance not found for ID: ${instanceId}, Name: ${instanceName}, Token: ${payloadToken ? 'present' : 'absent'}. EventType: ${eventType}`);
-    console.log(`[WEBHOOK] Full payload for debug:`, JSON.stringify(payload));
+    console.log(`[WEBHOOK] Payload for debug:`, payloadForLog(payload));
     return respond({ success: false, error: 'instance_not_found', instanceId, instanceName });
   }
 
@@ -3540,10 +3571,24 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       if (name && !existing.name) updateData.name = name;
       if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
       if (workspaceId && !existing.workspace_id) updateData.workspace_id = workspaceId;
+
+      // O metadata era reescrito SEMPRE, então toda mensagem recebida gravava
+      // uma linha de `contacts` (e acordava os triggers dela) mesmo sem nada
+      // novo. Só entra no UPDATE o que realmente mudou.
       const metadata = { ...(existing.metadata || {}) };
-      const aliases = uniquePhones([...(metadata.phone_aliases || []), phone, canonical, ...variants]);
-      updateData.metadata = { ...metadata, phone_aliases: aliases, canonical_phone: canonical };
-      if (lid) updateData.metadata.wa_lid = lid;
+      const previousAliases: string[] = Array.isArray(metadata.phone_aliases) ? metadata.phone_aliases : [];
+      const aliases = uniquePhones([...previousAliases, phone, canonical, ...variants]);
+      const aliasesChanged =
+        aliases.length !== previousAliases.length ||
+        aliases.some((alias: string, index: number) => alias !== previousAliases[index]);
+      const canonicalChanged = metadata.canonical_phone !== canonical;
+      const lidChanged = !!lid && metadata.wa_lid !== lid;
+
+      if (aliasesChanged || canonicalChanged || lidChanged) {
+        updateData.metadata = { ...metadata, phone_aliases: aliases, canonical_phone: canonical };
+        if (lid) updateData.metadata.wa_lid = lid;
+      }
+
       if (Object.keys(updateData).length > 0) {
         await supabase.from('contacts').update(updateData).eq('id', existing.id);
       }
