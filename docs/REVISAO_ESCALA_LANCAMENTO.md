@@ -108,9 +108,12 @@ hosting do Lovable por custo, sem perder o sync.
 > `20260830170000`) chamada nos dois caminhos de envio; timeouts em validação de mídia, `whatsappNumbers` e nos
 > POSTs ao provedor de `zapi-send-message`, que também pula a validação para URL do nosso próprio Storage.
 >
-> **PENDENTE (à mão / deploy):** migrations `20260830160000` e `20260830170000` no SQL Editor; backfill de
-> `docs/backfill-messages-organization-id.sql`; deploy de `zapi-webhook`, `zapi-send-message` e
-> `agent-orchestrator` (mudaram junto com `_shared`). **Próximo: Semana 4 (teste de carga e observabilidade).**
+> **APLICADO em 2026-08-30:** migrations `20260830160000` (`messages.organization_id` + trigger) e
+> `20260830170000` (`instance_send_slots` + `try_acquire_send_slot`) rodadas no SQL Editor, e o backfill de
+> `docs/backfill-messages-organization-id.sql` concluído. Ou seja: o canal de notificação já filtra por
+> organização (o hook detecta a coluna sozinho no carregamento) e a cadência por número já age nos dois
+> caminhos de envio. Com isso a Semana 3 está fechada, código e banco.
+> **Próximo: Semana 4 (teste de carga e observabilidade).**
 
 Também bloqueador, mas **operacional** (não é código): confirmar no banco vivo se as migrations
 `20260817120000` + `20260817230000` (dispatcher de agendamento) e `20260829120000` (`contact_number_owners`)
