@@ -113,9 +113,13 @@ hosting do Lovable por custo, sem perder o sync.
 > `docs/backfill-messages-organization-id.sql` concluído. Ou seja: o canal de notificação já filtra por
 > organização (o hook detecta a coluna sozinho no carregamento) e a cadência por número já age nos dois
 > caminhos de envio. Com isso a Semana 3 está fechada, código e banco.
-> **Semana 4 em andamento:** script de carga em `scripts/load-test-webhook.mjs` e roteiro completo (preparo do
-> staging, execução, medição, critério de "passou", limpeza e alertas) em `docs/teste-de-carga.md`. Falta rodar
-> contra o staging e ligar os alertas. Confirmado no banco em 2026-08-30: as 8 migrations antigas do checklist
+> **Semana 4 em andamento:** script de carga em `scripts/load-test-webhook.mjs` e roteiro em
+> `docs/teste-de-carga.md`. **Observabilidade FEITA no código:** `health-watchdog` (edge function, cron de 5 em
+> 5 min) lê `wz_health_snapshot()` (migration `20260830180000`) e manda para o Sentry cron parado, mensagem
+> presa ou perdida na fila de reprocesso, fluxo zumbi, campanha e agendamento travados, fila do pg_net
+> inflando — mais o 500 do `zapi-webhook`. Falta: aplicar a migration `20260830180000` à mão, criar a regra de
+> alerta no Sentry (filtro pela tag `check`) e rodar a carga. Não existe projeto de staging ainda: o caminho
+> para criar um está em `docs/criar-staging.md` (por dump do schema — as migrations não sobem do zero). Confirmado no banco em 2026-08-30: as 8 migrations antigas do checklist
 > estão aplicadas e o cron `process-scheduled-messages` já é a versão fan-out (`DISTINCT ON (organization_id)`),
 > ou seja, o agendamento NÃO está em modo varredura.
 

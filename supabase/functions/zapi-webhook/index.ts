@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
+import { captureToSentry } from '../_shared/sentry.ts';
 import { resumeFlow } from '../_shared/flowResume.ts';
 import { mergeConversationMetadata } from '../_shared/conversationMetadata.ts';
 
@@ -1464,6 +1465,17 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Webhook error:', error);
+    // 500 aqui e o pior caso: o provedor vai reenviar, mas se for bug o reenvio
+    // falha igual. Vale acordar alguem — e o unico jeito de ter taxa de erro da
+    // function em algum lugar que nao seja o log.
+    runBackground(captureToSentry({
+      message: 'zapi-webhook devolveu 500',
+      level: 'error',
+      tags: { check: 'webhook_500' },
+      fingerprint: ['zapi-webhook', 'erro_nao_tratado'],
+      extra: { erro: error instanceof Error ? error.message : String(error) },
+      serverName: 'zapi-webhook',
+    }));
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -196,14 +196,52 @@ As instâncias `carga-%` podem ficar para o próximo teste; se quiser tirar:
 
 ---
 
-## Parte 6 — alertas (o resto da Semana 4)
+## Parte 6 — alertas (já implementados)
 
-Depois do teste, deixar ligado o que avisa quando isso acontecer em produção:
+O que quebra em produção quase nunca é um erro na tela: é **silêncio**. Cron que parou não gera erro em lugar
+nenhum — simplesmente nada acontece, e o follow-up do lead nunca sai. Por isso a vigilância é ativa.
 
-- **Sentry / log drain**: alerta por taxa de erro de edge function (`zapi-webhook`, `flow-execute`,
-  `process-scheduled-messages`, `agent-orchestrator`).
-- **Cron parado**: alerta se `cron.job_run_details` não tiver execução `succeeded` de `process-flow-timeouts`
-  nos últimos 5 minutos — é o job que segura follow-up, atraso de fluxo e a rede anti-zumbi.
-- **Fila de reprocesso**: alerta se `inbound_events` tiver `pending` com mais de 10 minutos (mensagem que
-  entrou e não foi processada).
-- **`net.http_request_queue`** crescendo por mais de 15 minutos.
+**`health-watchdog`** (edge function) roda de 5 em 5 minutos, lê um retrato do banco pela RPC
+`wz_health_snapshot()` (migration `20260830180000`) e manda evento para o Sentry quando algo está fora do lugar:
+
+| tag `check` | dispara quando | nível |
+|---|---|---|
+| `cron_parado` / `cron_ausente` / `cron_desativado` | `process-flow-timeouts` ou `process-scheduled-messages` sem sucesso há 5 min; `reprocess-inbound-events` há 15 min; `auto-close-conversations` há 40 min | error |
+| `cron_falhando` | qualquer cron com 5+ falhas em 2 h | warning |
+| `inbound_falhado` | mensagem recebida que esgotou as tentativas — **mensagem perdida** | fatal |
+| `inbound_pendente` | evento parado há mais de 10 min na fila de reprocesso | error |
+| `campanha_parada` | item preso em `processing` (>15 min) ou pendente vencido | error |
+| `fluxo_zumbi` | execução `running` sem batimento há 15 min (conversa do lead fica muda) | error |
+| `agendamento_atrasado` | disparo vencido há 10 min sem sair, ou preso em `processing` | error |
+| `pg_net_inflando` | fila do `pg_net` acima de 1000 | warning |
+| `watchdog_cego` / `watchdog_quebrado` | o próprio vigia falhou (silêncio dele não pode ser lido como "tudo bem") | error |
+| `webhook_500` | `zapi-webhook` devolveu 500 (erro não tratado) | error |
+
+Cada verificação tem `fingerprint` fixo: no Sentry vira **uma issue por tipo de problema**, que volta a subir
+enquanto durar, em vez de uma issue nova a cada 5 minutos.
+
+### O que falta fazer no Sentry (interface)
+
+Uma regra de alerta cobre tudo, porque todo evento do backend vem com a tag `check`:
+
+1. **Alerts → Create Alert → Issues**
+2. Condição: *The issue is seen more than 1 time in 5 minutes* (ou "A new issue is created").
+3. Filtro: **`check` is set** (ou `server_name` equals `health-watchdog`).
+4. Ação: e-mail/Slack para quem está de plantão.
+
+Vale uma segunda regra separada só para o que é perda de dado, com notificação mais barulhenta:
+filtro **`check` equals `inbound_falhado`** — cada evento desse é uma mensagem de cliente que não entrou.
+
+### Conferir que está de pé
+
+```sql
+-- o retrato cru, sem depender da function
+SELECT jsonb_pretty(public.wz_health_snapshot());
+
+-- o cron do vigia
+SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'health-watchdog';
+```
+
+E, para forçar um evento de teste no Sentry, desative por um minuto um cron crítico
+(`UPDATE cron.job SET active = false WHERE jobname = 'process-flow-timeouts';`), espere a rodada do vigia,
+confirme o alerta e **reative**.

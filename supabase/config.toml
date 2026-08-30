@@ -320,3 +320,6 @@ verify_jwt = false
 # caller anônimo é limitado a 1 execução a cada 30min via platform_job_runs.
 [functions.sync-whatsapp-labels]
 verify_jwt = false
+
+[functions.health-watchdog]
+verify_jwt = false
