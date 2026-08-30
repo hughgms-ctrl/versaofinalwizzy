@@ -70,12 +70,15 @@ hosting do Lovable por custo, sem perder o sync.
 | 🔴 B11 | Canal de notificação assina `messages` **da plataforma inteira** (`direction=eq.inbound`, sem org) — Realtime avalia RLS por assinante por INSERT — e faz 1–3 SELECTs por evento em cada cliente | `useNewMessageNotifications.ts:174-227`; `usePipelineRealtime.ts:358-380` (`contact_tags` sem filtro) | Custo = msgs da plataforma × usuários online |
 | 🔴 B12 | Lista de conversas (`useInfiniteQuery`) é **invalidada inteira** a cada evento de `contact_presence` ("digitando") e de `conversations` | `useConversations.ts:264-308, 133-177` | ~40 refetches/min por usuário de uma query com 3 joins; UI trava, banco enfileira |
 
-> **Estado em 2026-08-30.** Semanas 1 e 2 aplicadas. B3 completo: além do 503, o payload cru de todo evento
-> de mensagem vai para `inbound_events` antes de processar e o que ficar `pending` é reenviado ao webhook por
-> `reprocess-inbound-events` (migration `20260830150000`, cron a agendar na seção 5). Áudio do contato não
-> segura mais o isolate: a mensagem é gravada, o webhook responde 200 e mídia → transcrição → roteamento
-> rodam em background. `idx_flow_executions_one_live` tem roteiro próprio em
-> `docs/fechar-execucoes-duplicadas.sql`, com o par corrigido para `(conversation_id, flow_id)`.
+> **Estado em 2026-08-30 — Semanas 1 e 2 FECHADAS (código deployado, SQL aplicado).** B3 completo: além do
+> 503, o payload cru de todo evento de mensagem vai para `inbound_events` antes de processar e o que ficar
+> `pending` é reenviado ao webhook por `reprocess-inbound-events` (migration `20260830150000` APLICADA, crons
+> `reprocess-inbound-events` e `purge-inbound-events` AGENDADOS). Áudio do contato não segura mais o isolate:
+> a mensagem é gravada, o webhook responde 200 e mídia → transcrição → roteamento rodam em background.
+> `idx_flow_executions_one_live` CRIADO pelo roteiro de `docs/fechar-execucoes-duplicadas.sql`, com o par
+> `(conversation_id, flow_id)` — a versão por conversa do texto abaixo quebraria sub-fluxo e campanha
+> interruptora. Pendente da Semana 1: backfill de `messages.organization_id` (entra junto com o B11).
+> **Próximo: Semana 3.**
 
 Também bloqueador, mas **operacional** (não é código): confirmar no banco vivo se as migrations
 `20260817120000` + `20260817230000` (dispatcher de agendamento) e `20260829120000` (`contact_number_owners`)
