@@ -1,7 +1,9 @@
-import { DbConversation, useProfiles } from '@/hooks/useConversations';
+import { useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { DbConversation } from '@/hooks/useConversations';
 import { useContactTagIdsMap, useTags, tagIdsOfContact } from '@/hooks/useTags';
-import { useWorkspaces } from '@/hooks/useWorkspaces';
-import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
+import { useWorkspaces, Workspace } from '@/hooks/useWorkspaces';
+import { useFollowUpStatus, FollowUpMap } from '@/hooks/useFollowUpStatus';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { highlightTerm } from '@/lib/highlightTerm';
@@ -22,291 +24,356 @@ interface ConversationListProps {
   onLoadMore?: () => void;
 }
 
+function formatPhoneNumber(phone: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 13) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+  }
+  if (cleaned.length === 12) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+  }
+  return phone;
+}
+
+function stripMarkdown(text: string | null) {
+  if (!text) return null;
+  return text.replace(/[*_~`]/g, '');
+}
+
+function formatCompactTimeAgo(date: string) {
+  const diffMs = Math.max(Date.now() - new Date(date).getTime(), 0);
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+  if (diffMinutes < 1) return 'agora';
+  if (diffMinutes < 60) return `${diffMinutes}min`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}d`;
+
+  const diffMonths = Math.floor(diffDays / 30);
+  if (diffMonths < 12) return `${diffMonths}m`;
+
+  return `${Math.floor(diffDays / 365)}a`;
+}
+
+function renderMessageStatus(lastMessage: NonNullable<DbConversation['last_message']>[number]) {
+  if (lastMessage.read_at) {
+    return <CheckCheck className="text-[#53bdeb] h-3 w-3 stroke-[3]" />;
+  }
+  if (lastMessage.delivered_at) {
+    return <CheckCheck className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
+  }
+  return <Check className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
+}
+
+interface ConversationRowProps {
+  conversation: DbConversation;
+  isSelected: boolean;
+  onSelect: (conversation: DbConversation) => void;
+  onSpyView?: (conversation: DbConversation) => void;
+  searchQuery?: string;
+  messageSnippets?: Map<string, string>;
+  workspaces: Workspace[];
+  followUpMap: FollowUpMap;
+}
+
+// Uma linha da lista. Virou componente para a lista poder ser virtualizada — e
+// para a presenca ("digitando...") re-renderizar so a linha do contato.
+function ConversationRow({
+  conversation,
+  isSelected,
+  onSelect,
+  onSpyView,
+  searchQuery,
+  messageSnippets,
+  workspaces,
+  followUpMap,
+}: ConversationRowProps) {
+  const hasName = !!conversation.contact?.name;
+  const contactName = conversation.contact?.name;
+  const contactPhone = conversation.contact?.phone || '';
+  const formattedPhone = formatPhoneNumber(contactPhone);
+  const hasUnread = conversation.unread_count > 0 && !isSelected;
+  const lastMessage = conversation.last_message?.[0];
+  const isAIActive = lastMessage?.is_from_bot;
+  const isInFollowUp = !!followUpMap[conversation.id];
+  const followUpStep = followUpMap[conversation.id]?.step;
+  const searchSnippet = searchQuery && searchQuery.trim().length >= 2 ? messageSnippets?.get(conversation.id) : undefined;
+  const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery || '') : null;
+  const messagePreview = (() => {
+    if (searchSnippet) return null; // handled separately
+    if (!lastMessage) return null;
+    if (lastMessage.type !== 'text') {
+      const typeLabels: Record<string, string> = {
+        image: '📷 Imagem',
+        audio: '🎵 Áudio',
+        video: '🎥 Vídeo',
+        document: '📄 Documento',
+        sticker: '😀 Sticker',
+        location: '📍 Localização',
+      };
+      return typeLabels[lastMessage.type] || '📎 Mídia';
+    }
+    return stripMarkdown(lastMessage.content);
+  })();
+
+  const contactWorkspaceId = (conversation as any).workspace_id || (conversation.contact as any)?.workspace_id;
+  const workspace = contactWorkspaceId ? workspaces.find(w => w.id === contactWorkspaceId) : null;
+
+  return (
+    <div
+      onClick={() => onSelect(conversation)}
+      className={cn(
+        "pipeline-card !cursor-pointer transition-all duration-200 relative overflow-hidden",
+        isSelected ? "bg-primary/10 border-primary/30 shadow-sm" : "hover:bg-accent/30",
+        hasUnread && "bg-primary/5"
+      )}
+    >
+      {/* Workspace Color Bar */}
+      {workspace && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r-full"
+          style={{ backgroundColor: workspace.color }}
+          title={workspace.name}
+        />
+      )}
+      {/* Selection Indicator Bar */}
+      {isSelected && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
+      )}
+      <div className="flex items-start gap-2">
+        {/* Avatar with indicator */}
+        <div className="relative flex-shrink-0">
+          <div className="relative">
+            <ContactAvatar
+              src={conversation.contact?.avatar_url}
+              name={contactName || null}
+              phone={contactPhone}
+              contactId={conversation.contact?.id}
+              instanceId={(conversation as any).whatsapp_instance_id}
+              size={40}
+              // Refreshing from the WhatsApp API happens once when a
+              // conversation is opened (ConversationDetail). Doing it
+              // per row here fired one external API call per contact
+              // on every list render — hundreds at a time.
+              autoRefetch={false}
+            />
+            <ContactPresenceDot
+              contactId={conversation.contact?.id}
+              className="absolute top-0 right-0 h-2.5 w-2.5 ring-2 ring-card"
+            />
+          </div>
+
+          <div className={cn(
+            "absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card",
+            isAIActive ? "bg-primary" : "bg-green-500"
+          )}>
+            {isAIActive ? (
+              <Bot className="h-2.5 w-2.5 text-primary-foreground" />
+            ) : (
+              <MessageCircle className="h-2.5 w-2.5 text-white" />
+            )}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          {(() => {
+            const metadata = conversation.contact?.metadata as { note?: string } | null;
+            const note = metadata?.note;
+
+            return (
+              <div className="flex flex-col gap-0.5">
+                {/* Row 1: Note (if exists) + Time/Unread/Actions */}
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  {note && (
+                    <span
+                      className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate min-w-0 flex-1"
+                      title={note}
+                    >
+                      {note}
+                    </span>
+                  )}
+
+                  <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                    {conversation.last_message_at && (
+                      <span className={cn(
+                        "text-[10px] whitespace-nowrap",
+                        hasUnread ? "text-primary font-medium" : "text-muted-foreground"
+                      )}>
+                        {formatCompactTimeAgo(conversation.last_message_at)}
+                      </span>
+                    )}
+                    {hasUnread && (
+                      <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
+                        {conversation.unread_count}
+                      </span>
+                    )}
+                    <ConversationCardActions
+                      conversation={conversation}
+                      variant="minimal"
+                      onSpyView={onSpyView ? () => onSpyView(conversation) : undefined}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 2: Name + Phone */}
+                {note ? (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p data-sensitive className={cn(
+                      "text-[11px] truncate flex-1 min-w-0",
+                      hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
+                    )}>
+                      {hasName ? contactName : formattedPhone}
+                    </p>
+                    {hasName && (
+                      <p data-sensitive className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                        • {formattedPhone}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <p data-sensitive className={cn(
+                      "text-sm truncate flex-1 min-w-0",
+                      hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
+                    )}>
+                      {hasName ? contactName : formattedPhone}
+                    </p>
+                  </div>
+                )}
+                {!note && hasName && (
+                  <p data-sensitive className="text-[10px] text-muted-foreground truncate">
+                    {formattedPhone}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Row 3: Last message preview */}
+          <div className="flex items-center gap-1 mt-1">
+            {lastMessage?.direction === 'outbound' && (
+              <span className="flex-shrink-0 flex items-center">
+                {renderMessageStatus(lastMessage)}
+              </span>
+            )}
+            {highlightedSnippet ? (
+              <p className={cn(
+                "text-[11px] truncate flex-1 min-w-0",
+                hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+              )}>
+                🔍 {highlightedSnippet}
+              </p>
+            ) : messagePreview ? (
+              <p className={cn(
+                "text-[11px] truncate flex-1 min-w-0",
+                hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+              )}>
+                {messagePreview}
+              </p>
+            ) : (() => {
+              const info = getDerivedStatusInfo(conversation);
+              return (
+                <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium", info.className)}>
+                  {info.label}
+                </span>
+              );
+            })()}
+          </div>
+
+          {/* Follow-up Badge */}
+          {isInFollowUp && (
+            <div className="flex items-center gap-1 mt-1">
+              <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
+                <RefreshCw className="h-2.5 w-2.5" />
+                Follow-up #{followUpStep}
+              </span>
+            </div>
+          )}
+
+          {/* Row 4: Contact Tags */}
+          {conversation.contact?.id && (
+            <ContactTagsDisplay contactId={conversation.contact.id} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ConversationList({ conversations, selectedId, onSelect, onSpyView, searchQuery, messageSnippets, hasMore, isLoadingMore, onLoadMore }: ConversationListProps) {
-  const { data: profiles } = useProfiles();
   const { data: workspaces = [] } = useWorkspaces();
   const { data: followUpMap = {} } = useFollowUpStatus();
-  const getInitials = (name: string | null, phone: string) => {
-    if (name) {
-      return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-    }
-    return phone.slice(-2);
-  };
+  const listParentRef = useRef<HTMLDivElement>(null);
 
-  const formatPhoneNumber = (phone: string) => {
-    const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length === 13) {
-      return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
-    }
-    if (cleaned.length === 12) {
-      return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
-    }
-    return phone;
-  };
-
-  const stripMarkdown = (text: string | null) => {
-    if (!text) return null;
-    return text.replace(/[*_~`]/g, '');
-  };
-
-  const formatCompactTimeAgo = (date: string) => {
-    const diffMs = Math.max(Date.now() - new Date(date).getTime(), 0);
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-
-    if (diffMinutes < 1) return 'agora';
-    if (diffMinutes < 60) return `${diffMinutes}min`;
-
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours}h`;
-
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 30) return `${diffDays}d`;
-
-    const diffMonths = Math.floor(diffDays / 30);
-    if (diffMonths < 12) return `${diffMonths}m`;
-
-    return `${Math.floor(diffDays / 365)}a`;
-  };
-
-  const renderMessageStatus = (lastMessage: NonNullable<DbConversation['last_message']>[number]) => {
-    if (lastMessage.read_at) {
-      return <CheckCheck className="text-[#53bdeb] h-3 w-3 stroke-[3]" />;
-    }
-    if (lastMessage.delivered_at) {
-      return <CheckCheck className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
-    }
-    return <Check className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
-  };
+  // A lista renderizava TODAS as conversas carregadas de uma vez — centenas de
+  // cards com avatar, craches e tags no DOM ao mesmo tempo. Virtualizada, so o
+  // que esta na tela (mais uma folga) existe de verdade. A linha extra no fim,
+  // quando ha mais para carregar, e o botao de "carregar mais".
+  const rowCount = conversations.length + (hasMore ? 1 : 0);
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   return (
     <div className="flex flex-col h-full">
       {/* List */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {conversations.map((conversation) => {
-          const isSelected = selectedId === conversation.id;
-          const hasName = !!conversation.contact?.name;
-          const contactName = conversation.contact?.name;
-          const contactPhone = conversation.contact?.phone || '';
-          const formattedPhone = formatPhoneNumber(contactPhone);
-          const hasUnread = conversation.unread_count > 0 && !isSelected;
-          const lastMessage = conversation.last_message?.[0];
-          const isAIActive = lastMessage?.is_from_bot;
-          const isInFollowUp = !!followUpMap[conversation.id];
-          const followUpStep = followUpMap[conversation.id]?.step;
-          const searchSnippet = searchQuery && searchQuery.trim().length >= 2 ? messageSnippets?.get(conversation.id) : undefined;
-          const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery || '') : null;
-          const messagePreview = (() => {
-            if (searchSnippet) return null; // handled separately
-            if (!lastMessage) return null;
-            if (lastMessage.type !== 'text') {
-              const typeLabels: Record<string, string> = {
-                image: '📷 Imagem',
-                audio: '🎵 Áudio',
-                video: '🎥 Vídeo',
-                document: '📄 Documento',
-                sticker: '😀 Sticker',
-                location: '📍 Localização',
-              };
-              return typeLabels[lastMessage.type] || '📎 Mídia';
-            }
-            return stripMarkdown(lastMessage.content);
-          })();
+      <div ref={listParentRef} className="flex-1 overflow-y-auto p-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+          {virtualItems.map((virtualRow) => {
+            const conversation = conversations[virtualRow.index];
 
-          const contactWorkspaceId = (conversation as any).workspace_id || (conversation.contact as any)?.workspace_id;
-          const workspace = contactWorkspaceId ? workspaces.find(w => w.id === contactWorkspaceId) : null;
-
-          return (
-            <div
-              key={conversation.id}
-              onClick={() => onSelect(conversation)}
-              className={cn(
-                "pipeline-card !cursor-pointer transition-all duration-200 relative overflow-hidden",
-                isSelected ? "bg-primary/10 border-primary/30 shadow-sm" : "hover:bg-accent/30",
-                hasUnread && "bg-primary/5"
-              )}
-            >
-              {/* Workspace Color Bar */}
-              {workspace && (
+            if (!conversation) {
+              return (
                 <div
-                  className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r-full"
-                  style={{ backgroundColor: workspace.color }}
-                  title={workspace.name}
+                  key="load-more"
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="absolute left-0 top-0 w-full"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <button
+                    type="button"
+                    onClick={onLoadMore}
+                    disabled={isLoadingMore}
+                    className="w-full text-xs text-muted-foreground hover:text-foreground py-2 disabled:opacity-50"
+                  >
+                    {isLoadingMore ? 'Carregando...' : 'Carregar mais conversas'}
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={conversation.id}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                className="absolute left-0 top-0 w-full pb-2"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                <ConversationRow
+                  conversation={conversation}
+                  isSelected={selectedId === conversation.id}
+                  onSelect={onSelect}
+                  onSpyView={onSpyView}
+                  searchQuery={searchQuery}
+                  messageSnippets={messageSnippets}
+                  workspaces={workspaces}
+                  followUpMap={followUpMap}
                 />
-              )}
-              {/* Selection Indicator Bar */}
-              {isSelected && (
-                <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
-              )}
-              <div className="flex items-start gap-2">
-                {/* Avatar with indicator */}
-                <div className="relative flex-shrink-0">
-                  <div className="relative">
-                    <ContactAvatar
-                      src={conversation.contact?.avatar_url}
-                      name={contactName || null}
-                      phone={contactPhone}
-                      contactId={conversation.contact?.id}
-                      instanceId={(conversation as any).whatsapp_instance_id}
-                      size={40}
-                      // Refreshing from the WhatsApp API happens once when a
-                      // conversation is opened (ConversationDetail). Doing it
-                      // per row here fired one external API call per contact
-                      // on every list render — hundreds at a time.
-                      autoRefetch={false}
-                    />
-                    <ContactPresenceDot
-                      contactId={conversation.contact?.id}
-                      className="absolute top-0 right-0 h-2.5 w-2.5 ring-2 ring-card"
-                    />
-                  </div>
-
-                  <div className={cn(
-                    "absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card",
-                    isAIActive ? "bg-primary" : "bg-green-500"
-                  )}>
-                    {isAIActive ? (
-                      <Bot className="h-2.5 w-2.5 text-primary-foreground" />
-                    ) : (
-                      <MessageCircle className="h-2.5 w-2.5 text-white" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  {(() => {
-                    const metadata = conversation.contact?.metadata as { note?: string } | null;
-                    const note = metadata?.note;
-
-                    return (
-                      <div className="flex flex-col gap-0.5">
-                        {/* Row 1: Note (if exists) + Time/Unread/Actions */}
-                        <div className="flex items-center justify-between gap-2 min-w-0">
-                          {note && (
-                            <span
-                              className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate min-w-0 flex-1"
-                              title={note}
-                            >
-                              {note}
-                            </span>
-                          )}
-
-                          <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-                            {conversation.last_message_at && (
-                              <span className={cn(
-                                "text-[10px] whitespace-nowrap",
-                                hasUnread ? "text-primary font-medium" : "text-muted-foreground"
-                              )}>
-                                {formatCompactTimeAgo(conversation.last_message_at)}
-                              </span>
-                            )}
-                            {hasUnread && (
-                              <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
-                                {conversation.unread_count}
-                              </span>
-                            )}
-                            <ConversationCardActions
-                              conversation={conversation}
-                              variant="minimal"
-                              onSpyView={onSpyView ? () => onSpyView(conversation) : undefined}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Row 2: Name + Phone */}
-                        {note ? (
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <p data-sensitive className={cn(
-                              "text-[11px] truncate flex-1 min-w-0",
-                              hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
-                            )}>
-                              {hasName ? contactName : formattedPhone}
-                            </p>
-                            {hasName && (
-                              <p data-sensitive className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
-                                • {formattedPhone}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between gap-2 min-w-0">
-                            <p data-sensitive className={cn(
-                              "text-sm truncate flex-1 min-w-0",
-                              hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-                            )}>
-                              {hasName ? contactName : formattedPhone}
-                            </p>
-                          </div>
-                        )}
-                        {!note && hasName && (
-                          <p data-sensitive className="text-[10px] text-muted-foreground truncate">
-                            {formattedPhone}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Row 3: Last message preview */}
-                  <div className="flex items-center gap-1 mt-1">
-                    {lastMessage?.direction === 'outbound' && (
-                      <span className="flex-shrink-0 flex items-center">
-                        {renderMessageStatus(lastMessage)}
-                      </span>
-                    )}
-                    {highlightedSnippet ? (
-                      <p className={cn(
-                        "text-[11px] truncate flex-1 min-w-0",
-                        hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
-                      )}>
-                        🔍 {highlightedSnippet}
-                      </p>
-                    ) : messagePreview ? (
-                      <p className={cn(
-                        "text-[11px] truncate flex-1 min-w-0",
-                        hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
-                      )}>
-                        {messagePreview}
-                      </p>
-                    ) : (() => {
-                      const info = getDerivedStatusInfo(conversation);
-                      return (
-                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-medium", info.className)}>
-                          {info.label}
-                        </span>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Follow-up Badge */}
-                  {isInFollowUp && (
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
-                        <RefreshCw className="h-2.5 w-2.5" />
-                        Follow-up #{followUpStep}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Row 4: Contact Tags */}
-                  {conversation.contact?.id && (
-                    <ContactTagsDisplay contactId={conversation.contact.id} />
-                  )}
-                </div>
               </div>
-            </div>
-          );
-        })}
-        {hasMore && (
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={isLoadingMore}
-            className="w-full text-xs text-muted-foreground hover:text-foreground py-2 disabled:opacity-50"
-          >
-            {isLoadingMore ? 'Carregando...' : 'Carregar mais conversas'}
-          </button>
-        )}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

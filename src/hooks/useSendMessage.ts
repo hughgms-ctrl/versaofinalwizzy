@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { DbMessage } from './useConversations';
+import { DbMessage, applyConversationPatch } from './useConversations';
 
 interface SendMessageParams {
   conversationId: string;
@@ -125,27 +125,24 @@ export function useSendMessage() {
         }
       );
 
-      queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
-        if (!Array.isArray(old)) return old;
-
-        return old.map((conversation) => {
-          if (conversation.id !== newMessage.conversationId) return conversation;
-
-          return {
-            ...conversation,
-            last_message_at: now,
-            last_message: [{
-              id: `temp-last-${Date.now()}`,
-              content: newMessage.content,
-              type: newMessage.type || 'text',
-              direction: 'outbound',
-              is_from_bot: false,
-              read_at: null,
-              delivered_at: null,
-            }],
-          };
-        });
-      });
+      // O otimista da LISTA so alcancava o cache em formato de array
+      // (['conversations'], usado pelo funil e por dialogos). A caixa de entrada
+      // usa ['conversations-paginated'], que e {pages}: la a conversa nao subia
+      // nem mostrava o preview ate o realtime chegar. applyConversationPatch
+      // cobre os dois formatos.
+      applyConversationPatch(queryClient, {
+        id: newMessage.conversationId,
+        last_message_at: now,
+        last_message: [{
+          id: `temp-last-${Date.now()}`,
+          content: newMessage.content ?? null,
+          type: newMessage.type || 'text',
+          direction: 'outbound',
+          is_from_bot: false,
+          read_at: null,
+          delivered_at: null,
+        }],
+      } as any);
 
       return { previousMessages, previousConversations };
     },
