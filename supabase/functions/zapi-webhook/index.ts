@@ -1548,11 +1548,25 @@ function respond(data: any, status = 200) {
  *
  * O filtro por status transforma o UPDATE num compare-and-set: a linha só sai
  * de waiting_input uma vez, então só um dos isolates recebe ela de volta.
+ *
+ * ARMADILHA (mesma do claimScheduled, ver 6f9f2bd4): o PostgREST reaplica o
+ * filtro na representação devolvida. Como o patch escreve o MESMO status que o
+ * filtro exige, a linha recém-gravada nunca casa e `data` volta vazio — com o
+ * UPDATE aplicado. Ler vazio como "perdi a corrida" completava a execução e
+ * nunca retomava o fluxo: todo botão/pergunta matava o fluxo em silêncio.
+ * Por isso, representação vazia NÃO decide: a releitura da linha decide, pelo
+ * carimbo completed_at que este isolate gravou. Carimbo diferente = de outro
+ * isolate, aí sim perdemos a corrida. (Se ainda assim dois isolates empatarem
+ * no mesmo milissegundo, a guarda de execução gêmea do flow-execute segura a
+ * retomada duplicada.)
  */
 async function claimWaitingExecution(supabase: any, executionId: string, patch: Record<string, unknown>): Promise<boolean> {
+  const stamp = typeof patch.completed_at === 'string' ? patch.completed_at : new Date().toISOString();
+  const stampedPatch: Record<string, unknown> = { ...patch, completed_at: stamp };
+
   const { data, error } = await supabase
     .from('flow_executions')
-    .update(patch)
+    .update(stampedPatch)
     .eq('id', executionId)
     .eq('status', 'waiting_input')
     .select('id');
@@ -1560,7 +1574,22 @@ async function claimWaitingExecution(supabase: any, executionId: string, patch: 
     console.error(`[WEBHOOK] Falha ao reivindicar execução ${executionId}:`, error);
     return false;
   }
-  const claimed = Array.isArray(data) && data.length > 0;
+  if (Array.isArray(data) && data.length > 0) return true;
+
+  const { data: row, error: readError } = await supabase
+    .from('flow_executions')
+    .select('status, completed_at')
+    .eq('id', executionId)
+    .maybeSingle();
+  if (readError || !row) {
+    console.error(`[WEBHOOK] Releitura da execução ${executionId} falhou após claim sem representação:`, readError);
+    return false;
+  }
+
+  const claimed =
+    row.status === stampedPatch.status &&
+    !!row.completed_at &&
+    new Date(row.completed_at).getTime() === new Date(stamp).getTime();
   if (!claimed) {
     console.log(`[WEBHOOK] Execução ${executionId} já foi retomada por outra mensagem — esta não retoma de novo`);
   }

@@ -521,7 +521,12 @@ Deno.serve(async (req) => {
       // alguma dessas linhas voltou a mexer entre o select e agora (execução
       // viva que acabou de terminar), ela não está mais em 'running' e o update
       // não a alcança -- em vez de sobrescrever um 'completed' legítimo.
-      const { data: closed, error: closeErr } = await supabase
+      // Sem .select() aqui: o PostgREST reaplica o filtro por status na
+      // representação devolvida, e como o patch tira a linha de 'running' o
+      // retorno viria sempre vazio (mesma armadilha do claimScheduled,
+      // 6f9f2bd4). A contagem real vem da releitura logo abaixo.
+      const zombieIds = zombieExecs.map((e: any) => e.id);
+      const { error: closeErr } = await supabase
         .from('flow_executions')
         .update({
           status: 'failed',
@@ -529,14 +534,20 @@ Deno.serve(async (req) => {
           timeout_at: null,
           error_message: `Execução presa em 'running' (sem heartbeat há ${HEARTBEAT_STUCK_MINUTES}min ou iniciada há mais de ${RUNNING_STUCK_MINUTES}min) — fechada pela rede de proteção do process-flow-timeouts.`,
         })
-        .in('id', zombieExecs.map((e: any) => e.id))
-        .eq('status', 'running')
-        .select('id');
+        .in('id', zombieIds)
+        .eq('status', 'running');
 
       if (closeErr) {
         console.error('[FLOW TIMEOUTS] Zombie sweep update error:', closeErr);
       } else {
-        zombiesClosed = closed?.length || 0;
+        // Todas estavam 'running' na seleção; as que agora estão 'failed' foram
+        // fechadas por esta varredura.
+        const { data: nowFailed } = await supabase
+          .from('flow_executions')
+          .select('id')
+          .in('id', zombieIds)
+          .eq('status', 'failed');
+        zombiesClosed = nowFailed?.length || 0;
         console.log(`[FLOW TIMEOUTS] Rede de proteção fechou ${zombiesClosed} execução(ões) zumbi.`);
       }
     }
