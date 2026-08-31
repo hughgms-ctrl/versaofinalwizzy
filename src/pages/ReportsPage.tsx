@@ -374,7 +374,7 @@ export default function ReportsPage() {
                               <div className="flex items-center gap-3">
                                 <Avatar className="h-9 w-9">
                                   <AvatarImage src={member.avatar_url || undefined} />
-                                  <AvatarFallback className="bg-gradient-to-br from-primary to-purple-500 text-primary-foreground font-semibold text-xs">
+                                  <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-xs">
                                     {getInitials(member.name)}
                                   </AvatarFallback>
                                 </Avatar>
@@ -434,7 +434,7 @@ export default function ReportsPage() {
                             </div>
                             <Avatar className="h-10 w-10">
                               <AvatarImage src={agent.avatarUrl || undefined} />
-                              <AvatarFallback className="bg-gradient-to-br from-primary to-purple-500 text-primary-foreground font-semibold text-sm">
+                              <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-sm">
                                 {getInitials(agent.name)}
                               </AvatarFallback>
                             </Avatar>

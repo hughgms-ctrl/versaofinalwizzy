@@ -39,7 +39,7 @@ const STATUS_MAP: Record<string, { label: string; icon: any; pill: string; dot: 
 };
 
 const METHOD_MAP: Record<string, { label: string; cls: string }> = {
-  internal: { label: 'OTP + Selfie',     cls: 'bg-gradient-to-r from-pink-500/15 to-rose-500/15 text-pink-300 border border-pink-500/30' },
+  internal: { label: 'OTP + Selfie',     cls: 'bg-primary/15 text-violet-300 border border-primary/30' },
   manual:   { label: 'Manual',           cls: 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/30' },
   govbr:    { label: 'Gov.br',           cls: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' },
   zapsign:  { label: 'Wizzy Sign',       cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30' },
@@ -569,12 +569,12 @@ export function SignaturesList() {
     <div className="space-y-5">
       {/* Hero header with gradient — landing-style */}
       <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-white/5 dark:bg-gradient-to-br dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-pink-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" />
 
         <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-medium text-pink-300/80">
+            <div className="flex items-center gap-2 text-xs font-medium text-violet-300/80">
               <ShieldCheck className="h-3.5 w-3.5" />
               ASSINATURA ELETRÔNICA AVANÇADA
             </div>
@@ -597,7 +597,7 @@ export function SignaturesList() {
             <Button
               onClick={() => setShowCreateDialog(true)}
               size="sm"
-              className="gap-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-rose-600"
+              className="gap-2 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
             >
               <FileSignature className="h-4 w-4" /> Nova assinatura
             </Button>
@@ -606,7 +606,7 @@ export function SignaturesList() {
 
         {/* Stat chips */}
         <div className="relative mt-5 grid grid-cols-3 gap-3">
-          <StatChip label="Total"      value={totalCount}    accent="from-violet-500/20 to-fuchsia-500/20" />
+          <StatChip label="Total"      value={totalCount}    accent="from-violet-500/20 to-violet-600/20" />
           <StatChip label="Pendentes"  value={pendingCount}  accent="from-amber-500/20 to-orange-500/20" />
           <StatChip label="Assinados"  value={signedCount}   accent="from-emerald-500/20 to-teal-500/20" />
         </div>
@@ -685,8 +685,8 @@ export function SignaturesList() {
                     onClick={() => setSelectedGroupKey(group.key)}
                     className="flex min-w-0 items-center gap-3 text-left flex-1"
                   >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500/20 to-violet-500/20 ring-1 ring-pink-500/20">
-                      <FileSignature className="h-5 w-5 text-pink-300" />
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-600/20 ring-1 ring-violet-500/20">
+                      <FileSignature className="h-5 w-5 text-violet-300" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">

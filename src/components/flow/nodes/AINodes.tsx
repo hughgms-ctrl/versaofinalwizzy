@@ -127,7 +127,7 @@ export function AIReturnNode({ data, selected }: NodeProps<AINode>) {
         className="!w-3 !h-3 !bg-fuchsia-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
       />
 
-      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 rounded-t-[10px]">
+      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-fuchsia-500 to-fuchsia-600 rounded-t-[10px]">
         <IterationCw className="h-4 w-4 text-white" />
         <span className="font-medium text-sm text-white">Retorno do Fluxo</span>
       </div>

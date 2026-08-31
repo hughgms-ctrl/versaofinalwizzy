@@ -192,7 +192,7 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
         {/* Avatar - Smaller */}
         <Avatar className="h-9 w-9 flex-shrink-0">
           <AvatarImage src={avatarSrc || undefined} />
-          <AvatarFallback className="bg-gradient-to-br from-primary/20 to-purple-500/20 text-primary text-xs font-semibold">
+          <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">
             {getInitials(contact.name, contact.phone)}
           </AvatarFallback>
         </Avatar>

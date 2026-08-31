@@ -48,9 +48,9 @@ export function AgentOrchestration() {
 
               {/* Agent Node */}
               <div className="flex-shrink-0">
-                <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-purple-500/5 border-2 border-primary/20 min-w-[180px]">
+                <div className="p-4 rounded-xl bg-primary/5 border-2 border-primary/20 min-w-[180px]">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center">
+                    <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
                       <Bot className="h-5 w-5 text-white" />
                     </div>
                     <div>
