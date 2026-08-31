@@ -65,7 +65,7 @@ export function AgentPerformance() {
                     </div>
                     <Avatar className="h-10 w-10">
                       <AvatarImage src={member.avatar_url || undefined} />
-                      <AvatarFallback className="bg-primary text-sm font-semibold text-primary-foreground">
+                      <AvatarFallback className="bg-gradient-to-br from-amber-500 to-rose-500 text-sm font-semibold text-white">
                         {getInitials(member.name)}
                       </AvatarFallback>
                     </Avatar>
@@ -79,7 +79,7 @@ export function AgentPerformance() {
                       </div>
                       <div className="mt-2 h-2 overflow-hidden rounded-full bg-background">
                         <div
-                          className="h-full rounded-full bg-gradient-primary"
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-rose-500"
                           style={{ width: `${percentage}%` }}
                         />
                       </div>

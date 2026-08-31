@@ -618,7 +618,7 @@ const CampaignsPage = () => {
                         <Button
                             onClick={handleCreateFolder}
                             disabled={!newFolderName.trim()}
-                            className="bg-gradient-primary hover:opacity-90 font-bold px-8 rounded-lg"
+                            className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
                         >
                             Criar
                         </Button>
@@ -667,7 +667,7 @@ const CampaignsPage = () => {
                         <Button
                             onClick={handleRenameFolder}
                             disabled={!newFolderName.trim()}
-                            className="bg-gradient-primary hover:opacity-90 font-bold px-8 rounded-lg"
+                            className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
                         >
                             Salvar
                         </Button>

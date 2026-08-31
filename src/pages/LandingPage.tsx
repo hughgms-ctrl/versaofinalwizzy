@@ -272,14 +272,14 @@ const Reveal = ({ children, className = "", delay = 0 }: { children: React.React
 
 const SectionHeader = ({ tag, title, subtitle }: { tag: string; title: React.ReactNode; subtitle?: string }) => (
   <div className="mx-auto mb-14 max-w-3xl text-center">
-    <p className="text-xs font-bold uppercase tracking-[0.24em] text-violet-300">{tag}</p>
+    <p className="text-xs font-bold uppercase tracking-[0.24em] text-pink-300">{tag}</p>
     <h2 className="mt-4 text-3xl font-black leading-tight tracking-tight text-white sm:text-5xl">{title}</h2>
     {subtitle && <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-400">{subtitle}</p>}
   </div>
 );
 
 const Em = ({ children }: { children: React.ReactNode }) => (
-  <span className="font-serif italic font-normal text-violet-300">{children}</span>
+  <span className="font-serif italic font-normal text-pink-300">{children}</span>
 );
 
 const formatCurrency = (value: number) => value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
@@ -445,7 +445,7 @@ export default function LandingPage() {
             >
               Entrar
             </button>
-            <a href="#planos" onClick={() => trackLandingButtonClick(primaryCta, "planos")} className="rounded-xl bg-gradient-primary px-5 py-3 text-sm font-bold text-white shadow-md transition hover:opacity-90">
+            <a href="#planos" onClick={() => trackLandingButtonClick(primaryCta, "planos")} className="rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-pink-500/25 transition hover:from-pink-600 hover:to-orange-600">
               {primaryCta}
             </a>
           </div>
@@ -455,13 +455,13 @@ export default function LandingPage() {
       <main>
         <section id="hero" className="relative overflow-hidden px-4 py-24 sm:px-6 sm:py-32 lg:px-8">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_center,black_25%,transparent_75%)]" />
-          <div className="pointer-events-none absolute -left-32 top-0 h-[560px] w-[760px] rounded-full bg-primary/12 blur-[120px]" />
-          <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[580px] rounded-full bg-violet-700/12 blur-[120px]" />
+          <div className="pointer-events-none absolute -left-32 top-0 h-[560px] w-[760px] rounded-full bg-pink-500/12 blur-[120px]" />
+          <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[580px] rounded-full bg-orange-500/12 blur-[120px]" />
 
           <div className="relative mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.02fr_0.98fr]">
             <Reveal>
-              <Badge className="mb-8 border border-primary/30 bg-primary/15 px-4 py-2 text-violet-200 hover:bg-primary/15">
-                <span className="mr-2 h-1.5 w-1.5 rounded-full bg-violet-300" />
+              <Badge className="mb-8 border border-pink-500/30 bg-pink-500/15 px-4 py-2 text-pink-100 hover:bg-pink-500/15">
+                <span className="mr-2 h-1.5 w-1.5 rounded-full bg-pink-300" />
                 IA Jurídica Plug'n'Play - para advogados reais
               </Badge>
               <h1 className="max-w-4xl text-5xl font-black leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-7xl">
@@ -471,7 +471,7 @@ export default function LandingPage() {
                 Você é advogado e não precisa se tornar um especialista em IA para automatizar seu escritório. Nós fazemos isso por você. <br/><br/> Chega de aprender sobre prompts, Claude Code, GPT, Make ou qualquer coisa técnica para usar a IA no seu escritório . O Wizzy entrega <strong className="font-semibold text-white">ferramentas de IA jurídicos prontos</strong> - você ativa, eles trabalham.
               </p>
               <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-                <a href="#planos" onClick={() => trackLandingButtonClick(heroCta, "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-primary px-8 py-4 text-base font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:opacity-90">
+                <a href="#planos" onClick={() => trackLandingButtonClick(heroCta, "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
                   {heroCta}
                 </a>
                 <a href="#agentes" onClick={() => trackLandingButtonClick("Ver como funciona", "agentes")} className="inline-flex h-13 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-8 py-4 text-base font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white">
@@ -493,7 +493,7 @@ export default function LandingPage() {
             </Reveal>
 
             <Reveal delay={120} className="relative">
-              <div className="absolute -inset-8 animate-aurora rounded-full bg-primary/10 blur-3xl" />
+              <div className="absolute -inset-8 animate-aurora rounded-full bg-pink-500/10 blur-3xl" />
               <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035] shadow-2xl shadow-black/40 backdrop-blur">
                 <div className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-5 py-4">
                   <span className="h-3 w-3 rounded-full bg-red-400" />
@@ -502,10 +502,10 @@ export default function LandingPage() {
                   <span className="ml-3 truncate text-xs font-medium text-slate-500">Wizzy CRM - Escritório Silva & Associados</span>
                 </div>
                 <div className="space-y-3 p-5">
-                  <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4">
+                  <div className="rounded-2xl border border-pink-500/30 bg-pink-500/10 p-4">
                     <div className="flex items-center justify-between gap-6">
                       <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-200">Leads atendidos hoje</p>
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-pink-200">Leads atendidos hoje</p>
                         <p className="mt-1 text-sm text-slate-400">Enquanto você dormia</p>
                       </div>
                       <p className="text-4xl font-black text-white">47</p>
@@ -518,7 +518,7 @@ export default function LandingPage() {
                       style={{ animationDelay: `${index * 0.35}s` }}
                     >
                       <div className="flex items-center gap-4">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-violet-200">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pink-500/15 text-pink-200">
                           {typeof Icon !== "string" && <Icon className="h-5 w-5" />}
                         </span>
                         <div className="min-w-0 flex-1">
@@ -552,7 +552,7 @@ export default function LandingPage() {
               <div className="mt-8 space-y-3">
                 {pains.map((pain) => (
                   <div key={pain} className="flex gap-3 rounded-2xl border border-white/10 bg-[#0b0b12] p-4 text-sm text-slate-300">
-                    <X className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                    <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
                     <span>{pain}</span>
                   </div>
                 ))}
@@ -560,7 +560,7 @@ export default function LandingPage() {
             </Reveal>
 
             <Reveal delay={120}>
-              <div className="rounded-3xl border border-primary/25 bg-gradient-to-b from-primary/10 to-white/[0.03] p-7 shadow-md">
+              <div className="rounded-3xl border border-pink-500/25 bg-gradient-to-b from-pink-500/10 to-white/[0.03] p-7 shadow-2xl shadow-pink-500/10">
                 <h3 className="text-4xl font-black leading-tight text-white">
                   Plugou. Ativou. <Em>Cresceu.</Em>
                 </h3>
@@ -590,15 +590,15 @@ export default function LandingPage() {
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {products.map((product, index) => (
                 <Reveal key={product.name} delay={index * 45} className={product.featured ? "xl:col-span-2" : ""}>
-                  <div className={`group h-full rounded-3xl border p-7 transition hover:-translate-y-1 ${product.featured ? "border-primary/30 bg-primary/[0.07] shadow-md" : "border-white/10 bg-white/[0.035] hover:border-primary/30 hover:bg-primary/[0.04]"}`}>
+                  <div className={`group h-full rounded-3xl border p-7 transition hover:-translate-y-1 ${product.featured ? "border-pink-500/30 bg-pink-500/[0.07] shadow-2xl shadow-pink-500/10" : "border-white/10 bg-white/[0.035] hover:border-pink-500/30 hover:bg-pink-500/[0.04]"}`}>
                     <div className="flex items-center gap-4">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-xs font-black text-violet-200">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500/25 to-orange-500/20 text-xs font-black text-pink-100">
                         {product.emoji}
                       </span>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-2xl font-black text-white">{product.name}</h3>
-                          {product.tag && <Badge className="border border-primary/30 bg-primary/15 text-violet-200">{product.tag}</Badge>}
+                          {product.tag && <Badge className="border border-pink-500/30 bg-pink-500/15 text-pink-100">{product.tag}</Badge>}
                         </div>
                       </div>
                     </div>
@@ -648,7 +648,7 @@ export default function LandingPage() {
                 {agents.map(([name, action, result], index) => (
                   <div key={name} className="grid gap-4 border-b border-white/10 px-6 py-5 last:border-b-0 md:grid-cols-[1.1fr_1.5fr_1.4fr] md:items-center">
                     <div className="flex items-center gap-3 font-bold text-white">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-violet-200">{index + 1}</span>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-pink-500/15 text-pink-200">{index + 1}</span>
                       {name}
                     </div>
                     <p className="text-sm leading-6 text-slate-400">{action}</p>
@@ -666,14 +666,14 @@ export default function LandingPage() {
             <div className="grid gap-5 lg:grid-cols-2">
               {testimonials.map(([name, role, quote], index) => (
                 <Reveal key={name} delay={index * 80} className={index === 0 ? "lg:col-span-2" : ""}>
-                  <div className={`h-full rounded-3xl border p-7 transition hover:border-primary/30 ${index === 0 ? "border-primary/25 bg-primary/[0.07]" : "border-white/10 bg-white/[0.035]"}`}>
+                  <div className={`h-full rounded-3xl border p-7 transition hover:border-pink-500/30 ${index === 0 ? "border-pink-500/25 bg-pink-500/[0.07]" : "border-white/10 bg-white/[0.035]"}`}>
                     <div className="mb-4 flex gap-1 text-amber-300">
                       {[0, 1, 2, 3, 4].map((star) => <Star key={star} className="h-4 w-4 fill-current" />)}
                     </div>
-                    <Quote className="mb-4 h-7 w-7 text-violet-300" />
+                    <Quote className="mb-4 h-7 w-7 text-pink-300" />
                     <p className="text-lg leading-8 text-slate-200">"{quote}"</p>
                     <div className="mt-7 flex items-center gap-3">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-primary text-sm font-bold text-white">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-orange-500 text-sm font-bold text-white">
                         {name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
                       </span>
                       <div>
@@ -691,9 +691,9 @@ export default function LandingPage() {
         <section id="planos" className="bg-[#f6f6f4] px-4 py-24 text-slate-900 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto mb-12 max-w-3xl text-center">
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">Planos e preços</p>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-pink-600">Planos e preços</p>
               <h2 className="mt-4 text-3xl font-black leading-tight tracking-tight sm:text-5xl">
-                Invista no crescimento. <span className="font-serif italic font-normal text-primary">Não em tecnologia.</span>
+                Invista no crescimento. <span className="font-serif italic font-normal text-pink-600">Não em tecnologia.</span>
               </h2>
               <p className="mt-5 text-base leading-7 text-slate-600">Planos pensados para o tamanho do seu escritório. Cancele quando quiser.</p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -701,7 +701,7 @@ export default function LandingPage() {
                 <button
                   type="button"
                   onClick={() => setAnnual((value) => !value)}
-                  className={`relative h-8 w-14 rounded-full transition ${annual ? "bg-primary" : "bg-slate-300"}`}
+                  className={`relative h-8 w-14 rounded-full transition ${annual ? "bg-pink-500" : "bg-slate-300"}`}
                   aria-label="Alternar cobrança anual"
                 >
                   <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${annual ? "left-7" : "left-1"}`} />
@@ -732,8 +732,8 @@ export default function LandingPage() {
 
                 return (
                   <Reveal key={plan.id || plan.slug}>
-                    <div className={`relative flex h-full flex-col rounded-3xl border p-7 shadow-sm transition hover:-translate-y-1 ${isPopular ? "border-primary bg-white shadow-md" : "border-slate-200 bg-white"}`}>
-                      {isPopular && <Badge className="absolute left-1/2 top-4 -translate-x-1/2 border-0 bg-gradient-primary text-white">Mais escolhido</Badge>}
+                    <div className={`relative flex h-full flex-col rounded-3xl border p-7 shadow-sm transition hover:-translate-y-1 ${isPopular ? "border-pink-400 bg-white shadow-xl shadow-pink-500/10" : "border-slate-200 bg-white"}`}>
+                      {isPopular && <Badge className="absolute left-1/2 top-4 -translate-x-1/2 border-0 bg-gradient-to-r from-pink-500 to-orange-500 text-white">Mais escolhido</Badge>}
                       <div className={isPopular ? "pt-8" : ""}>
                         <p className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500">{plan.name}</p>
                         <div className="mt-5 flex items-baseline gap-1">
@@ -764,7 +764,7 @@ export default function LandingPage() {
                         ))}
                       </ul>
 
-                      <Button className={`mt-5 h-12 w-full ${isPopular ? "border-0 bg-gradient-primary text-white hover:opacity-90" : "bg-slate-900 text-white hover:bg-slate-800"}`} onClick={() => goToAuth(plan.slug)}>
+                      <Button className={`mt-5 h-12 w-full ${isPopular ? "border-0 bg-gradient-to-r from-pink-500 to-orange-500 text-white hover:from-pink-600 hover:to-orange-600" : "bg-slate-900 text-white hover:bg-slate-800"}`} onClick={() => goToAuth(plan.slug)}>
                         {cta}
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -790,7 +790,7 @@ export default function LandingPage() {
                   <button
                     type="button"
                     onClick={() => setOpenFaq((current) => (current === index ? -1 : index))}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:border-primary/30"
+                    className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:border-pink-500/30"
                   >
                     <div className="flex items-center justify-between gap-4">
                       <h3 className="font-bold text-white">{question}</h3>
@@ -805,7 +805,7 @@ export default function LandingPage() {
         </section>
 
         <section className="relative overflow-hidden px-4 py-28 sm:px-6 lg:px-8">
-          <div className="absolute inset-0 bg-[linear-gradient(120deg,#5727e7,#6d3ef0,#4318c9)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(120deg,#db2777,#f97316,#ec4899,#fb923c)]" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent,rgba(0,0,0,0.45))]" />
           <div className="relative mx-auto max-w-5xl text-center">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/80">Pronto para começar?</p>

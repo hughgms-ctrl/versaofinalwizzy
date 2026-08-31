@@ -23,7 +23,7 @@ export function AgentCard({ agent, onToggle, onEdit }: AgentCardProps) {
         <div className={cn(
           "absolute inset-0",
           isAI 
-            ? "bg-gradient-primary" 
+            ? "bg-gradient-to-br from-primary via-purple-500 to-indigo-600" 
             : "bg-gradient-to-br from-green-500 via-emerald-500 to-teal-500"
         )} />
       </div>
@@ -36,7 +36,7 @@ export function AgentCard({ agent, onToggle, onEdit }: AgentCardProps) {
               <div className={cn(
                 "h-14 w-14 rounded-xl flex items-center justify-center shadow-lg",
                 isAI 
-                  ? "bg-primary" 
+                  ? "bg-gradient-to-br from-primary to-purple-500" 
                   : "bg-gradient-to-br from-green-500 to-emerald-500"
               )}>
                 {isAI ? (

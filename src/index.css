@@ -4,65 +4,65 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Wizzy Design System - "violet pulse": violeta único acento sobre canvas quase branco */
+/* AI-CX Manager Design System - Modern SaaS Helpdesk */
 
 
 @layer base {
   :root {
-    /* Background & Surface - canvas cloud (#f9fafb) que levanta os cards brancos */
-    --background: 210 20% 98%;
-    --foreground: 224 71% 4%;
+    /* Background & Surface - Layer 1 (neutral grafite-claro, sem viés azul) */
+    --background: 0 0% 94%;
+    --foreground: 240 10% 10%;
 
-    /* Cards & Elevated Surfaces - branco puro (#ffffff) */
+    /* Cards & Elevated Surfaces - Layer 2 (branco puro, contrasta com bg) */
     --card: 0 0% 100%;
-    --card-foreground: 224 71% 4%;
+    --card-foreground: 240 10% 10%;
 
     /* Popover & Dropdowns */
     --popover: 0 0% 100%;
-    --popover-foreground: 224 71% 4%;
+    --popover-foreground: 240 10% 10%;
 
-    /* Primary - violeta (#5727e7), o único acento cromático da marca */
-    --primary: 255 80% 53%;
+    /* Primary - mantém identidade da marca (magenta, igual ao dark) */
+    --primary: 340 82% 55%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - cinza neutro claro */
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 224 71% 4%;
+    /* Secondary - cinza neutro mais visível */
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 240 10% 10%;
 
-    /* Muted - áreas/texto sutis (#f3f4f6 / #6b7280) */
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
+    /* Muted - áreas/texto sutis (cinza neutro) */
+    --muted: 0 0% 96%;
+    --muted-foreground: 240 5% 45%;
 
-    /* Accent - tinted highlight violeta (#f2f2ff) para hover e estado ativo */
-    --accent: 244 100% 97%;
-    --accent-foreground: 255 80% 48%;
+    /* Accent - cinza claro neutro (hover states sem viés azul) */
+    --accent: 0 0% 95%;
+    --accent-foreground: 340 82% 45%;
 
     /* Destructive - Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders hairline (#e5e7eb) & Inputs (#d1d5db) */
-    --border: 220 13% 91%;
-    --input: 216 12% 84%;
-    --ring: 255 80% 53%;
+    /* Borders & Inputs - cinza neutro perceptível */
+    --border: 0 0% 86%;
+    --input: 0 0% 88%;
+    --ring: 340 82% 55%;
 
-    /* Radius - cards 16px (lg), botões/inputs 12px (md), badges 8px (sm) */
-    --radius: 1rem;
+    /* Radius */
+    --radius: 0.75rem;
 
-    /* Sidebar - superfície branca com hairline; ativo = tinted violeta + texto violeta */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 215 14% 34%;
-    --sidebar-primary: 255 80% 53%;
+    /* Sidebar - azul-marinho escuro fixo, igual em claro e escuro (não varia por tema) */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 88%;
+    --sidebar-primary: 340 82% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 244 100% 97%;
-    --sidebar-accent-foreground: 255 80% 48%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 255 80% 53%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 340 82% 72%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-ring: 340 82% 58%;
 
     /* Status Colors */
     --status-open: 142 71% 45%;
     --status-pending: 38 92% 50%;
-    --status-closed: 220 9% 46%;
+    --status-closed: 240 5% 45%;
     --status-urgent: 0 84% 60%;
 
     /* Task status colors - Monday-style (Wizzy Flow) */
@@ -73,88 +73,89 @@
     --status-completed: 152 69% 53%;
     --status-completed-foreground: 0 0% 100%;
 
-    /* AI Agent Colors - alinhado à identidade violeta */
-    --agent-ai: 255 80% 53%;
+    /* AI Agent Colors - alinhado à identidade magenta */
+    --agent-ai: 340 82% 55%;
     --agent-human: 142 71% 45%;
 
-    /* Gradient Tokens - monocromáticos violeta (sem segunda cor cromática) */
-    --gradient-primary: linear-gradient(135deg, hsl(255 80% 56%) 0%, hsl(255 82% 47%) 100%);
+    /* Gradient Tokens - mesmo padrão magenta/coral do dark */
+    --gradient-primary: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(166 72% 44%) 100%);
-    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 20% 99%) 100%);
-    --gradient-bg: linear-gradient(180deg, hsl(210 20% 98%) 0%, hsl(210 20% 98%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(0 0% 98%) 100%);
+    --gradient-bg: linear-gradient(180deg, hsl(0 0% 94%) 0%, hsl(0 0% 96%) 100%);
 
-    /* Shadows - sempre 6% de preto, nunca coloridas */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06);
-    --shadow-md: 0 4px 16px 0 rgb(0 0 0 / 0.06);
-    --shadow-lg: 0 4px 28px 0 rgb(0 0 0 / 0.06);
-    --shadow-card: 0 4px 16px 0 rgb(0 0 0 / 0.06);
-    --shadow-glow: 0 4px 28px 0 rgb(0 0 0 / 0.06);
+    /* Shadows - presença neutra (cinza puro, sem tinta azul) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 1px 0 rgb(0 0 0 / 0.04);
+    --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 12px 20px -4px rgb(0 0 0 / 0.1), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+    --shadow-card: 0 2px 6px -1px rgb(0 0 0 / 0.06), 0 8px 24px -8px rgb(0 0 0 / 0.08);
+    --shadow-glow: 0 0 20px -5px hsl(340 82% 55% / 0.3);
   }
 
   .dark {
-    /* Dark theme - tradução do mesmo sistema: violeta único acento sobre grafite profundo */
-    --background: 240 10% 6%;
-    --foreground: 240 10% 94%;
+    /* Refined dark theme - elegant deep slate-violet (Linear/Vercel inspired) */
+    /* Background levemente azul-violeta profundo, não preto puro */
+    --background: 240 12% 7%;
+    --foreground: 230 20% 94%;
 
     /* Card mais elevado, leve sopro de luz */
-    --card: 240 8% 9%;
-    --card-foreground: 240 10% 94%;
+    --card: 240 14% 10%;
+    --card-foreground: 230 20% 94%;
 
-    --popover: 240 8% 10%;
-    --popover-foreground: 240 10% 94%;
+    --popover: 240 14% 11%;
+    --popover-foreground: 230 20% 94%;
 
-    /* Primary - violeta claro para contraste sobre dark */
-    --primary: 255 80% 62%;
+    /* Primary - Magenta/Pink (mantém identidade) */
+    --primary: 340 82% 58%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - superfície intermediária neutra */
-    --secondary: 240 8% 14%;
-    --secondary-foreground: 240 10% 90%;
+    /* Secondary - superfície intermediária com leve toque violeta */
+    --secondary: 240 12% 15%;
+    --secondary-foreground: 230 20% 90%;
 
     /* Muted - áreas/textos sutis */
-    --muted: 240 8% 13%;
-    --muted-foreground: 240 6% 63%;
+    --muted: 240 10% 14%;
+    --muted-foreground: 230 10% 60%;
 
-    /* Accent - violeta profundo sutil (hover e estado ativo) */
-    --accent: 255 45% 18%;
-    --accent-foreground: 255 90% 80%;
+    /* Accent - magenta sutil (hover states alinhados à marca) */
+    --accent: 340 40% 16%;
+    --accent-foreground: 340 82% 75%;
 
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Bordas hairline escuras — visíveis mas discretas */
-    --border: 240 8% 16%;
-    --input: 240 8% 18%;
-    --ring: 255 80% 62%;
+    /* Bordas suaves com leve viés violeta — visíveis mas elegantes */
+    --border: 240 12% 18%;
+    --input: 240 12% 16%;
+    --ring: 340 82% 58%;
 
-    /* Sidebar - mesma família de superfície dos cards no dark */
-    --sidebar-background: 240 8% 8%;
-    --sidebar-foreground: 240 8% 82%;
-    --sidebar-primary: 255 80% 65%;
+    /* Sidebar - azul-marinho escuro fixo, igual em claro e escuro (não varia por tema) */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 88%;
+    --sidebar-primary: 340 82% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 255 45% 18%;
-    --sidebar-accent-foreground: 255 90% 80%;
-    --sidebar-border: 240 8% 15%;
-    --sidebar-ring: 255 80% 62%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 340 82% 72%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-ring: 340 82% 58%;
 
-    /* Dark mode gradients - monocromáticos violeta */
-    --gradient-primary: linear-gradient(135deg, hsl(255 80% 62%) 0%, hsl(255 75% 52%) 100%);
+    /* Dark mode gradients - magenta to coral (mantém identidade) */
+    --gradient-primary: linear-gradient(135deg, hsl(340 82% 58%) 0%, hsl(20 90% 62%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(152 85% 45%) 0%, hsl(166 72% 44%) 100%);
-    --gradient-bg: linear-gradient(180deg, hsl(240 10% 6%) 0%, hsl(240 10% 6%) 100%);
+    --gradient-bg: linear-gradient(180deg, hsl(240 12% 7%) 0%, hsl(250 14% 8%) 100%);
 
-    /* Sombras neutras com profundidade real (sem glow colorido) */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-    --shadow-md: 0 4px 16px 0 rgb(0 0 0 / 0.45);
-    --shadow-lg: 0 4px 28px 0 rgb(0 0 0 / 0.5);
-    --shadow-card: 0 4px 16px 0 rgb(0 0 0 / 0.45);
-    --shadow-glow: 0 4px 28px 0 rgb(0 0 0 / 0.5);
+    /* Sombras com profundidade real (escuro + leve glow magenta) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 1px 1px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px hsl(340 82% 58% / 0.08);
+    --shadow-lg: 0 12px 20px -4px rgb(0 0 0 / 0.6), 0 4px 8px -4px hsl(340 82% 58% / 0.1);
+    --shadow-card: 0 2px 6px -1px rgb(0 0 0 / 0.4), 0 8px 24px -8px hsl(340 82% 58% / 0.12);
+    --shadow-glow: 0 0 24px -5px hsl(340 82% 58% / 0.4);
 
     /* Status colors adjusted */
     --status-open: 152 85% 50%;
     --status-pending: 38 92% 55%;
-    --status-closed: 240 6% 63%;
+    --status-closed: 230 10% 60%;
     --status-urgent: 0 84% 62%;
-    --agent-ai: 255 80% 62%;
+    --agent-ai: 340 82% 58%;
     --agent-human: 152 85% 50%;
 
     /* Task status colors - Monday-style (Wizzy Flow) */
@@ -367,10 +368,10 @@
     border: 1px solid hsl(var(--border) / 0.3);
   }
 
-  /* Gradient Icon Box - contêineres de ícone arredondados (violeta monocromático) */
+  /* Gradient Icon Box - DGFlow style rounded icon containers */
   .gradient-icon-box {
-    @apply flex items-center justify-center rounded-xl shadow-md;
-    background: var(--gradient-primary);
+    @apply flex items-center justify-center rounded-xl shadow-lg;
+    background: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
   }
 
   /* Gradient Border Card - subtle gradient border on hover */
@@ -381,7 +382,7 @@
   .gradient-border-card::before {
     content: '';
     @apply absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300;
-    background: linear-gradient(135deg, hsl(var(--primary) / 0.10) 0%, hsl(var(--primary) / 0.04) 100%);
+    background: linear-gradient(135deg, hsl(340 82% 55% / 0.15) 0%, hsl(20 90% 60% / 0.1) 100%);
     pointer-events: none;
   }
 
@@ -390,13 +391,13 @@
   }
 
   .gradient-border-card:hover {
-    border-color: hsl(var(--primary) / 0.3);
-    box-shadow: var(--shadow-md);
+    border-color: hsl(340 82% 55% / 0.3);
+    box-shadow: 0 0 30px -10px hsl(340 82% 55% / 0.2);
   }
 
-  /* Animated Gradient Background - violeta monocromático */
+  /* Animated Gradient Background - DGFlow magenta theme */
   .animated-gradient {
-    background: linear-gradient(-45deg, hsl(255 80% 53%), hsl(255 70% 60%), hsl(255 82% 45%), hsl(250 75% 55%));
+    background: linear-gradient(-45deg, hsl(340 82% 55%), hsl(20 90% 60%), hsl(340 70% 50%), hsl(0 85% 60%));
     background-size: 400% 400%;
     animation: gradient 15s ease infinite;
   }
@@ -447,7 +448,7 @@
 @layer utilities {
   .text-gradient {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(255 80% 56%) 0%, hsl(255 82% 45%) 100%);
+    background-image: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
   }
 
   .shadow-glow {
@@ -455,15 +456,15 @@
   }
 
   .bg-gradient-primary {
-    background: var(--gradient-primary);
+    background: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
   }
 
   .bg-gradient-primary-subtle {
-    background: linear-gradient(135deg, hsl(var(--primary) / 0.08) 0%, hsl(var(--primary) / 0.03) 100%);
+    background: linear-gradient(135deg, hsl(340 82% 55% / 0.1) 0%, hsl(20 90% 60% / 0.05) 100%);
   }
 
   .border-gradient {
-    border-image: linear-gradient(135deg, hsl(var(--primary) / 0.4) 0%, hsl(var(--primary) / 0.15) 100%) 1;
+    border-image: linear-gradient(135deg, hsl(340 82% 55% / 0.4) 0%, hsl(20 90% 60% / 0.2) 100%) 1;
   }
 
   .scrollbar-hide {

@@ -284,7 +284,7 @@ function UserProfileSection({ collapsed }: { collapsed: boolean }) {
         <div className="relative">
           <Avatar className="h-10 w-10">
             <AvatarImage src={profile?.avatar_url || undefined} />
-            <AvatarFallback className="bg-primary text-primary-foreground font-semibold text-sm">
+            <AvatarFallback className="bg-gradient-to-br from-primary to-purple-500 text-primary-foreground font-semibold text-sm">
               {initials}
             </AvatarFallback>
           </Avatar>

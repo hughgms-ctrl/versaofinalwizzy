@@ -231,7 +231,7 @@ export default function ProfilePage() {
             <div className="relative">
               <Avatar className="h-20 w-20 md:h-24 md:w-24">
                 <AvatarImage src={profile?.avatar_url || undefined} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-xl md:text-2xl font-semibold">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-purple-500 text-primary-foreground text-xl md:text-2xl font-semibold">
                   {getInitials(profile?.full_name || 'U')}
                 </AvatarFallback>
               </Avatar>

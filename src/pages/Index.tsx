@@ -214,7 +214,7 @@ function PipelineSection() {
                     >
                       <Avatar className="h-8 w-8 shrink-0">
                         <AvatarImage src={member.avatar_url || undefined} />
-                        <AvatarFallback className="bg-primary text-[11px] font-semibold text-primary-foreground">
+                        <AvatarFallback className="bg-gradient-to-br from-primary to-violet-500 text-[11px] font-semibold text-primary-foreground">
                           {getInitials(member.name)}
                         </AvatarFallback>
                       </Avatar>

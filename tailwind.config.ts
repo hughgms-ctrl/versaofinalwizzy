@@ -84,10 +84,9 @@ export default {
         },
       },
       borderRadius: {
-        // Escala do design system: cards 16px (lg), botões/inputs 12px (md), badges 8px (sm)
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 4px)",
-        sm: "calc(var(--radius) - 8px)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
         "accordion-down": {
@@ -124,7 +123,7 @@ export default {
         "scale-in": "scale-in 0.2s ease-out",
       },
       boxShadow: {
-        glow: "var(--shadow-glow)",
+        glow: "0 0 20px -5px hsl(var(--primary) / 0.3)",
       },
     },
   },

@@ -41,9 +41,9 @@ import { cn } from '@/lib/utils';
  * Instagram (âmbar → rosa → roxo) que marca a conta no topo. Nenhuma cor
  * estrangeira entra.
  *
- * Dosagem: a cor mora em superfície e borda, nunca em corpo de texto — regra
- * do design system (acento nunca como texto corrido). Como tinta de fundo a
- * 10% e como fio de 1px, ela colore a tela sem nunca ser lida.
+ * Dosagem: a cor mora em superfície e borda, nunca em corpo de texto. Magenta
+ * 340 82% 55% sobre cartão branco dá ~4.2:1 — reprova para 13px. Como tinta de
+ * fundo a 10% e como fio de 1px, ela colore a tela sem nunca ser lida.
  */
 export type EngageAccent = 'comment' | 'message';
 

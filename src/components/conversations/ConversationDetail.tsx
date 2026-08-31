@@ -1859,7 +1859,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             : isInbound
             ? "bg-card border border-border rounded-tl-sm"
             : isBot
-              ? "bg-primary text-white rounded-tr-sm cursor-pointer hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
+              ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm cursor-pointer hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
               : "bg-green-500 text-white rounded-tr-sm"
         )}
         onClick={() => {
@@ -1968,7 +1968,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         <div className={cn(
           "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
           isBot
-            ? "bg-primary"
+            ? "bg-gradient-to-br from-primary to-purple-500"
             : "bg-gradient-to-br from-green-500 to-emerald-500"
         )}>
           {isBot ? (

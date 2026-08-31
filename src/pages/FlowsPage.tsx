@@ -820,7 +820,7 @@ const FlowsPage = () => {
             <Button
               onClick={handleCreateFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-primary hover:opacity-90 font-bold px-8 rounded-lg"
+              className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
             >
               Criar
             </Button>
@@ -870,7 +870,7 @@ const FlowsPage = () => {
             <Button
               onClick={handleRenameFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-primary hover:opacity-90 font-bold px-8 rounded-lg"
+              className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
             >
               Salvar
             </Button>
@@ -885,7 +885,7 @@ const FlowsPage = () => {
           <p className="text-muted-foreground mb-8 text-sm">Crie pastas ou fluxos para começar.</p>
           <Button
             onClick={() => setShowCreateDialog(true)}
-            className="bg-gradient-primary font-bold px-8 h-12 rounded-xl"
+            className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] font-bold px-8 h-12 rounded-xl"
           >
             Começar Agora
           </Button>
