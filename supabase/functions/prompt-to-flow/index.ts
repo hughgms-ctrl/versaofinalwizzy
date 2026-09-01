@@ -119,6 +119,11 @@ TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
 
 18. "smart-delay" - Atraso inteligente. Data: { label, delayType: "fixed"|"until_time"|"until_business_hours", fixedMinutes?, time? }
 
+19. "math" - Cálculo aritmético. Data: { label, expression, resultVariable, decimals?: -1|0|1|2|3|4, roundMode?: "round"|"floor"|"ceil", outputFormat?: "plain"|"br"|"currency", missingAsZero?: boolean, fallbackValue? }
+    - expression usa {{variavel}} e os operadores + - * / % ^ com parênteses; funções round, floor, ceil, abs, sqrt, pow, min, max. Ex: "{{preco}} * {{quantidade}} * 0.9"
+    - Número escrito na expressão usa PONTO decimal (0.9). decimals -1 = automático. outputFormat "currency" = "R$ 1.234,50".
+    - Produz {{resultVariable}} (texto formatado) e {{resultVariable}_num} (número cru) — use o _num em condições que comparam com greater_than/less_than.
+
 REGRAS DE POSICIONAMENTO (FLUXO HORIZONTAL, esquerda → direita):
 - O node "start" deve ficar em position { x: 50, y: 200 }
 - Nodes subsequentes: espaçamento de ~280px no eixo X
@@ -158,7 +163,7 @@ IMPORTANTE:
       "action-delay", "action-webhook", "action-flow", "action-department", "action-contact-field",
       "action-generate-pdf", "action-query-contacts",
       "action-document", "action-workspace", "condition", "user-input",
-      "randomizer", "smart-delay"
+      "randomizer", "smart-delay", "math"
     ];
 
     const tools = [

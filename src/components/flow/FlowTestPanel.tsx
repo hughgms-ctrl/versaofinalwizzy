@@ -11,7 +11,14 @@ import {
 import { AIFeedbackDialog } from '@/components/conversations/AIFeedbackDialog';
 import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
-import { ContentItem } from '@/types/flow';
+import { ContentItem, MathOutputFormat, MathRoundMode } from '@/types/flow';
+import {
+  evaluateMathExpression,
+  formatMathResult,
+  substituteNumericVariables,
+  type MathEvalResult,
+  type MathSubstitutionResult,
+} from '@/lib/mathExpression';
 import { followUpHandleId } from './nodes/followUpHandles';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -884,6 +891,47 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           },
         }));
         await wait(700);
+        await advanceOrEnd();
+        break;
+      }
+
+      case 'math': {
+        // A simulação usa o MESMO avaliador do motor (src/lib/mathExpression),
+        // então o número que aparece aqui é o número que o lead vai receber.
+        const rawName = String(d.resultVariable || '').trim();
+        const variable = /^\w+$/.test(rawName) ? rawName : 'resultado';
+        const expression = String(d.expression || '').trim();
+        const decimals = typeof d.decimals === 'number' ? (d.decimals as number) : 2;
+        const roundMode = (String(d.roundMode || 'round') as MathRoundMode);
+        const outputFormat = (String(d.outputFormat || 'plain') as MathOutputFormat);
+        const fallback = d.fallbackValue === undefined ? '0' : String(d.fallbackValue);
+
+        const substituted: MathSubstitutionResult = expression
+          ? substituteNumericVariables(expression, (name) => simState.variables[name], d.missingAsZero !== false)
+          : { status: 'error', error: 'expressão não configurada' };
+        const evaluated: MathEvalResult = substituted.status === 'ok'
+          ? evaluateMathExpression(substituted.expression)
+          : substituted;
+
+        if (evaluated.status === 'ok') {
+          const formatted = formatMathResult(evaluated.value, decimals, roundMode, outputFormat);
+          const numeric = decimals < 0
+            ? evaluated.value
+            : Number(formatMathResult(evaluated.value, decimals, roundMode, 'plain'));
+          addMsg({ type: 'action', content: `Calculando ${expression} = ${formatted}`, actionIcon: '🧮' });
+          setSimState(prev => ({
+            ...prev,
+            variables: { ...prev.variables, [variable]: formatted, [`${variable}_num`]: String(numeric), [`${variable}_erro`]: '' },
+          }));
+        } else {
+          const reason = evaluated.error;
+          addMsg({ type: 'action', content: `Cálculo falhou (${reason}) — usando "${fallback}"`, actionIcon: '🧮' });
+          setSimState(prev => ({
+            ...prev,
+            variables: { ...prev.variables, [variable]: fallback, [`${variable}_num`]: fallback, [`${variable}_erro`]: reason },
+          }));
+        }
+        await wait(500);
         await advanceOrEnd();
         break;
       }

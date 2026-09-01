@@ -5,6 +5,13 @@ import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 import {
+  evaluateMathExpression,
+  formatMathResult,
+  substituteNumericVariables,
+  type MathOutputFormat,
+  type MathRoundMode,
+} from '../_shared/mathExpression.ts';
+import {
   MAX_EVOLUTION_REPLY_BUTTONS,
   evolutionButtonsAccepted,
   evolutionTargetFrom,
@@ -1039,6 +1046,9 @@ async function runNodeByType(
     case 'orch-human':
       return await executeTransfer(data, context, supabase);
 
+    case 'math':
+      return executeMath(data, context);
+
     case 'action-contact-field':
       return await executeContactFieldAction(data, context, supabase);
 
@@ -1058,6 +1068,76 @@ async function runNodeByType(
       console.log(`Unknown node type: ${type}`);
       return { success: true };
   }
+}
+
+// CÁLCULO (nó 'math')
+//
+// Faz a conta com as variáveis do fluxo e devolve o resultado como variável.
+// Sai em três: o valor formatado ({{total}}), o número cru ({{total_num}}) e,
+// se der errado, o motivo ({{total_erro}}).
+//
+// O {{total_num}} não é luxo: o nó de Condição compara com Number(a) > Number(b)
+// e um "R$ 1.234,50" viraria NaN ali — a comparação passaria batida e o lead
+// seguiria pelo ramo errado sem ninguém perceber.
+//
+// Conta inválida NUNCA derruba a execução (success: false encerra o fluxo e
+// emudece a conversa do lead). Grava o valor de reserva, registra o motivo e
+// segue — mesma escolha do smart-delay, que também prefere continuar.
+function executeMath(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+): NodeResult {
+  const expression = String(data.expression ?? '').trim();
+  const rawName = String(data.resultVariable ?? '').trim() || 'resultado';
+  // Nome fora de \w nunca voltaria como {{nome}} (o replace só casa \w+).
+  const resultVariable = rawName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  const decimals = typeof data.decimals === 'number' ? data.decimals : 2;
+  const roundMode = (String(data.roundMode ?? 'round') as MathRoundMode);
+  const outputFormat = (String(data.outputFormat ?? 'plain') as MathOutputFormat);
+  const missingAsZero = data.missingAsZero !== false;
+  const fallbackValue = data.fallbackValue === undefined ? '0' : String(data.fallbackValue);
+
+  const fail = (reason: string): NodeResult => {
+    console.log(`[FLOW EXECUTE] math: ${reason} — gravando "${fallbackValue}" em ${resultVariable}`);
+    return {
+      success: true,
+      variables: {
+        [resultVariable]: fallbackValue,
+        [`${resultVariable}_num`]: fallbackValue,
+        [`${resultVariable}_erro`]: reason,
+      },
+      metadata: { expression, error: reason },
+    };
+  };
+
+  if (!expression) return fail('expressão não configurada');
+
+  const substituted = substituteNumericVariables(
+    expression,
+    (name) => lookupVariable(context.variables, name),
+    missingAsZero,
+  );
+  if (substituted.status === 'error') return fail(substituted.error);
+
+  const evaluated = evaluateMathExpression(substituted.expression);
+  if (evaluated.status === 'error') return fail(evaluated.error);
+
+  const formatted = formatMathResult(evaluated.value, decimals, roundMode, outputFormat);
+  // O _num acompanha o arredondamento escolhido, senão {{total}} diria 10,00 e
+  // {{total_num}} 9.995 — a Condição decidiria sobre um número que ninguém viu.
+  const numeric = decimals < 0 ? evaluated.value : Number(formatMathResult(evaluated.value, decimals, roundMode, 'plain'));
+
+  console.log(`[FLOW EXECUTE] math: ${expression} => ${formatted} (${resultVariable})`);
+
+  return {
+    success: true,
+    variables: {
+      [resultVariable]: formatted,
+      [`${resultVariable}_num`]: String(numeric),
+      [`${resultVariable}_erro`]: '',
+    },
+    metadata: { expression, used: substituted.used, result: formatted },
+  };
 }
 
 // Grava respostas do fluxo nos campos personalizados do contato.

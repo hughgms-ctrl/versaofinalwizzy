@@ -65,6 +65,19 @@ function nodeProducedVariables(node: Node): FlowVariable[] {
         },
       ];
     }
+    case 'math': {
+      const name = asTrimmedString(data.resultVariable) || 'resultado';
+      return [
+        {
+          name,
+          description: `Resultado formatado${label ? ` do cálculo "${label}"` : ''}`,
+        },
+        {
+          name: `${name}_num`,
+          description: 'O mesmo número sem formatação — é este que a Condição consegue comparar',
+        },
+      ];
+    }
     case 'action-generate-pdf': {
       // Também salva em variables desde 480c5eda, mas nunca foi listado aqui —
       // a URL existia e o inseridor de variáveis não a oferecia.

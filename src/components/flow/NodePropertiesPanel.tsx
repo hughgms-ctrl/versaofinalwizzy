@@ -5,7 +5,7 @@ import {
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
   Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog, FileDown, DatabaseZap,
-  AlertTriangle, Braces, ChevronUp
+  AlertTriangle, Braces, ChevronUp, Calculator
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant, ContactFieldAssignment, ContactQueryFilter, ContactQueryFilterType, ContactQueryOperator } from '@/types/flow';
+import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant, ContactFieldAssignment, ContactQueryFilter, ContactQueryFilterType, ContactQueryOperator, MathOutputFormat, MathRoundMode } from '@/types/flow';
+import { evaluateMathExpression, formatMathResult, substituteNumericVariables } from '@/lib/mathExpression';
 import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useAllTags } from '@/hooks/useTags';
@@ -99,6 +100,219 @@ function CaptionEditor({ value, onChange }: { value: string; onChange: (v: strin
 }
 
 
+/**
+ * Editor do nó "Cálculo". Componente próprio (e não mais um render...() dentro
+ * do painel) porque ele tem estado: os valores de teste da prévia.
+ */
+function MathNodeEditor({
+  localData,
+  handleChange,
+  availableVariables,
+}: {
+  localData: Record<string, unknown>;
+  handleChange: (field: string, value: unknown) => void;
+  availableVariables: FlowVariableGroup[];
+}) {
+  const expression = (localData.expression as string) || '';
+  const resultVariable = (localData.resultVariable as string) || 'resultado';
+  const decimals = typeof localData.decimals === 'number' ? (localData.decimals as number) : 2;
+  const roundMode = ((localData.roundMode as MathRoundMode) || 'round');
+  const outputFormat = ((localData.outputFormat as MathOutputFormat) || 'plain');
+  const missingAsZero = localData.missingAsZero !== false;
+
+  // Valores de teste da prévia. Só vivem enquanto o painel está aberto — nada
+  // disso é salvo no fluxo.
+  const [samples, setSamples] = useState<Record<string, string>>({});
+
+  const usedVariables = useMemo(() => {
+    const found = expression.match(/\{\{(\w+)\}\}/g) || [];
+    return Array.from(new Set(found.map((m) => m.slice(2, -2))));
+  }, [expression]);
+
+  const preview = useMemo(() => {
+    if (!expression.trim()) return null;
+    const substituted = substituteNumericVariables(expression, (name) => samples[name], true);
+    if (substituted.status === 'error') return { ok: false as const, error: substituted.error };
+    const evaluated = evaluateMathExpression(substituted.expression);
+    if (evaluated.status === 'error') return { ok: false as const, error: evaluated.error };
+    return {
+      ok: true as const,
+      text: formatMathResult(evaluated.value, decimals, roundMode, outputFormat),
+    };
+  }, [expression, samples, decimals, roundMode, outputFormat]);
+
+  return (
+    <div className="space-y-4">
+      <div className="p-3 bg-lime-50 dark:bg-lime-950/30 rounded-lg flex items-center gap-3">
+        <Calculator className="h-5 w-5 text-lime-600" />
+        <div>
+          <p className="text-xs font-semibold">Cálculo</p>
+          <p className="text-[10px] text-muted-foreground">
+            Faz a conta com variáveis do fluxo e guarda o resultado em outra variável.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="expression">Expressão</Label>
+        <VariableTextarea
+          id="expression"
+          value={expression}
+          onValueChange={(value) => handleChange('expression', value)}
+          variables={availableVariables}
+          placeholder="{{preco}} * {{quantidade}} * 0.9"
+          rows={3}
+          className="font-mono text-sm"
+        />
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          Operadores: <code>+ - * / %</code> (resto), <code>^</code> (potência) e parênteses.
+          Funções: <code>round</code>, <code>floor</code>, <code>ceil</code>, <code>abs</code>,{' '}
+          <code>sqrt</code>, <code>pow</code>, <code>min</code>, <code>max</code>. Números escritos
+          na expressão usam ponto decimal (<code>0.9</code>); o que vem das variáveis aceita{' '}
+          <code>R$ 1.234,56</code> também.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="resultVariable">Salvar resultado em</Label>
+        <Input
+          id="resultVariable"
+          value={resultVariable}
+          onChange={(e) =>
+            handleChange('resultVariable', e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))
+          }
+          placeholder="ex: total"
+        />
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          Fica disponível como <code>{`{{${resultVariable}}}`}</code> nos blocos seguintes. Sai
+          junto um <code>{`{{${resultVariable}_num}}`}</code> com o número cru (sem R$ nem ponto de
+          milhar) — use esse na Condição, que compara número.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
+          <Label>Casas decimais</Label>
+          <Select
+            value={String(decimals)}
+            onValueChange={(v) => handleChange('decimals', parseInt(v, 10))}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="-1">Automático</SelectItem>
+              <SelectItem value="0">0</SelectItem>
+              <SelectItem value="1">1</SelectItem>
+              <SelectItem value="2">2</SelectItem>
+              <SelectItem value="3">3</SelectItem>
+              <SelectItem value="4">4</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Arredondamento</Label>
+          <Select
+            value={roundMode}
+            onValueChange={(v) => handleChange('roundMode', v)}
+            disabled={decimals < 0}
+          >
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="round">Normal</SelectItem>
+              <SelectItem value="floor">Para baixo</SelectItem>
+              <SelectItem value="ceil">Para cima</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Formato do texto</Label>
+        <Select value={outputFormat} onValueChange={(v) => handleChange('outputFormat', v)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="plain">Número puro (1234.50)</SelectItem>
+            <SelectItem value="br">Brasileiro (1.234,50)</SelectItem>
+            <SelectItem value="currency">Moeda (R$ 1.234,50)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+        <div>
+          <Label className="text-xs">Variável vazia vale zero</Label>
+          <p className="text-[10px] text-muted-foreground leading-tight">
+            Desligado, o cálculo falha quando alguma variável não foi preenchida e grava o valor de
+            reserva abaixo.
+          </p>
+        </div>
+        <Switch
+          checked={missingAsZero}
+          onCheckedChange={(v) => handleChange('missingAsZero', v)}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="fallbackValue">Valor se o cálculo falhar</Label>
+        <Input
+          id="fallbackValue"
+          value={(localData.fallbackValue as string) ?? '0'}
+          onChange={(e) => handleChange('fallbackValue', e.target.value)}
+          placeholder="0"
+        />
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          O fluxo NUNCA para por causa de uma conta inválida: grava este valor, guarda o motivo em{' '}
+          <code>{`{{${resultVariable}_erro}}`}</code> e segue para o próximo bloco.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-dashed border-border p-3 space-y-2">
+        <p className="text-xs font-semibold">Testar</p>
+        {usedVariables.length > 0 ? (
+          <div className="space-y-2">
+            {usedVariables.map((name) => (
+              <div key={name} className="flex items-center gap-2">
+                <span className="font-mono text-[11px] text-muted-foreground w-32 truncate">
+                  {`{{${name}}}`}
+                </span>
+                <Input
+                  value={samples[name] ?? ''}
+                  onChange={(e) => setSamples((prev) => ({ ...prev, [name]: e.target.value }))}
+                  placeholder="0"
+                  className="h-8 text-xs flex-1"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">
+            A expressão não usa variável — o resultado é sempre o mesmo.
+          </p>
+        )}
+
+        {preview && (
+          <div
+            className={cn(
+              'text-xs font-medium p-2 rounded-lg',
+              preview.ok
+                ? 'bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400'
+                : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400',
+            )}
+          >
+            {preview.ok ? (
+              <>
+                {`{{${resultVariable}}}`} = <span className="font-mono">{preview.text}</span>
+              </>
+            ) : (
+              <>Erro: {preview.error}</>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface NodePropertiesPanelProps {
   node: Node | null;
   onClose: () => void;
@@ -137,6 +351,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-query-contacts': DatabaseZap,
   'randomizer': Shuffle,
   'smart-delay': Clock,
+  'math': Calculator,
 };
 
 const nodeLabels: Record<FlowNodeType, string> = {
@@ -163,6 +378,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-query-contacts': 'Consultar Contatos',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
+  'math': 'Cálculo',
 };
 
 const contentItemTypes: { type: ContentItemType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -1867,6 +2083,15 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
       case 'smart-delay':
         return renderSmartDelayEditor();
+
+      case 'math':
+        return (
+          <MathNodeEditor
+            localData={localData}
+            handleChange={handleChange}
+            availableVariables={availableVariables}
+          />
+        );
 
       case 'user-input':
         return (

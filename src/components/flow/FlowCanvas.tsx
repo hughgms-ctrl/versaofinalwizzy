@@ -43,7 +43,7 @@ import {
   GeneratePdfActionNode,
   QueryContactsActionNode,
 } from './nodes/ActionNodes';
-import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
+import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode, MathNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow, useFlows } from '@/hooks/useFlows';
@@ -82,6 +82,7 @@ const nodeTypes = {
   'user-input': UserInputNode,
   'randomizer': RandomizerNode,
   'smart-delay': SmartDelayNode,
+  'math': MathNode,
   'ai-handoff': AIHandoffNode,
   'ai-return': AIReturnNode,
 };
@@ -394,6 +395,18 @@ function FlowCanvasInner() {
             label,
             // Initialize content-block with empty items
             ...(type === 'content-block' ? { items: [] } : {}),
+            // O nó de cálculo já nasce com os padrões que o motor assume, para
+            // o que está desenhado no bloco bater com o que vai executar.
+            ...(type === 'math'
+              ? {
+                  expression: '',
+                  resultVariable: 'resultado',
+                  decimals: 2,
+                  roundMode: 'round',
+                  outputFormat: 'plain',
+                  missingAsZero: true,
+                }
+              : {}),
           },
         };
 
@@ -601,6 +614,7 @@ function FlowCanvasInner() {
                   case 'ai-return': return '#d946ef';
                   case 'randomizer': return '#a855f7';
                   case 'smart-delay': return '#f97316';
+                  case 'math': return '#65a30d';
                   case 'action-whatsapp-group': return '#10b981';
                   case 'action-contact-field': return '#0d9488';
                   case 'action-generate-pdf': return '#c026d3';

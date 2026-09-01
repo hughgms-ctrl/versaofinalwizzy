@@ -23,7 +23,8 @@ export type FlowNodeType =
   | 'ai-handoff'
   | 'ai-return'
   | 'randomizer'
-  | 'smart-delay';
+  | 'smart-delay'
+  | 'math';
 
 // === SALVAR NO CONTATO ===
 
@@ -218,6 +219,28 @@ export interface SmartDelayConfig {
   businessHoursEnd?: string;
   weekdaysOnly?: boolean;
   date?: string;
+}
+
+// === CÁLCULO (nó 'math') ===
+
+export type MathRoundMode = 'round' | 'floor' | 'ceil';
+
+/** Como o número vira texto na variável: 1234.5 -> "1234.50" | "1.234,50" | "R$ 1.234,50". */
+export type MathOutputFormat = 'plain' | 'br' | 'currency';
+
+export interface MathConfig {
+  /** Expressão com {{variáveis}}, ex: "{{preco}} * {{quantidade}} * 0.9". */
+  expression: string;
+  /** Variável que recebe o resultado formatado. Sai também um {{<nome>_num}} cru. */
+  resultVariable: string;
+  /** Casas decimais; negativo = automático (não arredonda). */
+  decimals?: number;
+  roundMode?: MathRoundMode;
+  outputFormat?: MathOutputFormat;
+  /** Variável vazia/ausente conta como 0 em vez de derrubar o cálculo. Padrão: true. */
+  missingAsZero?: boolean;
+  /** O que gravar na variável quando o cálculo falha. Padrão: "0". */
+  fallbackValue?: string;
 }
 
 // Message Node Configs

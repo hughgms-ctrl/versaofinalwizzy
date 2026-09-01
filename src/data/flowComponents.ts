@@ -161,6 +161,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         color: 'bg-orange-500',
       },
       {
+        type: 'math',
+        label: 'Cálculo',
+        description: 'Soma, subtrai, multiplica e divide variáveis do fluxo',
+        icon: 'Calculator',
+        color: 'bg-lime-600',
+      },
+      {
         type: 'user-input',
         label: 'Pergunta',
         description: 'Faz uma pergunta e salva a resposta em uma variável do fluxo',

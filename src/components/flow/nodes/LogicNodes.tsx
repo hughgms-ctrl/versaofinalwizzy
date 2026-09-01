@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { GitBranch, FormInput, Shuffle, Clock, Tag, Kanban, User, MessageSquare, FileText } from 'lucide-react';
+import { GitBranch, FormInput, Shuffle, Clock, Tag, Kanban, User, MessageSquare, FileText, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConditionRule, RandomizerVariant } from '@/types/flow';
 import { getFollowUpOutputs } from './followUpHandles';
@@ -22,6 +22,11 @@ interface LogicNodeData extends Record<string, unknown> {
   delayType?: string;
   fixedMinutes?: number;
   time?: string;
+  // Math
+  expression?: string;
+  resultVariable?: string;
+  outputFormat?: string;
+  decimals?: number;
 }
 
 type LogicNode = Node<LogicNodeData>;
@@ -319,6 +324,55 @@ export function SmartDelayNode({ data, selected }: NodeProps<LogicNode>) {
         </p>
         <p className="text-[11px] text-muted-foreground">
           {getDelayDescription()}
+        </p>
+      </div>
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+      />
+    </div>
+  );
+}
+
+export function MathNode({ data, selected }: NodeProps<LogicNode>) {
+  const expression = (data.expression as string) || '';
+  const resultVariable = (data.resultVariable as string) || 'resultado';
+  const formatLabels: Record<string, string> = {
+    plain: 'número',
+    br: '1.234,56',
+    currency: 'R$ 1.234,56',
+  };
+  const format = (data.outputFormat as string) || 'plain';
+
+  return (
+    <div
+      className={cn(
+        "group relative min-w-[220px] max-w-[280px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
+      />
+
+      <div className="flex items-center gap-2 px-3 py-2 bg-lime-600 rounded-t-[10px]">
+        <Calculator className="h-4 w-4 text-white" />
+        <span className="font-medium text-sm text-white">Cálculo</span>
+      </div>
+
+      <div className="p-3 bg-card rounded-b-[10px] space-y-1.5">
+        <p className="text-[11px] font-mono bg-muted px-1.5 py-1 rounded break-all line-clamp-2">
+          {expression || 'defina a expressão...'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Salva em <span className="font-mono bg-muted px-1 rounded">{`{{${resultVariable}}}`}</span>
+        </p>
+        <p className="text-[10px] text-muted-foreground/80">
+          Formato: {formatLabels[format] || format}
         </p>
       </div>
 
