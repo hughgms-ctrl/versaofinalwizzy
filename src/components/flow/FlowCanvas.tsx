@@ -49,6 +49,7 @@ import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow, useFlows } from '@/hooks/useFlows';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
+import { functionErrorMessage } from '@/lib/supabaseErrors';
 import { useTags } from '@/hooks/useTags';
 import { usePipelines } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
@@ -168,7 +169,9 @@ function FlowCanvasInner() {
       }
     } catch (err) {
       console.error('prompt-to-flow error:', err);
-      toast.error('Erro ao gerar fluxo com IA');
+      // A edge function explica o motivo no corpo (sem chave de IA, sem acesso,
+      // rate limit). Sem ler error.context o usuario so via "Erro ao gerar".
+      toast.error(await functionErrorMessage(err, 'Erro ao gerar fluxo com IA'));
     } finally {
       setIsGeneratingAI(false);
     }

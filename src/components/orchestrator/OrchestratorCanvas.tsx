@@ -23,6 +23,7 @@ import { useAIAgents } from '@/hooks/useAIAgents';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
+import { functionErrorMessage } from '@/lib/supabaseErrors';
 
 const nodeTypes = {
   'orch-trigger': OrchestratorTriggerNode,
@@ -272,10 +273,13 @@ function OrchestratorCanvasInner({
         }, 0);
         nodeId = maxId + 1;
         toast.success('Fluxo atualizado a partir do prompt!');
+      } else {
+        toast.error('A IA nao retornou um fluxo valido');
       }
     } catch (err) {
       console.error('prompt-to-flow error:', err);
-      toast.error('Erro ao aplicar prompt ao fluxo');
+      // Mesma armadilha do FlowCanvas: o motivo real vem no corpo da resposta.
+      toast.error(await functionErrorMessage(err, 'Erro ao aplicar prompt ao fluxo'));
     } finally {
       setIsApplyingToFlow(false);
     }

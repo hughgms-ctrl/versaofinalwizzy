@@ -242,7 +242,11 @@ IMPORTANTE:
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
-      throw new Error("AI gateway error");
+      // Sem o motivo do provedor (chave invalida, modelo inexistente, quota) o
+      // usuario so recebia "AI gateway error" e nao sabia o que corrigir.
+      let detail = t?.slice(0, 300) || "";
+      try { detail = JSON.parse(t)?.error?.message || detail; } catch { /* corpo nao era JSON */ }
+      throw new Error(`Falha na IA (${response.status})${detail ? `: ${detail}` : ""}`);
     }
 
     const data = await response.json();
