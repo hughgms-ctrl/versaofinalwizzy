@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Dimensionamento de infraestrutura — Wizzy</title>
+<style>
+  @page { size: A4; margin: 15mm 13mm 14mm 13mm; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; font-family: "Segoe UI", -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    color:#16191d; font-size:9.6pt; line-height:1.5; -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  h1 { font-size:23pt; line-height:1.15; margin:0 0 6px; letter-spacing:-.02em; font-weight:650; }
+  h2 { font-size:13pt; margin:0 0 3px; letter-spacing:-.01em; font-weight:650; }
+  h3 { font-size:10.2pt; margin:0 0 5px; font-weight:650; }
+  p  { margin:0 0 8px; }
+  .muted { color:#6b7280; }
+  .small { font-size:8.4pt; }
+  .tiny  { font-size:7.6pt; }
+  code { font-family:"Cascadia Mono", Consolas, monospace; font-size:8.2pt; background:#f3f4f6; padding:1px 4px; border-radius:3px; }
+  .sec { break-inside:avoid; margin: 0 0 16px; }
+  .page { break-after:page; }
+  .rule { height:1px; background:#e3e6ea; margin:14px 0; }
+  .eyebrow { font-size:7.6pt; letter-spacing:.14em; text-transform:uppercase; color:#8a919b; font-weight:650; margin-bottom:6px; }
+  .card { border:1px solid #e3e6ea; border-radius:7px; padding:13px 15px; break-inside:avoid; background:#fff; }
+  .card.flag { border-color:#e8c9b8; background:#fdf7f3; }
+  .card.ok   { border-color:#c9e2cd; background:#f5faf6; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:11px; }
+  .grid4 { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+  .kpi { border:1px solid #e3e6ea; border-radius:7px; padding:10px 11px; }
+  .kpi .n { font-size:17pt; font-weight:650; letter-spacing:-.02em; line-height:1.1; }
+  .kpi .l { font-size:7.6pt; color:#6b7280; margin-top:2px; line-height:1.3; }
+  .kpi.bad  { border-color:#e3b7ac; background:#fdf5f2; } .kpi.bad .n  { color:#a3341a; }
+  .kpi.warn { border-color:#e6d2a8; background:#fdfaf1; } .kpi.warn .n { color:#93650a; }
+  .kpi.good { border-color:#bfdcc4; background:#f5faf6; } .kpi.good .n { color:#256b34; }
+  table { width:100%; border-collapse:collapse; font-size:8.7pt; }
+  th { text-align:left; font-weight:650; color:#4b5259; border-bottom:1.5px solid #d5d9de; padding:5px 7px; font-size:7.8pt; text-transform:uppercase; letter-spacing:.05em; }
+  td { padding:5px 7px; border-bottom:1px solid #edeff2; vertical-align:top; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr.hl td { background:#fdf5f2; font-weight:600; }
+  .tag { display:inline-block; font-size:7.2pt; font-weight:650; padding:1.5px 6px; border-radius:20px; letter-spacing:.03em; }
+  .t-bad  { background:#f6dcd3; color:#8f2d13; }
+  .t-warn { background:#f7ecd0; color:#7a5406; }
+  .t-good { background:#d8ecdc; color:#1f5b2c; }
+  ol.steps { margin:0; padding-left:0; list-style:none; counter-reset:s; }
+  ol.steps li { counter-increment:s; position:relative; padding-left:28px; margin-bottom:9px; break-inside:avoid; }
+  ol.steps li::before {
+    content: counter(s); position:absolute; left:0; top:0px; width:19px; height:19px; border-radius:50%;
+    background:#16191d; color:#fff; font-size:8pt; font-weight:650; display:flex; align-items:center; justify-content:center;
+  }
+  .verdict { border-left:3px solid #a3341a; padding:2px 0 2px 13px; }
+  .note { border-left:2px solid #d5d9de; padding-left:11px; color:#5b626a; }
+  .cover-meta { display:flex; gap:26px; font-size:8.4pt; color:#6b7280; margin-top:14px; padding-top:11px; border-top:1px solid #e3e6ea; }
+  svg text { font-family:"Segoe UI", Helvetica, Arial, sans-serif; }
+</style>
+</head>
+<body>
+
+<!-- ============ CAPA ============ -->
+<div class="sec">
+  <div class="eyebrow">Wizzy · Decisão de infraestrutura para o lançamento</div>
+  <h1>Micro não aguenta 98 números.<br>E já não aguenta os 3 de hoje.</h1>
+  <p class="muted" style="font-size:11pt; max-width:70ch; margin-top:10px;">
+    Medição da produção em 31 de agosto de 2026, com o alvo de setembro: ~100 usuários simultâneos
+    e ~98 números de WhatsApp conectados, distribuídos por várias organizações.
+  </p>
+  <div class="cover-meta">
+    <div><strong>Projeto</strong><br>zaobtetbjpuzibjymhzw</div>
+    <div><strong>Compute atual</strong><br>Micro · 1 GB · CPU compartilhada</div>
+    <div><strong>Estado hoje</strong><br>3 números · 4 orgs · 7 usuários</div>
+    <div><strong>Alvo</strong><br>98 números · 100 usuários</div>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="grid4">
+    <div class="kpi bad"><div class="n">572 MB</div><div class="l">de swap no pico, numa máquina de 906 MB. O mínimo registrado é 295 MB — <strong>nunca zera</strong>.</div></div>
+    <div class="kpi bad"><div class="n">72%</div><div class="l">de todo o tempo de banco do mês gasto pelo coletor de lixo do <code>pg_net</code>, não pelo seu código.</div></div>
+    <div class="kpi warn"><div class="n">283 MB</div><div class="l">ocupados pela tabela <code>net._http_response</code> para guardar 2.160 linhas. 26% do banco.</div></div>
+    <div class="kpi good"><div class="n">2–15%</div><div class="l">de uso de disco I/O. O disco é a única coisa folgada — o gargalo não é ele.</div></div>
+  </div>
+</div>
+
+<div class="sec card flag">
+  <h2>Veredito</h2>
+  <div class="verdict">
+    <p style="margin-bottom:6px;"><strong>O Micro precisa ser trocado — mas a troca sozinha resolve o sintoma errado.</strong></p>
+    <p style="margin:0;">O banco tem 1,08 GB e a máquina tem 906 MB de RAM: o Postgres pagina em disco 24 horas por dia,
+    com 3 números conectados e 1,8 mensagem por minuto. Ao mesmo tempo, <strong>72% do trabalho do banco não é seu</strong> —
+    é o <code>pg_net</code> varrendo uma tabela de 283 MB que guarda 2.160 linhas úteis. Limpar essa tabela devolve
+    26% do banco de graça e pode acabar com o swap hoje. Comprar uma máquina maior antes disso é comprar capacidade
+    para varrer lixo mais rápido.</p>
+  </div>
+  <div class="rule"></div>
+  <p style="margin:0;"><strong>Recomendação:</strong> limpar o <code>pg_net</code> e desligar os crons ociosos primeiro (custo zero,
+  efeito imediato), depois subir para <strong>compute Large</strong> — 8 GB, CPU dedicada, <strong>+US$ 100/mês</strong> —
+  e só então montar o staging e rodar a carga. Detalhes e ordem de execução nas próximas páginas.</p>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 1. OS DADOS ============ -->
+<div class="sec">
+  <div class="eyebrow">1 · Os dados medidos</div>
+  <h2>O retrato da produção em 31/08/2026</h2>
+  <p class="muted small">Coletados no painel do Supabase (Reports, Usage, Query Performance) e por consulta direta ao banco.
+  Período de faturamento: 03/ago – 03/set. Picos, não médias.</p>
+</div>
+
+<div class="sec">
+  <h3>Memória — pico de 25/ago às 13h</h3>
+  <svg viewBox="0 0 560 148" width="100%" height="148" role="img">
+    <text x="0" y="11" font-size="8" fill="#6b7280">RAM DISPONÍVEL — 906,14 MB</text>
+    <rect x="0"   y="18" width="234" height="30" fill="#c2704f"/>
+    <rect x="234" y="18" width="290" height="30" fill="#dcc8ba"/>
+    <rect x="524" y="18" width="36"  height="30" fill="#eef0f2"/>
+    <text x="8"   y="37" font-size="9" font-weight="600" fill="#fff">379,99 MB</text>
+    <text x="242" y="37" font-size="9" font-weight="600" fill="#5d4534">470,04 MB</text>
+    <text x="8"   y="60" font-size="7.5" fill="#6b7280">Em uso · 41,9%</text>
+    <text x="242" y="60" font-size="7.5" fill="#6b7280">Cache + Buffers · 51,9%</text>
+    <text x="470" y="60" font-size="7.5" fill="#a3341a" font-weight="600">Livre: 56 MB (6,2%)</text>
+
+    <text x="0" y="88" font-size="8" fill="#6b7280">SWAP EM USO — paginação em disco</text>
+    <rect x="0"   y="95" width="560" height="30" fill="#fbf1ed" stroke="#e8d5cc"/>
+    <rect x="0"   y="95" width="183" height="30" fill="#a3341a"/>
+    <rect x="183" y="95" width="171" height="30" fill="#d78a70"/>
+    <text x="8"   y="114" font-size="9" font-weight="600" fill="#fff">mínimo 295,55 MB</text>
+    <text x="191" y="114" font-size="9" font-weight="600" fill="#fff">pico 572,66 MB</text>
+    <text x="0"   y="141" font-size="7.8" fill="#a3341a" font-weight="600">O swap nunca chega a zero. Em nenhum momento do dia o banco cabe na memória.</text>
+  </svg>
+</div>
+
+<div class="sec">
+  <div class="grid2">
+    <div class="card">
+      <h3>Conexões — pico de 36 em 60 (60%)</h3>
+      <svg viewBox="0 0 270 90" width="100%" height="90">
+        <rect x="0"     y="6" width="270"  height="22" fill="#eef0f2"/>
+        <rect x="0"     y="6" width="90"   height="22" fill="#2f4858"/>
+        <rect x="90"    y="6" width="40.5" height="22" fill="#5b7a8c"/>
+        <rect x="130.5" y="6" width="18"   height="22" fill="#8fa8b5"/>
+        <rect x="148.5" y="6" width="4.5"  height="22" fill="#b7c7d0"/>
+        <rect x="153"   y="6" width="9"    height="22" fill="#d3dde2"/>
+        <text x="4"   y="21" font-size="8" font-weight="600" fill="#fff">Postgres 20</text>
+        <text x="94"  y="21" font-size="8" font-weight="600" fill="#fff">Res. 9</text>
+        <text x="215" y="21" font-size="8" fill="#6b7280">livre: 24</text>
+        <text x="0" y="47" font-size="7.4" fill="#6b7280">Storage 4 · Auth 1 · Outros papéis 2. O papel “postgres” (20) é dos crons e do pg_net.</text>
+        <text x="0" y="66" font-size="7.6" fill="#16191d">60% do teto <tspan font-weight="600">com 3 números</tspan>. O Large sobe de 60 para 160 conexões</text>
+        <text x="0" y="79" font-size="7.6" fill="#16191d">diretas, e de 200 para 800 no pooler.</text>
+      </svg>
+    </div>
+    <div class="card">
+      <h3>CPU e disco — os dois folgados</h3>
+      <svg viewBox="0 0 270 90" width="100%" height="90">
+        <text x="0" y="10" font-size="7.4" fill="#6b7280">CPU — pico 4,15%, nunca acima de 50%</text>
+        <rect x="0" y="15" width="270"  height="14" fill="#eef0f2"/>
+        <rect x="0" y="15" width="11.2" height="14" fill="#256b34"/>
+        <text x="18" y="25" font-size="7.6" fill="#256b34" font-weight="600">4,15%</text>
+        <text x="0" y="48" font-size="7.4" fill="#6b7280">Disk I/O — variação de 2% a 15%</text>
+        <rect x="0"   y="53" width="270" height="14" fill="#eef0f2"/>
+        <rect x="5.4" y="53" width="35.1" height="14" fill="#256b34"/>
+        <text x="47" y="63" font-size="7.6" fill="#256b34" font-weight="600">2–15%</text>
+        <text x="0" y="85" font-size="7.8" fill="#16191d">A máquina não está sem CPU nem sem disco. Está <tspan font-weight="600">sem memória</tspan>.</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h3>Volume real de mensagens — 17 a 31 de agosto</h3>
+  <svg viewBox="0 0 560 206" width="100%" height="206">
+    <line x1="34" y1="170" x2="556" y2="170" stroke="#d5d9de"/>
+    <line x1="34" y1="22"  x2="556" y2="22"  stroke="#edeff2" stroke-dasharray="2 3"/>
+    <line x1="34" y1="96"  x2="556" y2="96"  stroke="#edeff2" stroke-dasharray="2 3"/>
+    <text x="6" y="25"  font-size="7" fill="#9aa1a9">900</text>
+    <text x="6" y="99"  font-size="7" fill="#9aa1a9">450</text>
+    <text x="18" y="173" font-size="7" fill="#9aa1a9">0</text>
+    <rect x="40"  y="22"  width="26" height="80" fill="#2f4858"/><rect x="40"  y="102" width="26" height="68" fill="#8fa8b5"/><text x="53"  y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">17</text>
+    <rect x="74"  y="23"  width="26" height="67" fill="#2f4858"/><rect x="74"  y="90"  width="26" height="80" fill="#8fa8b5"/><text x="87"  y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">18</text>
+    <rect x="108" y="112" width="26" height="29" fill="#2f4858"/><rect x="108" y="141" width="26" height="29" fill="#8fa8b5"/><text x="121" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">19</text>
+    <rect x="142" y="72"  width="26" height="53" fill="#2f4858"/><rect x="142" y="125" width="26" height="45" fill="#8fa8b5"/><text x="155" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">20</text>
+    <rect x="176" y="131" width="26" height="17" fill="#2f4858"/><rect x="176" y="148" width="26" height="22" fill="#8fa8b5"/><text x="189" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">21</text>
+    <rect x="210" y="123" width="26" height="28" fill="#2f4858"/><rect x="210" y="151" width="26" height="19" fill="#8fa8b5"/><text x="223" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">22</text>
+    <rect x="244" y="147" width="26" height="14" fill="#2f4858"/><rect x="244" y="161" width="26" height="9"  fill="#8fa8b5"/><text x="257" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">23</text>
+    <rect x="278" y="114" width="26" height="37" fill="#2f4858"/><rect x="278" y="151" width="26" height="19" fill="#8fa8b5"/><text x="291" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">24</text>
+    <rect x="312" y="129" width="26" height="24" fill="#2f4858"/><rect x="312" y="153" width="26" height="17" fill="#8fa8b5"/><text x="325" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">25</text>
+    <rect x="346" y="91"  width="26" height="53" fill="#2f4858"/><rect x="346" y="144" width="26" height="26" fill="#8fa8b5"/><text x="359" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">26</text>
+    <rect x="380" y="82"  width="26" height="57" fill="#2f4858"/><rect x="380" y="139" width="26" height="31" fill="#8fa8b5"/><text x="393" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">27</text>
+    <rect x="414" y="111" width="26" height="31" fill="#2f4858"/><rect x="414" y="142" width="26" height="28" fill="#8fa8b5"/><text x="427" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">28</text>
+    <rect x="448" y="143" width="26" height="15" fill="#2f4858"/><rect x="448" y="158" width="26" height="12" fill="#8fa8b5"/><text x="461" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">29</text>
+    <rect x="482" y="136" width="26" height="22" fill="#2f4858"/><rect x="482" y="158" width="26" height="12" fill="#8fa8b5"/><text x="495" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">30</text>
+    <rect x="516" y="162" width="26" height="5"  fill="#2f4858"/><rect x="516" y="167" width="26" height="3"  fill="#8fa8b5"/><text x="529" y="182" font-size="6.6" fill="#6b7280" text-anchor="middle">31*</text>
+    <rect x="40"  y="194" width="8" height="8" fill="#8fa8b5"/><text x="52"  y="201" font-size="7.4" fill="#6b7280">recebidas</text>
+    <rect x="112" y="194" width="8" height="8" fill="#2f4858"/><text x="124" y="201" font-size="7.4" fill="#6b7280">enviadas</text>
+    <text x="196" y="201" font-size="7.4" fill="#9aa1a9">* dia parcial   ·   pico medido: 25 msg/min   ·   média: 1,8 msg/min</text>
+  </svg>
+</div>
+
+<div class="sec">
+  <table>
+    <tr><th style="width:34%">Métrica</th><th class="num" style="width:18%">Medido</th><th style="width:48%">Leitura</th></tr>
+    <tr class="hl"><td>Swap em uso</td><td class="num">295–572 MB</td><td>Banco de 1,08 GB numa máquina de 906 MB. Nunca zera.</td></tr>
+    <tr class="hl"><td>Cache hit ratio</td><td class="num">0,9830</td><td>Abaixo de 0,99 confirma falta de RAM, de forma independente do swap.</td></tr>
+    <tr><td>Conexões (pico)</td><td class="num">36 / 60</td><td>60% do teto com 3 números. Escala com crons e instâncias.</td></tr>
+    <tr><td>CPU (pico)</td><td class="num">4,15%</td><td>Folgado. Nunca passa de 50% em nenhuma hora do dia.</td></tr>
+    <tr><td>Disk I/O</td><td class="num">2–15%</td><td>Folgado. O crédito de burst não é o gargalo hoje.</td></tr>
+    <tr><td>Tamanho do banco</td><td class="num">1,08 GB</td><td>De 8 GB de disco provisionado. 283 MB são lixo do pg_net.</td></tr>
+    <tr><td>Invocações de edge function</td><td class="num">305.856</td><td>De 2 M inclusas. ~93% são crons — ver seção 3.</td></tr>
+    <tr><td>Realtime — pico simultâneo</td><td class="num">5</td><td>De 500 inclusas. Com 100 usuários vira algumas centenas (6 canais por usuário na tela de chat).</td></tr>
+    <tr><td>Realtime — mensagens</td><td class="num">45.209</td><td>De 5 M inclusas. Folgado.</td></tr>
+    <tr><td>Egress</td><td class="num">5,29 GB</td><td>De 250 GB inclusos. Folgado.</td></tr>
+    <tr><td>Usuários ativos no mês</td><td class="num">7 MAU</td><td>Alvo: 100 simultâneos.</td></tr>
+  </table>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 2. O PG_NET ============ -->
+<div class="sec">
+  <div class="eyebrow">2 · A descoberta principal</div>
+  <h2>72% do seu banco de dados não trabalha para você</h2>
+  <p class="muted small">Fonte: Advisors → Query Performance, aba “Most time consuming”, período de faturamento corrente.</p>
+</div>
+
+<div class="sec">
+  <h3>Onde o tempo de banco foi gasto no mês</h3>
+  <svg viewBox="0 0 560 208" width="100%" height="208">
+    <rect x="0" y="4"  width="504" height="19" fill="#a3341a"/>
+    <text x="7"   y="18" font-size="8.4" font-weight="600" fill="#fff">DELETE FROM net._http_response — coletor de lixo do pg_net</text>
+    <text x="512" y="18" font-size="8.4" font-weight="700" fill="#a3341a">68,64%</text>
+
+    <rect x="0" y="28" width="102" height="19" fill="#5b7a8c"/>
+    <text x="7"   y="42" font-size="8.4" font-weight="600" fill="#fff">realtime.list_changes</text>
+    <text x="512" y="42" font-size="8.4" font-weight="700" fill="#5b7a8c">13,84%</text>
+
+    <rect x="0" y="52" width="66" height="19" fill="#2f4858"/>
+    <text x="72"  y="66" font-size="8.4" fill="#16191d">Lista de conversas — 9 variantes da mesma query</text>
+    <text x="512" y="66" font-size="8.4" font-weight="700" fill="#2f4858">8,94%</text>
+
+    <rect x="0" y="76" width="14" height="19" fill="#c2704f"/>
+    <text x="20"  y="90" font-size="8.4" fill="#16191d">net.http_post — 621.495 chamadas</text>
+    <text x="512" y="90" font-size="8.4" font-weight="700" fill="#c2704f">1,91%</text>
+
+    <rect x="0" y="100" width="12" height="19" fill="#c2704f"/>
+    <text x="20"  y="114" font-size="8.4" fill="#16191d">DELETE net._http_response (2ª cópia, papel postgres)</text>
+    <text x="512" y="114" font-size="8.4" font-weight="700" fill="#c2704f">1,59%</text>
+
+    <rect x="0" y="124" width="34" height="19" fill="#d5d9de"/>
+    <text x="40"  y="138" font-size="8.4" fill="#6b7280">Todo o resto — inserts de mensagem, acks, crons, auth, IA…</text>
+    <text x="512" y="138" font-size="8.4" font-weight="700" fill="#6b7280">5,08%</text>
+
+    <line x1="0" y1="156" x2="560" y2="156" stroke="#e3e6ea"/>
+    <rect x="0" y="166" width="530" height="26" fill="#fbf1ed" stroke="#e8d5cc"/>
+    <text x="10" y="183" font-size="9.4" font-weight="700" fill="#a3341a">Somando tudo que é pg_net: 72,14% do tempo total de banco.</text>
+    <text x="0" y="204" font-size="7.4" fill="#9aa1a9">Percentuais de prop_total_time do pg_stat_statements, acumulados desde o último reset das estatísticas.</text>
+  </svg>
+</div>
+
+<div class="sec">
+  <div class="grid2">
+    <div class="card flag">
+      <h3>A consulta que come o banco</h3>
+      <table style="font-size:8.2pt;">
+        <tr><td style="border:0;padding:2px 0;">Chamadas</td><td class="num" style="border:0;padding:2px 0;"><strong>695.058</strong></td></tr>
+        <tr><td style="border:0;padding:2px 0;">Tempo médio</td><td class="num" style="border:0;padding:2px 0;"><strong>439 ms</strong></td></tr>
+        <tr><td style="border:0;padding:2px 0;">Pior execução</td><td class="num" style="border:0;padding:2px 0;"><strong>320 segundos</strong></td></tr>
+        <tr><td style="border:0;padding:2px 0;">Tempo total</td><td class="num" style="border:0;padding:2px 0;"><strong>84,9 horas</strong></td></tr>
+      </table>
+      <p class="tiny muted" style="margin:8px 0 0;">Uma execução de 320 segundos é uma transação de 5 minutos segurando conexão,
+      travando o autovacuum e empurrando o resto do banco para a fila.</p>
+    </div>
+    <div class="card flag">
+      <h3>Por que ela é lenta</h3>
+      <svg viewBox="0 0 250 96" width="100%" height="96">
+        <text x="0" y="10" font-size="7.6" fill="#6b7280">net._http_response — tamanho físico vs. conteúdo útil</text>
+        <rect x="0" y="16" width="250" height="24" fill="#a3341a"/>
+        <text x="8" y="32" font-size="8.6" font-weight="600" fill="#fff">283 MB no disco</text>
+        <rect x="0" y="46" width="2.3" height="24" fill="#256b34"/>
+        <text x="9" y="62" font-size="8.6" font-weight="600" fill="#256b34">2.160 linhas vivas (~1%)</text>
+        <text x="0" y="86" font-size="7.6" fill="#16191d">A tabela é 99% tupla morta. Todo <tspan font-style="italic">DELETE</tspan> varre 283 MB para achar quase nada.</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<div class="sec card">
+  <h3>O efeito em cascata — e por que isso explica o swap</h3>
+  <p style="margin-bottom:6px;">A <code>net._http_response</code> é o <strong>segundo maior objeto do seu banco</strong>: 283 MB de 1,08 GB,
+  ou <strong>26% do total</strong>. Ela compete pelos mesmos 906 MB de RAM que a <code>messages</code>. A sequência é:</p>
+  <svg viewBox="0 0 560 62" width="100%" height="62">
+    <rect x="0" y="8" width="100" height="34" rx="4" fill="#f3f4f6" stroke="#d5d9de"/>
+    <text x="50" y="23" font-size="7.4" text-anchor="middle" fill="#16191d">6 crons por minuto</text>
+    <text x="50" y="34" font-size="7.4" text-anchor="middle" fill="#6b7280">621 mil http_post</text>
+    <path d="M104 25 L118 25" stroke="#9aa1a9" stroke-width="1.2" marker-end="url(#a)"/>
+    <rect x="122" y="8" width="100" height="34" rx="4" fill="#f3f4f6" stroke="#d5d9de"/>
+    <text x="172" y="23" font-size="7.4" text-anchor="middle" fill="#16191d">tabela incha</text>
+    <text x="172" y="34" font-size="7.4" text-anchor="middle" fill="#6b7280">283 MB de bloat</text>
+    <path d="M226 25 L240 25" stroke="#9aa1a9" stroke-width="1.2" marker-end="url(#a)"/>
+    <rect x="244" y="8" width="100" height="34" rx="4" fill="#fbf1ed" stroke="#e8d5cc"/>
+    <text x="294" y="23" font-size="7.4" text-anchor="middle" fill="#16191d">DELETE fica lento</text>
+    <text x="294" y="34" font-size="7.4" text-anchor="middle" fill="#a3341a">439 ms → 320 s</text>
+    <path d="M348 25 L362 25" stroke="#9aa1a9" stroke-width="1.2" marker-end="url(#a)"/>
+    <rect x="366" y="8" width="100" height="34" rx="4" fill="#fbf1ed" stroke="#e8d5cc"/>
+    <text x="416" y="23" font-size="7.4" text-anchor="middle" fill="#16191d">bloat expulsa a</text>
+    <text x="416" y="34" font-size="7.4" text-anchor="middle" fill="#a3341a">messages do cache</text>
+    <path d="M470 25 L484 25" stroke="#9aa1a9" stroke-width="1.2" marker-end="url(#a)"/>
+    <rect x="488" y="8" width="72" height="34" rx="4" fill="#a3341a"/>
+    <text x="524" y="23" font-size="7.4" text-anchor="middle" fill="#fff">swap</text>
+    <text x="524" y="34" font-size="7.4" text-anchor="middle" fill="#fff">cache 0,983</text>
+    <defs><marker id="a" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#9aa1a9"/></marker></defs>
+  </svg>
+  <p style="margin:8px 0 0;"><strong>Limpar essa tabela devolve 26% do banco.</strong> O banco cai de 1,08 GB para ~800 MB —
+  e passa a caber nos 906 MB de RAM. É plausível que o swap de hoje desapareça sem trocar nada de máquina.
+  Isso <em>não</em> torna o Micro suficiente para 98 números, mas torna a medição do teste de carga confiável.</p>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 3. OS CRONS ============ -->
+<div class="sec">
+  <div class="eyebrow">3 · O segundo desperdício</div>
+  <h2>93% das suas invocações de edge function são crons batendo em nada</h2>
+  <p class="muted small">27 jobs ativos no <code>cron.job</code>, dos quais <strong>6 rodam a cada minuto</strong>.</p>
+</div>
+
+<div class="sec">
+  <div class="grid2">
+    <div>
+      <h3>Invocações por dia — de onde vêm</h3>
+      <svg viewBox="0 0 270 168" width="100%" height="168">
+        <text x="0" y="9" font-size="7.4" fill="#6b7280">Total medido: 305.856 no período (~10.200/dia)</text>
+        <rect x="0" y="16" width="220" height="17" fill="#2f4858"/>
+        <text x="6" y="28" font-size="7.6" font-weight="600" fill="#fff">6 crons de 1 em 1 minuto</text>
+        <text x="226" y="28" font-size="7.6" font-weight="600" fill="#2f4858">8.640</text>
+        <rect x="0" y="37" width="18" height="17" fill="#5b7a8c"/>
+        <text x="24" y="49" font-size="7.6" fill="#16191d">reprocess-inbound-events (2 min)</text>
+        <text x="232" y="49" font-size="7.6" fill="#5b7a8c">720</text>
+        <rect x="0" y="58" width="8" height="17" fill="#8fa8b5"/>
+        <text x="14" y="70" font-size="7.6" fill="#16191d">health-watchdog (5 min)</text>
+        <text x="238" y="70" font-size="7.6" fill="#5b7a8c">288</text>
+        <rect x="0" y="79" width="8" height="17" fill="#8fa8b5"/>
+        <text x="14" y="91" font-size="7.6" fill="#16191d">instagram-bind-next-post (5 min)</text>
+        <text x="238" y="91" font-size="7.6" fill="#5b7a8c">288</text>
+        <rect x="0" y="100" width="7" height="17" fill="#b7c7d0"/>
+        <text x="13" y="112" font-size="7.6" fill="#16191d">auto-close, purge-presence, horários</text>
+        <text x="238" y="112" font-size="7.6" fill="#5b7a8c">277</text>
+        <line x1="0" y1="124" x2="258" y2="124" stroke="#e3e6ea"/>
+        <text x="0" y="138" font-size="8" font-weight="700" fill="#16191d">Total previsto pelos crons</text>
+        <text x="222" y="138" font-size="8" font-weight="700" fill="#16191d">10.213/dia</text>
+        <text x="0" y="152" font-size="7.6" fill="#6b7280">× 28 dias = 285.964 de 305.856 medidas</text>
+        <text x="0" y="164" font-size="8" font-weight="700" fill="#a3341a">≈ 93% da fatura é polling.</text>
+      </svg>
+    </div>
+    <div>
+      <h3>Metade desse polling é de um módulo bloqueado</h3>
+      <svg viewBox="0 0 270 168" width="100%" height="168">
+        <text x="0" y="9" font-size="7.4" fill="#6b7280">Das 8.928 invocações/dia dos crons frequentes:</text>
+        <rect x="0" y="16" width="270" height="30" fill="#eef0f2"/>
+        <rect x="0" y="16" width="139" height="30" fill="#c2704f"/>
+        <text x="8" y="35" font-size="8.4" font-weight="600" fill="#fff">Instagram — 4.608</text>
+        <text x="147" y="35" font-size="8.4" font-weight="600" fill="#5d4534">WhatsApp — 4.320</text>
+        <text x="0" y="62" font-size="7.6" fill="#16191d"><tspan font-weight="600">51,6%</tspan> do polling de minuto é do Wizzy Engage:</text>
+        <text x="0" y="76" font-size="7.4" fill="#6b7280">instagram-broadcast-send · instagram-flow-timeouts</text>
+        <text x="0" y="88" font-size="7.4" fill="#6b7280">instagram-process-followups · instagram-bind-next-post</text>
+        <rect x="0" y="100" width="270" height="42" rx="4" fill="#fbf1ed" stroke="#e8d5cc"/>
+        <text x="9" y="115" font-size="7.8" font-weight="700" fill="#a3341a">O Engage está travado no App Review da Meta.</text>
+        <text x="9" y="127" font-size="7.4" fill="#8f4a2d">Esses 4 jobs rodam 4.608 vezes por dia para achar</text>
+        <text x="9" y="137" font-size="7.4" fill="#8f4a2d">zero linha. Desligar é risco zero e ganho imediato.</text>
+        <text x="0" y="158" font-size="7.4" fill="#6b7280">Bônus: o job <tspan font-family="monospace">encerrar-enegnyork220826</tspan> (23/ago) já passou</text>
+        <text x="0" y="167" font-size="7.4" fill="#6b7280">e vai disparar de novo em agosto de 2027. Remover.</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<div class="sec card ok">
+  <h3>A boa notícia que isso traz para o dimensionamento</h3>
+  <p style="margin:0;">O custo dos crons é <strong>fixo</strong>: 6 execuções por minuto hoje, 6 por minuto com 98 números.
+  Ele não escala com a quantidade de números. Isso significa que os 72% de pg_net e os 93% de polling
+  que você vê hoje <strong>não vão multiplicar por 33</strong> — o que multiplica é o trabalho de mensagem,
+  que hoje é a menor fatia de tudo. Depois de limpar o pg_net e desligar o Engage, sobra um sistema
+  cujo custo real é bem menor do que estes gráficos sugerem.</p>
+</div>
+
+<div class="sec">
+  <div class="eyebrow">4 · Hoje contra o alvo</div>
+  <h2>O que realmente muda de escala</h2>
+</div>
+
+<div class="sec">
+  <table>
+    <tr><th style="width:30%">Dimensão</th><th class="num">Hoje</th><th class="num">Alvo (set/2026)</th><th class="num">Fator</th><th style="width:32%">Observação</th></tr>
+    <tr><td>Números conectados</td><td class="num">3</td><td class="num">98</td><td class="num"><strong>×33</strong></td><td>Meta confirmada</td></tr>
+    <tr><td>Usuários simultâneos</td><td class="num">5</td><td class="num">100</td><td class="num"><strong>×20</strong></td><td>Pico de conexões Realtime</td></tr>
+    <tr><td>Mensagens por dia</td><td class="num">~405</td><td class="num">~13.200</td><td class="num"><strong>×33</strong></td><td>135 msg por número por dia</td></tr>
+    <tr class="hl"><td>Pico de entrada</td><td class="num">0,4 req/s</td><td class="num">~13,6 req/s</td><td class="num"><strong>×33</strong></td><td>25 msg/min medidas → ~817 msg/min</td></tr>
+    <tr><td>Crescimento do banco</td><td class="num">~25 MB/mês</td><td class="num">~830 MB/mês</td><td class="num"><strong>×33</strong></td><td>2,06 KB por mensagem</td></tr>
+    <tr><td>Invocações de cron</td><td class="num">10.213/dia</td><td class="num">10.213/dia</td><td class="num">×1</td><td>Custo fixo, não escala</td></tr>
+  </table>
+</div>
+
+<div class="sec card flag">
+  <h3>Ajuste necessário no teste de carga</h3>
+  <p style="margin-bottom:7px;">O alvo de <strong>98 números e 100 usuários está correto</strong> e é o que este documento dimensiona.
+  O que precisa mudar é só um parâmetro do script: em <code>scripts/load-test-webhook.mjs:74</code>,
+  <code>--rate</code> é <strong>mensagens por segundo por instância</strong>. O roteiro atual usa <code>--rate 2</code>:</p>
+  <svg viewBox="0 0 560 78" width="100%" height="78">
+    <text x="0" y="10" font-size="7.6" fill="#6b7280">Pico projetado para 98 números, a partir do seu medido</text>
+    <rect x="0" y="16" width="35" height="20" fill="#256b34"/>
+    <text x="42" y="30" font-size="8.4" font-weight="600" fill="#256b34">13,6 req/s</text>
+    <text x="120" y="30" font-size="7.8" fill="#6b7280">= 135 mensagens por número por dia (o seu real, ×33)</text>
+    <text x="0" y="54" font-size="7.6" fill="#6b7280">O que o roteiro testa com --rate 2</text>
+    <rect x="0" y="58" width="504" height="16" fill="#a3341a"/>
+    <text x="8" y="70" font-size="8.4" font-weight="600" fill="#fff">196 req/s   =   172.800 mensagens por número por dia   —   14× acima do pico real</text>
+  </svg>
+  <p style="margin:8px 0 0;"><strong>Use dois testes:</strong> <code>--rate 0.3</code> (≈29 req/s, o dobro do pico projetado) como
+  <strong>critério de aprovação</strong> do lançamento, contra as metas da Parte 4 de <code>docs/teste-de-carga.md</code>;
+  e <code>--rate 2</code> por 5 minutos como <strong>teste de ruptura</strong>, só para descobrir o que quebra primeiro —
+  sem valer como reprovação.</p>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 5. RECOMENDAÇÃO ============ -->
+<div class="sec">
+  <div class="eyebrow">5 · Recomendação</div>
+  <h2>Compute Large — US$ 110/mês, US$ 100 líquidos a mais</h2>
+</div>
+
+<div class="sec">
+  <table>
+    <tr><th style="width:30%">&nbsp;</th><th class="num" style="width:23%">Micro (hoje)</th><th class="num" style="width:23%">Medium</th><th class="num" style="width:24%">Large (recomendado)</th></tr>
+    <tr><td>RAM</td><td class="num">1 GB</td><td class="num">4 GB</td><td class="num"><strong>8 GB</strong></td></tr>
+    <tr class="hl"><td>Tipo de CPU</td><td class="num">compartilhada, burst</td><td class="num">compartilhada, burst</td><td class="num"><strong>dedicada</strong></td></tr>
+    <tr><td>Conexões diretas</td><td class="num">60</td><td class="num">120</td><td class="num"><strong>160</strong></td></tr>
+    <tr><td>Conexões no pooler</td><td class="num">200</td><td class="num">600</td><td class="num"><strong>800</strong></td></tr>
+    <tr><td>I/O de base</td><td class="num">11 MB/s</td><td class="num">43 MB/s</td><td class="num"><strong>79 MB/s</strong></td></tr>
+    <tr><td>Teto de I/O</td><td class="num">261 MB/s</td><td class="num">261 MB/s</td><td class="num"><strong>594 MB/s</strong></td></tr>
+    <tr><td>Preço por mês</td><td class="num">US$ 10</td><td class="num">US$ 60</td><td class="num"><strong>US$ 110</strong></td></tr>
+  </table>
+</div>
+
+<div class="sec">
+  <div class="grid2">
+    <div class="card">
+      <h3>Por que Large e não Medium</h3>
+      <p style="margin-bottom:6px;"><strong>O motivo decisivo não é RAM — é o tipo de CPU.</strong> Micro, Small e Medium são
+      <em>burstáveis</em>: entregam performance alta enquanto há crédito e despencam quando ele acaba.</p>
+      <p style="margin-bottom:6px;">Um CRM de WhatsApp tem carga <strong>sustentada das 8h às 20h</strong>, não picos curtos.
+      É o perfil errado para burst. O Large é o primeiro nível com CPU dedicada — você troca uma
+      queda invisível e imprevisível por um teto conhecido.</p>
+      <p style="margin:0;">Em RAM, o Medium também é apertado no médio prazo: com 98 números o banco cresce
+      ~830 MB por mês e passa de 4 GB em cerca de 4 meses — voltando ao swap de hoje, só que em produção cheia.</p>
+    </div>
+    <div class="card">
+      <h3>Até quando o Large serve</h3>
+      <svg viewBox="0 0 250 118" width="100%" height="118">
+        <line x1="24" y1="86" x2="246" y2="86" stroke="#d5d9de"/>
+        <line x1="24" y1="16" x2="246" y2="16" stroke="#e8d5cc" stroke-dasharray="3 3"/>
+        <line x1="24" y1="51" x2="246" y2="51" stroke="#edeff2" stroke-dasharray="3 3"/>
+        <text x="0" y="19" font-size="6.6" fill="#a3341a">8 GB</text>
+        <text x="0" y="54" font-size="6.6" fill="#9aa1a9">4 GB</text>
+        <text x="6" y="89" font-size="6.6" fill="#9aa1a9">0</text>
+        <polyline points="24,77 61,70 98,64 135,57 172,51 209,44 246,38" fill="none" stroke="#2f4858" stroke-width="1.8"/>
+        <circle cx="24" cy="77" r="2.6" fill="#2f4858"/>
+        <text x="24" y="100" font-size="6.6" fill="#6b7280" text-anchor="middle">hoje</text>
+        <text x="135" y="100" font-size="6.6" fill="#6b7280" text-anchor="middle">+6 meses</text>
+        <text x="240" y="100" font-size="6.6" fill="#6b7280" text-anchor="end">+12 meses</text>
+        <text x="30" y="72" font-size="6.6" fill="#6b7280">1,08 GB</text>
+        <text x="0" y="114" font-size="7.2" fill="#16191d">Com 98 números o banco chega a ~8 GB em cerca de um ano.</text>
+      </svg>
+      <p class="tiny muted" style="margin:2px 0 0;">Projeção linear a 830 MB/mês, sem contar as purgas já existentes,
+      que achatam a curva. Reavaliar o XL quando o banco passar de 5 GB.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h3>Custo mensal no lançamento</h3>
+  <table>
+    <tr><th style="width:34%">Item</th><th style="width:44%">Configuração</th><th class="num" style="width:22%">US$/mês</th></tr>
+    <tr><td>Supabase — plano</td><td>Pro</td><td class="num">25</td></tr>
+    <tr><td>Supabase — compute</td><td>Large, menos US$ 10 de crédito incluso</td><td class="num">100</td></tr>
+    <tr><td>Supabase — disco</td><td>32 GB GP3 (24 GB acima do incluso, a US$ 0,125/GB)</td><td class="num">3</td></tr>
+    <tr><td>Lovable</td><td>Hospedagem do frontend estático</td><td class="num">5</td></tr>
+    <tr><td>Evolution API</td><td>2 VPS de 8 vCPU / 16 GB (49 números cada)</td><td class="num">70–140</td></tr>
+    <tr style="font-weight:700; background:#f7f8f9;"><td>Total</td><td>&nbsp;</td><td class="num">203–273</td></tr>
+    <tr><td class="muted">PITR — <em>não recomendado agora</em></td><td class="muted">7 dias de retenção contínua</td><td class="num muted">+100</td></tr>
+  </table>
+  <p class="small note" style="margin-top:9px;"><strong>Sobre o PITR:</strong> a revisão de escala manda ligar, e aqui a recomendação é o contrário,
+  por custo-benefício. São US$ 100/mês — dobrar a conta do Supabase para proteger 4 organizações. O plano Pro já
+  inclui backup diário com 7 dias de retenção, e você tem a tabela <code>inbound_events</code> como caixa-preta da entrada.
+  Ligue o PITR quando passar de ~20 organizações pagantes. A única razão para pagar antes disso é se perder até
+  24 horas de conversa já for inaceitável no lançamento.</p>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 6. CONFIGURAÇÕES ============ -->
+<div class="sec">
+  <div class="eyebrow">6 · Configurações de servidor</div>
+  <h2>Supabase e Evolution API</h2>
+</div>
+
+<div class="sec">
+  <div class="grid2">
+    <div class="card">
+      <h3>Supabase</h3>
+      <table style="font-size:8.4pt;">
+        <tr><td style="border:0;padding:3px 0;width:42%;" class="muted">Compute</td><td style="border:0;padding:3px 0;"><strong>Large</strong> — 8 GB, 2 núcleos dedicados</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Disco</td><td style="border:0;padding:3px 0;"><strong>32 GB GP3</strong>, autoscale ligado</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">PITR</td><td style="border:0;padding:3px 0;">desligado no lançamento</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Pooler</td><td style="border:0;padding:3px 0;">Transaction mode para as edge functions;<br>Session mode só para o dump do staging</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Estatísticas</td><td style="border:0;padding:3px 0;"><code>pg_stat_statements_reset()</code> agora,<br>reler em 48 h</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Região</td><td style="border:0;padding:3px 0;">a mesma da Evolution — sem exceção</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Evolution API — 2 máquinas de 49 números</h3>
+      <p class="small" style="margin-bottom:7px;">A divisão não é por RAM, é por <strong>raio de explosão</strong>: uma Evolution
+      única derruba os 98 números de todas as organizações ao mesmo tempo.</p>
+      <table style="font-size:8.4pt;">
+        <tr><td style="border:0;padding:3px 0;width:42%;" class="muted">Por servidor (×2)</td><td style="border:0;padding:3px 0;"><strong>8 vCPU dedicada · 16 GB · 160 GB NVMe</strong></td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Banco e cache</td><td style="border:0;padding:3px 0;">Postgres e Redis <strong>próprios</strong>, no mesmo host</td></tr>
+        <tr><td style="border:0;padding:3px 0;" class="muted">Números</td><td style="border:0;padding:3px 0;">49 por máquina</td></tr>
+      </table>
+      <p class="tiny muted" style="margin:7px 0 0;">As 8 vCPU não são para o regime normal — 49 números a 7 msg/s é pouco.
+      São para a <strong>tempestade de reconexão</strong>, quando os 49 refazem o handshake criptográfico ao mesmo tempo.
+      É o único pico real de CPU da Evolution.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sec card">
+  <h3>Variáveis de ambiente obrigatórias na Evolution</h3>
+  <div class="grid2">
+    <div>
+      <table style="font-size:8.2pt;">
+        <tr><td style="border:0;padding:3px 0;"><code>CACHE_REDIS_ENABLED=true</code></td></tr>
+        <tr><td style="border:0;padding:3px 0;"><code>CACHE_REDIS_SAVE_INSTANCES=true</code></td></tr>
+        <tr><td style="border:0;padding:3px 0;"><code>DATABASE_SAVE_DATA_MESSAGE_UPDATE=false</code></td></tr>
+        <tr><td style="border:0;padding:3px 0;"><code>DATABASE_SAVE_DATA_CONTACTS=false</code></td></tr>
+        <tr><td style="border:0;padding:3px 0;"><code>DATABASE_SAVE_DATA_CHATS=false</code></td></tr>
+        <tr><td style="border:0;padding:3px 0;"><code>WEBHOOK_EVENTS_PRESENCE_UPDATE=false</code></td></tr>
+      </table>
+    </div>
+    <div class="small">
+      <p style="margin-bottom:6px;"><strong>Redis não é opcional.</strong> Sem ele o store do Baileys vive no heap do Node
+      e cada número custa ~300 MB. Com ele cai para ~120 MB: 49 × 120 MB ≈ 6 GB, e os 16 GB ficam com folga real.</p>
+      <p style="margin:0;"><strong>Os três <code>DATABASE_SAVE_DATA_*</code></strong> desligam a cópia de mensagens, contatos e
+      conversas dentro da Evolution — você já guarda tudo isso no Supabase, que é a fonte de verdade.
+      Manter ligado é pagar disco e I/O por um espelho que ninguém lê.</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <h3>Um item aberto: <code>PRESENCE_UPDATE</code></h3>
+  <p style="margin:0;">O <code>zapi-configure-webhook/index.ts:103</code> assina esse evento hoje. Cada “digitando…” de cada contato
+  vira uma invocação de edge function. Não deu para medir pelo <code>inbound_events</code> — ele só grava
+  <code>messages.upsert</code> (98 registros em 24 h). <strong>Mede assim:</strong> Reports → Edge Functions, filtre por
+  <code>zapi-webhook</code> e compare as invocações do dia com as ~400 mensagens/dia. Se estiver muito acima,
+  desligue o evento. É o corte mais barato disponível.</p>
+</div>
+
+<div class="sec card ok">
+  <h3>Lovable: fica</h3>
+  <p style="margin-bottom:6px;">Por US$ 5/mês servindo estático que você mesmo builda e sobe, não existe conta que justifique
+  migrar na véspera do lançamento. Ele <strong>não processa carga nenhuma</strong> — quem processa é o Supabase e a Evolution.
+  A saída já está pronta se um dia quiser (<code>docker-compose.yml</code> + <code>docs/deploy-vps-docker.md</code>),
+  sem perder o sync do repositório.</p>
+  <p style="margin:0;">O risco real é o de sempre, e é gerenciável: ele commita direto na <code>main</code> junto com você
+  e reverte alterações de RLS no sync. Dois guardrails, ambos já são a regra do projeto — <strong>policy e RLS só entram
+  pelo Lovable</strong>, e <strong>migration só à mão no SQL Editor</strong>. Antes de cada deploy, <code>git log --oneline origin/main</code>
+  para ver o que ele commitou em paralelo.</p>
+  <p class="tiny muted" style="margin:7px 0 0;">Sinal correlato no Query Performance: 4.760 execuções de
+  <code>SELECT name FROM pg_timezone_names</code> com 0% de cache hit — é o PostgREST recarregando o schema cache,
+  provavelmente disparado pelo sync. Custa 0,28% do banco. Não é urgente, mas explica um ruído constante.</p>
+</div>
+
+<div class="page"></div>
+
+<!-- ============ 7. PLANO ============ -->
+<div class="sec">
+  <div class="eyebrow">7 · Ordem de execução</div>
+  <h2>O que fazer, na ordem, e por quê</h2>
+  <p class="muted small">A pergunta “troco o compute antes ou depois do teste de carga?” tem resposta:
+  <strong>antes</strong> — mas não é o primeiro passo.</p>
+</div>
+
+<div class="sec">
+  <ol class="steps">
+    <li>
+      <strong>Limpar o pg_net.</strong> <span class="tag t-good">custo zero</span> <span class="tag t-good">hoje</span><br>
+      <span class="small"><code>TRUNCATE net._http_response;</code> seguido de <code>SELECT net.worker_restart();</code>,
+      e um cron diário de <code>VACUUM (FULL) net._http_response</code>. Devolve 283 MB — 26% do banco — e ataca
+      diretamente os 72% de tempo de banco desperdiçado.</span>
+    </li>
+    <li>
+      <strong>Desligar os 4 crons do Instagram</strong> enquanto o Engage estiver travado no App Review.<br>
+      <span class="small"><code>UPDATE cron.job SET active = false WHERE jobname LIKE 'instagram-%';</code>
+      Corta 4.608 invocações por dia e metade do polling de minuto. Reative junto com o lançamento do Engage.
+      Aproveite e remova o <code>encerrar-enegnyork220826</code>, que já passou.</span>
+    </li>
+    <li>
+      <strong>Aplicar a migration <code>20260830180000</code></strong>, que ainda está pendente à mão, e
+      <strong>resetar as estatísticas</strong>: <code>SELECT pg_stat_statements_reset();</code>
+    </li>
+    <li>
+      <strong>Esperar 48 horas e reler o Query Performance.</strong> <span class="tag t-warn">ponto de decisão</span><br>
+      <span class="small">Se o pg_net saiu do topo, você recuperou 70% do banco sem gastar nada — e a lista de conversas
+      vira o novo número 1, que é o alvo certo para o próximo esforço de código. Confira também se o swap caiu.</span>
+    </li>
+    <li>
+      <strong>Subir para o compute Large.</strong> <span class="tag t-bad">+US$ 100/mês</span><br>
+      <span class="small">Restart de cerca de 2 minutos, cobrado por hora e proporcional — errar o tamanho custa centavos.
+      Vem antes do teste porque o staging tem que ter o <em>mesmo</em> compute da produção (<code>docs/criar-staging.md</code>):
+      medir no Micro e depois subir invalida o resultado e obriga a refazer o staging inteiro.</span>
+    </li>
+    <li>
+      <strong>Montar o staging já no Large</strong> pelo caminho do dump de schema, e rodar uma mensagem única
+      antes de qualquer carga.
+    </li>
+    <li>
+      <strong>Rodar o teste de aceitação</strong> com <code>--rate 0.3 --duration 1800</code> (≈29 req/s, o dobro do pico projetado),
+      contra as metas da Parte 4 de <code>docs/teste-de-carga.md</code>. <span class="tag t-warn">este é o gate</span>
+    </li>
+    <li>
+      <strong>Rodar o teste de ruptura</strong> com <code>--rate 2 --duration 300</code>, só para saber onde quebra
+      e o que quebra primeiro. Não vale como reprovação.
+    </li>
+    <li>
+      <strong>Derrubar o staging</strong> assim que terminar — enquanto existir, ele custa outro Large.
+    </li>
+  </ol>
+</div>
+
+<div class="sec card flag">
+  <h3>O passo 1 é o de maior retorno do projeto neste momento</h3>
+  <p style="margin:0;">Não custa nada, não é código, não precisa de deploy e não depende do Lovable. E pode mudar
+  o que o passo 7 vai medir: com 72% do banco ocupado varrendo lixo, qualquer teste de carga mede o lixo,
+  não o seu sistema.</p>
+</div>
+
+<div class="sec">
+  <div class="eyebrow">Anexo</div>
+  <h3>Consultas mais caras do período — as que sobram depois do pg_net</h3>
+  <table>
+    <tr><th style="width:40%">Consulta</th><th class="num">Chamadas</th><th class="num">Média</th><th class="num">% do banco</th><th style="width:24%">Ação</th></tr>
+    <tr><td>Lista de conversas (9 variantes)</td><td class="num">62.581</td><td class="num">234–1.771 ms</td><td class="num">8,94%</td><td>Alvo do próximo esforço de código</td></tr>
+    <tr><td>Uma variante sem filtro de <code>organization_id</code></td><td class="num">15.733</td><td class="num">1.013 ms</td><td class="num">3,58%</td><td>Achar quem ainda chama</td></tr>
+    <tr><td><code>wz_health_snapshot()</code></td><td class="num">169</td><td class="num">3.077 ms</td><td class="num">0,12%</td><td>5,4% de cache hit — o vigia lê quase tudo do disco</td></tr>
+    <tr><td><code>contact_tags</code> por contato</td><td class="num">985.137</td><td class="num">0,9 ms</td><td class="num">0,20%</td><td>N+1 no frontend; barato por chamada</td></tr>
+    <tr><td>Ack de entrega — <code>UPDATE messages</code></td><td class="num">55.305</td><td class="num">56–66 ms</td><td class="num">0,77%</td><td>Conferir o índice em <code>zapi_message_id</code></td></tr>
+    <tr><td><code>whatsapp_connection_logs</code> INSERT</td><td class="num">139.993</td><td class="num">18 ms</td><td class="num">0,58%</td><td>Provável resíduo pré-Semana 3</td></tr>
+    <tr><td><code>user_fingerprints</code> INSERT</td><td class="num">43.135</td><td class="num">11 ms</td><td class="num">0,11%</td><td>43 mil escritas para 7 usuários</td></tr>
+    <tr><td><code>pg_timezone_names</code> (schema cache do PostgREST)</td><td class="num">4.760</td><td class="num">262 ms</td><td class="num">0,28%</td><td>0% de cache; ruído do sync</td></tr>
+  </table>
+  <p class="tiny muted" style="margin-top:8px;"><strong>Ressalva:</strong> o <code>pg_stat_statements</code> acumula desde o último reset,
+  que nunca foi feito. Parte destes números é anterior às correções da Semana 3 — os 139.993 inserts em
+  <code>whatsapp_connection_logs</code>, em particular. Por isso o passo 3 do plano é resetar e reavaliar em 48 h.
+  Nada disso afeta o achado do pg_net, que é do worker da extensão e não do seu código.</p>
+</div>
+
+<div class="sec" style="margin-top:20px; padding-top:11px; border-top:1px solid #e3e6ea;">
+  <p class="tiny muted" style="margin:0;">
+    Wizzy · Dimensionamento de infraestrutura para o lançamento de setembro/2026 · gerado em 31/08/2026.<br>
+    Fontes: painel do Supabase (Reports, Usage, Advisors → Query Performance) em 31/08/2026;
+    consultas diretas ao banco de produção; <code>docs/REVISAO_ESCALA_LANCAMENTO.md</code>;
+    <code>docs/teste-de-carga.md</code>; <code>docs/criar-staging.md</code>;
+    tabela de compute e preços de supabase.com/pricing e da documentação de Compute &amp; Disk.
+    Item ainda em aberto: hospedagem atual da Evolution API (provedor, vCPU, RAM, Redis), que fecha a faixa de US$ 70–140.
+  </p>
+</div>
+
+</body>
+</html>
