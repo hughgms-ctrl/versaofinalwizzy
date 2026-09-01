@@ -44,8 +44,8 @@ serve(async (req) => {
     const user = await getRequestUser(req);
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     await assertActiveOrganizationAccess(supabase, user.id, organizationId, { module: 'flows' });
-    const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
-    const integrationConfig = await applyAdminAIStrategy(supabase, organizationId, data, 'prompt_generation');
+    const { data: configRow } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
+    const integrationConfig = await applyAdminAIStrategy(supabase, organizationId, configRow, 'prompt_generation');
     const aiConfig = resolveAIConfig(integrationConfig, 'flow_generation');
     if (!aiConfig) {
       return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API." }), {
@@ -106,7 +106,9 @@ Retorne APENAS o prompt de personalidade, sem explicações adicionais.`;
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
-      throw new Error("AI gateway error");
+      let detail = t?.slice(0, 300) || "";
+      try { detail = JSON.parse(t)?.error?.message || detail; } catch { /* corpo nao era JSON */ }
+      throw new Error(`Falha na IA (${response.status})${detail ? `: ${detail}` : ""}`);
     }
 
     const data = await response.json();

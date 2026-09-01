@@ -47,8 +47,8 @@ serve(async (req) => {
     const user = await getRequestUser(req);
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     await assertActiveOrganizationAccess(supabase, user.id, organizationId, { module: 'flows' });
-    const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
-    const integrationConfig = await applyAdminAIStrategy(supabase, organizationId, data, 'flow_generation');
+    const { data: configRow } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
+    const integrationConfig = await applyAdminAIStrategy(supabase, organizationId, configRow, 'flow_generation');
     const aiConfig = resolveAIConfig(integrationConfig, 'flow_generation');
     if (!aiConfig) {
       return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API." }), {
