@@ -281,6 +281,23 @@ export async function waitForSendSlot(supabase: any, instanceId: string | null |
   console.warn(`[SEND_RATE_LIMIT] Instancia ${instanceId} segue sem vaga apos a espera; enviando mesmo assim.`);
 }
 
+/**
+ * Preview de link so quando o texto traz um link ESCRITO como link
+ * (`http://`, `https://` ou `www.`).
+ *
+ * O Evolution/Baileys nao se limita a isso: com `linkPreview` ligado ele varre o
+ * texto atras de qualquer coisa com cara de dominio e BAIXA a pagina antes de
+ * mandar a mensagem. Numa lista vinda do no "Consultar contatos", um
+ * "joao@empresa.com.br" vira uma visita a empresa.com.br — dominio que nao
+ * responde segura o envio ate estourar o teto do fetch, e quem desenhou o fluxo
+ * ve so "TimeoutError: Signal timed out".
+ *
+ * Quem escreveu um link de verdade continua ganhando o preview.
+ */
+export function shouldPreviewLinks(text: string | null | undefined): boolean {
+  return /(https?:\/\/|\bwww\.)/i.test(String(text ?? ''));
+}
+
 export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRequest): Promise<WhatsAppSendResult> {
   const settings = await loadConnectionSettings(supabase);
   const instance = await resolveWhatsAppInstance(
@@ -313,7 +330,12 @@ export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRe
 
     if (type === 'text') {
       endpoint = `${settings.evolutionBaseUrl}/message/sendText/${instanceName}`;
-      body = { number: normalizedPhone, text: request.text || '', delay: 1000, linkPreview: true };
+      body = {
+        number: normalizedPhone,
+        text: request.text || '',
+        delay: 1000,
+        linkPreview: shouldPreviewLinks(request.text),
+      };
     } else if (type === 'audio') {
       endpoint = `${settings.evolutionBaseUrl}/message/sendWhatsAppAudio/${instanceName}`;
       body = { number: normalizedPhone, audio: request.mediaUrl, delay: 1000, linkPreview: true };
@@ -327,7 +349,7 @@ export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRe
         media: request.mediaUrl,
         fileName: fileNameFromUrl(request.mediaUrl, `${type}-${Date.now()}`),
         delay: 1000,
-        linkPreview: true,
+        linkPreview: shouldPreviewLinks(request.caption || request.text),
       };
     }
   } else {

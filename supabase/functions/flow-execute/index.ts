@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resumeFlow } from '../_shared/flowResume.ts';
 import { mergeConversationMetadata } from '../_shared/conversationMetadata.ts';
-import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage, shouldPreviewLinks } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 import {
@@ -22,6 +22,14 @@ import {
 // segurava o isolate até o runtime matá-lo — a execução ficava em 'running'
 // sem ninguém rodando (zumbi) e a conversa do lead emudecia.
 const FETCH_TIMEOUT_PROVIDER_MS = 15_000;
+// Envio de mensagem tem prazo PROPRIO, igual ao de _shared/whatsappProvider.ts
+// (30s texto, 90s midia). Os 15s genericos eram metade do que o mesmo Evolution
+// ganha no chat, na campanha e no envio para grupo: bastava a instancia estar
+// ocupada para o bloco de conteudo morrer com "Signal timed out" enquanto o
+// resto do produto continuava enviando pelo mesmo numero. Midia precisa de mais
+// porque o provedor BAIXA a URL antes de mandar.
+const FETCH_TIMEOUT_SEND_TEXT_MS = 30_000;
+const FETCH_TIMEOUT_SEND_MEDIA_MS = 90_000;
 const FETCH_TIMEOUT_WEBHOOK_MS = 20_000;
 const FETCH_TIMEOUT_INTERNAL_MS = 15_000;
 const FETCH_TIMEOUT_PDF_MS = 30_000;
@@ -2710,11 +2718,24 @@ async function executeWhatsAppGroupMessage(
       }
     } catch (error) {
       console.error('[FLOW EXECUTE] Error sending group content item:', error);
-      return { success: false, error: `Failed to send group item: ${error}` };
+      return { success: false, error: `Falha ao enviar o item "${item.type}" para o grupo: ${describeSendFailure(error)}` };
     }
   }
 
   return { success: true };
+}
+
+/**
+ * "TimeoutError: Signal timed out." e o texto cru que o AbortSignal joga: nao diz
+ * o que estourou, nem por quanto tempo, nem se a mensagem saiu — e era assim que
+ * chegava na tela de quem desenhou o fluxo.
+ */
+function describeSendFailure(error: unknown): string {
+  const name = (error as { name?: string } | null)?.name;
+  if (name === 'TimeoutError' || name === 'AbortError') {
+    return `o provedor de WhatsApp nao respondeu a tempo (${FETCH_TIMEOUT_SEND_TEXT_MS / 1000}s para texto, ${FETCH_TIMEOUT_SEND_MEDIA_MS / 1000}s para midia). A mensagem pode ter saido mesmo assim — confira a conversa antes de reenviar. Se o texto vem de variavel (lista de contatos, resposta de webhook), confira no historico de execucao o tamanho do que foi montado.`;
+  }
+  return String(error);
 }
 
 async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType, node?: FlowNode): Promise<NodeResult> {
@@ -2819,7 +2840,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
       }
     } catch (error) {
       console.error(`[FLOW EXECUTE] Error executing content item ${item.id}:`, error);
-      return { success: false, error: `Failed to execute content item: ${error}` };
+      return { success: false, error: `Falha ao enviar o item "${item.type}" do bloco de conteudo: ${describeSendFailure(error)}` };
     }
   }
 
@@ -2857,8 +2878,14 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
   if (!message) return;
 
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+  // Preview so quando ha link escrito (ver shouldPreviewLinks): texto que veio de
+  // variavel — a listagem do no "Consultar contatos", por exemplo — carrega
+  // dominio solto dentro de e-mail e fazia o provedor sair buscando a pagina.
+  const linkPreview = shouldPreviewLinks(message);
 
-  console.log(`[FLOW EXECUTE] sendTextMessage: provider=${context.provider}, phone=${normalizedPhone}`);
+  // O tamanho no log e o que separa "provedor fora do ar" de "mensagem grande
+  // demais" quando o envio estoura o prazo.
+  console.log(`[FLOW EXECUTE] sendTextMessage: provider=${context.provider}, phone=${normalizedPhone}, chars=${message.length}, linkPreview=${linkPreview}`);
 
   let response: Response;
   if (context.provider === 'evolution') {
@@ -2866,7 +2893,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       throw new Error('Evolution API not configured for flow execution');
     }
     response = await fetch(`${context.evolutionBaseUrl}/message/sendText/${context.evolutionInstanceName}`, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_SEND_TEXT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2876,7 +2903,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
         number: normalizedPhone,
         text: message,
         delay: 1000,
-        linkPreview: true,
+        linkPreview,
       }),
     });
   } else {
@@ -2884,7 +2911,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       throw new Error('UAZAPI not configured for flow execution');
     }
     response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_SEND_TEXT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2966,13 +2993,13 @@ async function sendMediaItem(
         media: mediaUrl,
         fileName: fileNameFromUrl(mediaUrl, `${mediaType}-${Date.now()}`),
         delay: 1000,
-        linkPreview: true,
+        linkPreview: shouldPreviewLinks(processedCaption),
       };
     const endpoint = mediaType === 'audio'
       ? `${context.evolutionBaseUrl}/message/sendWhatsAppAudio/${context.evolutionInstanceName}`
       : `${context.evolutionBaseUrl}/message/sendMedia/${context.evolutionInstanceName}`;
     response = await fetch(endpoint, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_SEND_MEDIA_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2996,7 +3023,7 @@ async function sendMediaItem(
     if (mediaType === 'audio') body.ptt = true;
 
     response = await fetch(`${context.uazapiBaseUrl}/send/media`, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_PROVIDER_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_SEND_MEDIA_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
