@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -1258,11 +1258,14 @@ export type Database = {
       }
       campaign_queue: {
         Row: {
+          attempts: number
           campaign_id: string | null
+          claimed_at: string | null
           contact_id: string | null
           conversation_id: string | null
           created_at: string | null
           id: string
+          last_error: string | null
           message_content: string | null
           organization_id: string | null
           processed_at: string | null
@@ -1271,11 +1274,14 @@ export type Database = {
           variables: Json | null
         }
         Insert: {
+          attempts?: number
           campaign_id?: string | null
+          claimed_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
           created_at?: string | null
           id?: string
+          last_error?: string | null
           message_content?: string | null
           organization_id?: string | null
           processed_at?: string | null
@@ -1284,11 +1290,14 @@ export type Database = {
           variables?: Json | null
         }
         Update: {
+          attempts?: number
           campaign_id?: string | null
+          claimed_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
           created_at?: string | null
           id?: string
+          last_error?: string | null
           message_content?: string | null
           organization_id?: string | null
           processed_at?: string | null
@@ -2751,6 +2760,62 @@ export type Database = {
           },
         ]
       }
+      contact_number_owners: {
+        Row: {
+          claimed_by: string
+          contact_id: string
+          organization_id: string
+          updated_at: string
+          whatsapp_instance_id: string
+          workspace_id: string
+        }
+        Insert: {
+          claimed_by?: string
+          contact_id: string
+          organization_id: string
+          updated_at?: string
+          whatsapp_instance_id: string
+          workspace_id: string
+        }
+        Update: {
+          claimed_by?: string
+          contact_id?: string
+          organization_id?: string
+          updated_at?: string
+          whatsapp_instance_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_number_owners_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_number_owners_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_number_owners_whatsapp_instance_id_fkey"
+            columns: ["whatsapp_instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_number_owners_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_presence: {
         Row: {
           contact_id: string
@@ -3125,7 +3190,7 @@ export type Database = {
           {
             foreignKeyName: "conversation_pipeline_positions_conversation_id_fkey"
             columns: ["conversation_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
@@ -4484,6 +4549,7 @@ export type Database = {
           execution_log: Json | null
           flow_id: string
           id: string
+          last_heartbeat_at: string | null
           organization_id: string
           remarketing_step: number
           resumed_from_execution_id: string | null
@@ -4504,6 +4570,7 @@ export type Database = {
           execution_log?: Json | null
           flow_id: string
           id?: string
+          last_heartbeat_at?: string | null
           organization_id: string
           remarketing_step?: number
           resumed_from_execution_id?: string | null
@@ -4524,6 +4591,7 @@ export type Database = {
           execution_log?: Json | null
           flow_id?: string
           id?: string
+          last_heartbeat_at?: string | null
           organization_id?: string
           remarketing_step?: number
           resumed_from_execution_id?: string | null
@@ -5281,6 +5349,54 @@ export type Database = {
           score_security?: number | null
           score_total?: number
           score_ux?: number | null
+        }
+        Relationships: []
+      }
+      inbound_events: {
+        Row: {
+          attempts: number
+          claimed_at: string | null
+          created_at: string
+          event_type: string | null
+          id: string
+          instance_id: string | null
+          instance_name: string | null
+          last_error: string | null
+          payload: Json
+          processed_at: string | null
+          provider: string | null
+          provider_message_id: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          event_type?: string | null
+          id?: string
+          instance_id?: string | null
+          instance_name?: string | null
+          last_error?: string | null
+          payload: Json
+          processed_at?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          event_type?: string | null
+          id?: string
+          instance_id?: string | null
+          instance_name?: string | null
+          last_error?: string | null
+          payload?: Json
+          processed_at?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -6497,6 +6613,35 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instance_send_slots: {
+        Row: {
+          instance_id: string
+          updated_at: string
+          used: number
+          window_started_at: string
+        }
+        Insert: {
+          instance_id: string
+          updated_at?: string
+          used?: number
+          window_started_at?: string
+        }
+        Update: {
+          instance_id?: string
+          updated_at?: string
+          used?: number
+          window_started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instance_send_slots_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: true
+            referencedRelation: "whatsapp_instances"
             referencedColumns: ["id"]
           },
         ]
@@ -8661,6 +8806,61 @@ export type Database = {
           },
         ]
       }
+      scheduled_message_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          parent_id: string | null
+          updated_at: string
+          workspace_id: string | null
+          workspace_ids: string[]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          parent_id?: string | null
+          updated_at?: string
+          workspace_id?: string | null
+          workspace_ids?: string[]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          parent_id?: string | null
+          updated_at?: string
+          workspace_id?: string | null
+          workspace_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_message_folders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_message_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_message_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_message_folders_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scheduled_messages: {
         Row: {
           batch_current_target: number | null
@@ -8676,7 +8876,9 @@ export type Database = {
           error_message: string | null
           execution_count: number | null
           flow_id: string | null
+          folder_id: string | null
           group_jids: Json
+          group_progress: Json
           id: string
           last_executed_at: string | null
           last_run_summary: Json | null
@@ -8710,7 +8912,9 @@ export type Database = {
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null
+          folder_id?: string | null
           group_jids?: Json
+          group_progress?: Json
           id?: string
           last_executed_at?: string | null
           last_run_summary?: Json | null
@@ -8744,7 +8948,9 @@ export type Database = {
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null
+          folder_id?: string | null
           group_jids?: Json
+          group_progress?: Json
           id?: string
           last_executed_at?: string | null
           last_run_summary?: Json | null
@@ -8777,6 +8983,13 @@ export type Database = {
             columns: ["flow_id"]
             isOneToOne: false
             referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_message_folders"
             referencedColumns: ["id"]
           },
           {
@@ -9915,6 +10128,9 @@ export type Database = {
           phone_number: string | null
           provider: string
           provider_settings: Json
+          routing_config: Json
+          routing_cursor: number
+          routing_mode: string
           status: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at: string
           zapi_instance_id: string | null
@@ -9940,6 +10156,9 @@ export type Database = {
           phone_number?: string | null
           provider?: string
           provider_settings?: Json
+          routing_config?: Json
+          routing_cursor?: number
+          routing_mode?: string
           status?: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at?: string
           zapi_instance_id?: string | null
@@ -9965,6 +10184,9 @@ export type Database = {
           phone_number?: string | null
           provider?: string
           provider_settings?: Json
+          routing_config?: Json
+          routing_cursor?: number
+          routing_mode?: string
           status?: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at?: string
           zapi_instance_id?: string | null
@@ -10870,6 +11092,55 @@ export type Database = {
           reason: string
         }[]
       }
+      claim_campaign_queue: {
+        Args: { _limit?: number; _per_org?: number }
+        Returns: {
+          attempts: number
+          campaign_id: string | null
+          claimed_at: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string | null
+          id: string
+          last_error: string | null
+          message_content: string | null
+          organization_id: string | null
+          processed_at: string | null
+          scheduled_for: string
+          status: string
+          variables: Json | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "campaign_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_inbound_events: {
+        Args: { _limit?: number; _min_age_seconds?: number }
+        Returns: {
+          attempts: number
+          claimed_at: string | null
+          created_at: string
+          event_type: string | null
+          id: string
+          instance_id: string | null
+          instance_name: string | null
+          last_error: string | null
+          payload: Json
+          processed_at: string | null
+          provider: string | null
+          provider_message_id: string | null
+          status: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "inbound_events"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_instagram_broadcast_recipients: {
         Args: { p_limit?: number }
         Returns: {
@@ -11045,8 +11316,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_ai_usage: {
+        Args: { _org: string; _period: string }
+        Returns: undefined
+      }
       increment_campaign_count: {
         Args: { campaign_id: string }
+        Returns: undefined
+      }
+      increment_unread: {
+        Args: { _at: string; _conversation: string }
         Returns: undefined
       }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
@@ -11061,6 +11340,18 @@ export type Database = {
           id: string
           similarity: number
         }[]
+      }
+      merge_contact_custom_fields: {
+        Args: { _contact_id: string; _values: Json }
+        Returns: undefined
+      }
+      merge_contact_metadata: {
+        Args: { _contact_id: string; _patch: Json }
+        Returns: Json
+      }
+      merge_conversation_metadata: {
+        Args: { _conversation: string; _set: Json; _unset?: string[] }
+        Returns: Json
       }
       merge_duplicate_contacts_safe: {
         Args: { _dry_run?: boolean }
@@ -11087,6 +11378,7 @@ export type Database = {
           orphans_merged: number
         }[]
       }
+      purge_inbound_events: { Args: { _keep_days?: number }; Returns: number }
       readopt_orphan_conversations: {
         Args: { _dry_run?: boolean }
         Returns: {
@@ -11110,6 +11402,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      release_ai_run_lock: {
+        Args: { _conversation: string; _token: string }
+        Returns: Json
+      }
       reserve_instagram_send_slot: {
         Args: { p_account_id: string; p_source?: string }
         Returns: boolean
@@ -11126,6 +11422,29 @@ export type Database = {
       seed_operations_defaults: {
         Args: { _org_id: string }
         Returns: undefined
+      }
+      share_contact_with_workspace: {
+        Args: { _contact_id: string; _workspace_id: string }
+        Returns: boolean
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
+      try_acquire_ai_run_lock: {
+        Args: { _conversation: string; _token: string; _ttl_seconds?: number }
+        Returns: boolean
+      }
+      try_acquire_send_slot: {
+        Args: {
+          _instance_id: string
+          _max_per_window?: number
+          _window_seconds?: number
+        }
+        Returns: boolean
+      }
+      unaccent_simples: { Args: { _t: string }; Returns: string }
+      unshare_contact_from_workspace: {
+        Args: { _contact_id: string; _workspace_id: string }
+        Returns: boolean
       }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
@@ -11152,6 +11471,87 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       whatsapp_phone_match_key: { Args: { raw_phone: string }; Returns: string }
+      wz_claim_contact_owner: {
+        Args: {
+          _contact_id: string
+          _instance_id: string
+          _source?: string
+          _workspace_id: string
+        }
+        Returns: undefined
+      }
+      wz_conversation_phone_key: {
+        Args: { _instance_id: string; _source_phone: string }
+        Returns: string
+      }
+      wz_dados_do_evento: {
+        Args: { _momento: string; _tag_edicao: string }
+        Returns: string
+      }
+      wz_edicao_corrente: {
+        Args: never
+        Returns: {
+          nome: string
+          tag: string
+        }[]
+      }
+      wz_encerrar_edicao: {
+        Args: { _cod: string }
+        Returns: {
+          cards_mantidos: number
+          cards_removidos: number
+          mentorados: number
+        }[]
+      }
+      wz_enviar_relatorio: {
+        Args: {
+          _edicao_nome: string
+          _momento: string
+          _tag_edicao: string
+          _telefones: string[]
+        }
+        Returns: number
+      }
+      wz_grafico_campo: {
+        Args: {
+          _campo: string
+          _ordem: string[]
+          _tag_edicao: string
+          _titulo: string
+        }
+        Returns: string
+      }
+      wz_health_snapshot: { Args: never; Returns: Json }
+      wz_metricas_do_evento: {
+        Args: {
+          _edicao_nome?: string
+          _momento: string
+          _tag_edicao: string
+          _tz?: string
+        }
+        Returns: string
+      }
+      wz_route_incoming_conversation: {
+        Args: {
+          _contact_id: string
+          _instance_id: string
+          _organization_id: string
+        }
+        Returns: string
+      }
+      wz_workspace_allowed_for_conversation: {
+        Args: {
+          _instance_id: string
+          _organization_id: string
+          _source_phone: string
+          _workspace_id: string
+        }
+        Returns: boolean
+      }
+      wz_workspace_phone_key: {
+        Args: { _workspace_id: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "owner" | "admin" | "supervisor" | "agent" | "platform_admin"
@@ -11206,12 +11606,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -11235,11 +11635,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -11260,11 +11660,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -11285,11 +11685,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -11302,11 +11702,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

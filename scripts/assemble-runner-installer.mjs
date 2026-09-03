@@ -28,7 +28,11 @@ try {
     await pipeline(createReadStream(join(partsDir, part)), output, { end: false });
   }
 } finally {
-  output.end();
+  await new Promise((resolvePromise, rejectPromise) => {
+    output.on("close", resolvePromise);
+    output.on("error", rejectPromise);
+    output.end();
+  });
 }
 
 const actualSize = statSync(outputPath).size;
