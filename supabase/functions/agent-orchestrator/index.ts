@@ -1095,7 +1095,7 @@ async function walkFlowForward(
 
     // B. Default path selection (if no outcome or no matching handle found)
     if (!nextEdge) {
-      nextEdge = currentEdges[0];
+      nextEdge = currentEdges.find((e: any) => e.sourceHandle === 'outcome-default') || currentEdges[0];
     }
 
     const nextNodeId = nextEdge?.target;
@@ -1516,7 +1516,13 @@ async function invokeAgentAI(
     systemPrompt += `- Esta é sua PRIMEIRA interação. Você DEVE iniciar seu trabalho conforme suas instruções.\n`;
     systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, siga o protocolo de coleta e validação de dados.\n`;
     systemPrompt += `- Você só poderá avançar o fluxo quando suas instruções específicas de coleta/qualificação estiverem 100% cumpridas.\n`;
-  } else if (hasNextNodes) {
+  }
+
+  // As instruções de encerramento entram TAMBÉM na primeira ativação: um nó de
+  // uma tacada só (ex.: devolutiva) cumpre a etapa inteira já nessa primeira
+  // rodada e, sem estas linhas, entregava a mensagem e ficava parado para
+  // sempre — mesmo com "Avançar automaticamente" ligado.
+  if (hasNextNodes) {
     // Check autoAdvance from handoff context
     const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
     const autoAdvance = handoffCtx.autoAdvance !== false; // default true
@@ -1770,11 +1776,18 @@ async function invokeAgentAI(
   const inferredOutcome = inferOutcomeFromReply(replyText, outcomes);
   const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
 
-  const shouldFallbackAdvanceWithoutOutcomes =
-    !hasConfiguredOutcomes &&
+  const hasCompletionCueReply =
     hasUserVisibleReply &&
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
+
+  const shouldFallbackAdvanceWithoutOutcomes = !hasConfiguredOutcomes && hasCompletionCueReply;
+
+  // Saída com nome sem carga semântica (ex.: "devolutiva_entregue") não casa com
+  // nenhum padrão de inferOutcomeFromReply, então o nó COM saídas configuradas
+  // tinha MENOS rede que o nó sem saída nenhuma e ficava parado para sempre.
+  const shouldFallbackAdvanceByCompletionCue =
+    hasConfiguredOutcomes && !inferredOutcome && hasCompletionCueReply;
 
   if ((!hasUserVisibleReply || isKnownGenericDetailFallback(replyText)) && !shouldAdvance && hasNextNodes && lastAgentConfig) {
     console.log('[AGENT] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
@@ -1841,6 +1854,14 @@ async function invokeAgentAI(
         name: 'advance_flow',
         arguments: {},
         result: { success: true, fallback: true, inferred_from_reply: true },
+      });
+    } else if (shouldFallbackAdvanceByCompletionCue) {
+      console.log('[AGENT] FALLBACK: completion cue but outcome names carry no semantics — advancing via saída padrão');
+      shouldAdvance = true;
+      toolsExecuted.push({
+        name: 'advance_flow',
+        arguments: {},
+        result: { success: true, fallback: true, inferred_from_reply: true, unmatched_outcome_names: true },
       });
     } else if (hasUserVisibleReply) {
       console.log('[AGENT] Fallback skipped: reply does not indicate completion, keeping AI node active');
@@ -2473,7 +2494,36 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   let replyText: string | null = null;
   let replySentViaTool = false;
 
-  const systemPrompt = await buildLegacySystemPrompt(supabase, ctx, messageContent);
+  // Config do nó de IA do fluxo (saídas esperadas + "Avançar automaticamente").
+  // O prompt legado não dizia nem que finalizar_interacao existe nem quais são
+  // as saídas do nó — o modelo entregava a mensagem final e nunca finalizava.
+  let flowExec: any = null;
+  let nodeOutcomes: string[] = [];
+  let nodeHasNextNodes = false;
+  if (ctx.flowExecutionId) {
+    const { data: flowExecRow } = await supabase
+      .from('flow_executions')
+      .select('*, flow:flows(nodes, edges)')
+      .eq('id', ctx.flowExecutionId)
+      .single();
+    flowExec = flowExecRow || null;
+    if (flowExec) {
+      const nodes = flowExec.flow?.nodes || [];
+      const edges = flowExec.flow?.edges || [];
+      const currentNode = nodes.find((n: any) => n.id === flowExec.current_node_id);
+      nodeOutcomes = parseExpectedOutcomes(currentNode?.data?.expectedOutcomes);
+      nodeHasNextNodes = edges.some((e: any) => e.source === flowExec.current_node_id);
+    }
+  }
+  const flowStepAutoAdvance = (ctx.conversation?.metadata?.ai_handoff_context || {}).autoAdvance !== false;
+
+  const systemPrompt = (await buildLegacySystemPrompt(supabase, ctx, messageContent))
+    + buildFlowStepClosingBlock({
+      inFlow: !!ctx.flowExecutionId,
+      outcomes: nodeOutcomes,
+      hasNextNodes: nodeHasNextNodes,
+      autoAdvance: flowStepAutoAdvance,
+    });
   const aiMessages: any[] = [
     { role: 'system', content: systemPrompt },
     ...ctx.messages.map((m: any) => ({
@@ -2487,7 +2537,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
-  const tools = buildLegacyTools(ctx);
+  const tools = buildLegacyTools(ctx, nodeOutcomes);
   let round = 0;
   let shouldBreak = false;
 
@@ -2701,12 +2751,8 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   }
 
   if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
-    const { data: flowExec } = await supabase
-      .from('flow_executions')
-      .select('*, flow:flows(nodes, edges)')
-      .eq('id', ctx.flowExecutionId)
-      .single();
-
+    // Reaproveita o snapshot carregado no início: quando chegamos aqui nenhuma
+    // escrita foi feita na execução (o caminho que escreve seta shouldBreak).
     if (flowExec) {
       const nodes = flowExec.flow?.nodes || [];
       const edges = flowExec.flow?.edges || [];
@@ -2716,10 +2762,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
       const inferredOutcome = inferOutcomeFromReply(replyText, configuredOutcomes);
       const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
-      const shouldAdvanceWithoutOutcomes =
-        configuredOutcomes.length === 0 &&
-        !hasQuestionLikeReply &&
-        hasExplicitCompletionCue(replyText);
+      const hasCompletionCue = !hasQuestionLikeReply && hasExplicitCompletionCue(replyText);
+      const shouldAdvanceWithoutOutcomes = configuredOutcomes.length === 0 && hasCompletionCue;
+
+      // Saída com nome sem carga semântica (ex.: "devolutiva_entregue") não casa
+      // com nenhum padrão de inferOutcomeFromReply. Sem esta rede o nó COM
+      // saídas configuradas ficava parado para sempre, com a mensagem de
+      // fechamento já entregue e o "Avançar automaticamente" ligado.
+      const shouldAdvanceByCompletionCue =
+        configuredOutcomes.length > 0 && !inferredOutcome && hasCompletionCue;
 
       // SAFETY NET: clear rejection cue but no negative outcome configured.
       // Stop the flow and hand off to humano instead of falling into default.
@@ -2740,9 +2791,13 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           arguments: { resultado: 'desqualificado' },
           result: { success: true, fallback: true, stopped_no_negative_handle: true },
         });
-      } else if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
+      } else if (
+        (configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) ||
+        shouldAdvanceWithoutOutcomes ||
+        shouldAdvanceByCompletionCue
+      ) {
         const resultado = inferredOutcome || 'concluido';
-        console.log(`[LEGACY] FALLBACK: inferred completion with resultado="${resultado}" — force advancing`);
+        console.log(`[LEGACY] FALLBACK: inferred completion with resultado="${resultado}" — force advancing${shouldAdvanceByCompletionCue ? ' (saída padrão: nome das saídas sem carga semântica)' : ''}`);
 
         let nextEdge: any = null;
         if (configuredOutcomes.length > 0) {
@@ -3514,7 +3569,44 @@ async function recoverVisibleReply(args: {
   }
 }
 
-function buildLegacyTools(ctx?: any) {
+/**
+ * Instruções de encerramento da etapa para o caminho legado (nó "Agente IA"
+ * dentro de um fluxo). O prompt legado não mencionava finalizar_interacao nem
+ * as saídas do nó, então um nó de uma tacada só (ex.: devolutiva da triagem)
+ * entregava a mensagem e ficava parado para sempre — mesmo com "Avançar
+ * automaticamente" ligado.
+ */
+function buildFlowStepClosingBlock(args: {
+  inFlow: boolean;
+  outcomes: string[];
+  hasNextNodes: boolean;
+  autoAdvance: boolean;
+}): string {
+  if (!args.inFlow) return '';
+
+  let block = `\n---\n\n# 🔚 ENCERRAMENTO DESTA ETAPA DO FLUXO:\n`;
+  block += `- Você está em UMA etapa de um fluxo. Quando a sua tarefa desta etapa estiver concluída, chame a ferramenta finalizar_interacao para devolver o controle ao fluxo.\n`;
+  block += `- Enquanto ainda faltar coletar ou validar algo, NÃO finalize: continue a conversa normalmente.\n`;
+
+  if (args.outcomes.length > 0) {
+    block += `\n🔀 SAÍDAS DESTE NÓ (use EXATAMENTE um destes valores no campo "resultado"):\n${args.outcomes.map((o) => `   - ${o}`).join('\n')}\n`;
+    block += `- NÃO invente valores fora desta lista.\n`;
+  }
+
+  if (args.autoAdvance) {
+    block += `- REGRA CRÍTICA: ao concluir sua tarefa, envie a mensagem final E chame finalizar_interacao NA MESMA RODADA. NÃO espere o cliente responder "ok" — o fluxo deve avançar sozinho.\n`;
+    block += `- Se a sua mensagem é de fechamento/encaminhamento ("um consultor vai entrar em contato", "o próximo passo é..."), então a etapa TERMINOU: finalize junto.\n`;
+    if (args.hasNextNodes) {
+      block += `- Seja BREVE no fechamento: outra etapa do fluxo segue imediatamente depois.\n`;
+    }
+  } else {
+    block += `- Após concluir, envie sua mensagem final. O fluxo só avançará quando o cliente enviar uma nova mensagem.\n`;
+  }
+
+  return `${block}\n---\n\n`;
+}
+
+function buildLegacyTools(ctx?: any, nodeOutcomes?: string[]) {
   const tools = [
     { type: 'function', function: { name: 'send_reply', description: 'Responder ao cliente', parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] } } },
     { type: 'function', function: { name: 'move_pipeline', description: 'Mover pipeline', parameters: { type: 'object', properties: { pipeline_id: { type: 'string' }, column_id: { type: 'string' } }, required: ['pipeline_id', 'column_id'] } } },
@@ -3531,19 +3623,31 @@ function buildLegacyTools(ctx?: any) {
 
   // Add finalizar_interacao tool when inside a flow execution (ai-handoff context)
   if (ctx?.flowExecutionId) {
+    // As saídas configuradas no nó viram enum: com a descrição genérica antiga o
+    // modelo devolvia "concluido" (valor que não casa com aresta nenhuma) ou
+    // simplesmente não chamava a ferramenta.
+    const outcomes = (nodeOutcomes || []).filter(Boolean);
+    const resultadoSchema: any = outcomes.length > 0
+      ? {
+          type: 'string',
+          enum: outcomes,
+          description: `Resultado desta etapa. Use EXATAMENTE um destes valores: ${outcomes.join(', ')}`,
+        }
+      : {
+          type: 'string',
+          description: 'Resultado da interação (ex: qualificado, desqualificado, concluido, precisa_de_humano)',
+        };
+
     tools.push({
       type: 'function',
       function: {
         name: 'finalizar_interacao',
-        description: 'Finalizar a interação do agente de IA e devolver o controle ao fluxo. Use quando seu objetivo nesta etapa estiver concluído. Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".',
+        description: outcomes.length > 0
+          ? `Finalizar esta etapa do fluxo e devolver o controle ao fluxo. Resultados possíveis: ${outcomes.join(', ')}.`
+          : 'Finalizar a interação do agente de IA e devolver o controle ao fluxo. Use quando seu objetivo nesta etapa estiver concluído. Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".',
         parameters: {
           type: 'object',
-          properties: {
-            resultado: {
-              type: 'string',
-              description: 'Resultado da interação (ex: qualificado, desqualificado, concluido, precisa_de_humano)'
-            }
-          },
+          properties: { resultado: resultadoSchema },
           required: ['resultado'],
         },
       },
