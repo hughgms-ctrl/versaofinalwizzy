@@ -1464,6 +1464,67 @@ function quoteForPostgrestOr(value: string): string {
   return `"${value.replace(/["\\]/g, (m) => `\\${m}`)}"`;
 }
 
+/**
+ * Traduz UM filtro de campo personalizado para a condicao PostgREST. Vive numa
+ * funcao propria porque os dois modos de combinacao precisam da MESMA traducao:
+ * no "E" ela entra encadeada na consulta final, no "OU" ela vira uma consulta de
+ * ids sozinha. Duas copias divergiriam no primeiro operador novo.
+ */
+function applyCustomFieldCondition(
+  query: any,
+  filter: ContactQueryFilter,
+  variables: Record<string, unknown>,
+): any {
+  // Chave e operador ja passaram pela validacao de quem chama; aqui nao existe
+  // mais caminho que descarte filtro.
+  const key = String(filter.fieldKey || '');
+  const path = `metadata->custom_fields->>${key}`;
+  const value = replaceVariables(String(filter.value ?? ''), variables).trim();
+
+  switch (filter.operator || 'equals') {
+    case 'equals':
+      return query.eq(path, value);
+    case 'not_equals':
+      // Quem nao tem o campo preenchido tambem "nao e X" -- e o que a
+      // pergunta quer dizer. NULL <> 'x' e NULL, nao true, entao um neq
+      // puro deixaria esses de fora.
+      return query.or(`${path}.is.null,${path}.neq.${quoteForPostgrestOr(value)}`);
+    case 'contains':
+      return query.ilike(path, `%${value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+    case 'is_empty':
+      return query.or(`${path}.is.null,${path}.eq.${quoteForPostgrestOr('')}`);
+    case 'is_not_empty':
+      return query.not(path, 'is', null).neq(path, '');
+    default:
+      // Inalcancavel: a validacao ja recusou. Fica como rede -- e joga, em vez
+      // de avisar, porque um console.warn aqui seria filtro silenciosamente
+      // ignorado de novo.
+      throw new Error(`operador desconhecido "${filter.operator}" no filtro do campo "${key}"`);
+  }
+}
+
+/**
+ * Ids dos contatos que batem num filtro de campo personalizado. So o modo "OU"
+ * precisa disto: no "E" a condicao entra direto na consulta final, sem custo de
+ * uma ida a mais ao banco. Devolve null se estourou o teto, como as outras duas.
+ */
+async function contactIdsMatchingCustomField(
+  supabase: SupabaseClientType,
+  organizationId: string,
+  filter: ContactQueryFilter,
+  variables: Record<string, unknown>,
+): Promise<string[] | null> {
+  const { data, error } = await applyCustomFieldCondition(
+    supabase.from('contacts').select('id').eq('organization_id', organizationId),
+    filter,
+    variables,
+  ).limit(QUERY_CONTACTS_ID_CAP + 1);
+
+  if (error) throw new Error(`contacts (campo personalizado): ${error.message}`);
+  const ids = (data || []).map((r: { id: string }) => r.id);
+  return ids.length > QUERY_CONTACTS_ID_CAP ? null : ids;
+}
+
 function readCustomFieldFromMetadata(metadata: unknown, key: string): string {
   let parsed = metadata;
   if (typeof parsed === 'string') {
@@ -1634,6 +1695,11 @@ async function executeQueryContacts(
   const mode: 'count' | 'list' | 'group' =
     rawMode === 'list' ? 'list' : rawMode === 'group' ? 'group' : 'count';
 
+  // Como os filtros se combinam. "and" continua sendo o padrao: fluxo ja salvo
+  // nao tem esta chave, e mudar o default trocaria calado o resultado de toda
+  // consulta que ja roda em producao.
+  const filterLogic: 'and' | 'or' = String(data.filterLogic || 'and') === 'or' ? 'or' : 'and';
+
   const rawVariable = String(data.outputVariable ?? '').trim();
   // A variavel volta como {{nome}} e o replace so casa \w+. Nome fora disso
   // seria gravado e nunca mais lido.
@@ -1669,7 +1735,7 @@ async function executeQueryContacts(
       return {
         success: true,
         variables: { [outputVariable]: built.text, [`${outputVariable}_total`]: String(built.total) },
-        metadata: { mode, total: 0, grouped: built.lineCount },
+        metadata: { mode, filterLogic, total: 0, grouped: built.lineCount },
       };
     }
     return {
@@ -1678,7 +1744,7 @@ async function executeQueryContacts(
         [outputVariable]: mode === 'count' ? '0' : 'Nenhum contato encontrado.',
         [`${outputVariable}_total`]: '0',
       },
-      metadata: { mode, total: 0 },
+      metadata: { mode, filterLogic, total: 0 },
     };
   };
 
@@ -1720,6 +1786,17 @@ async function executeQueryContacts(
       const filter = filters[i];
       const raw = rawFilters[i];
 
+      // "Nao tem a tag X" como ALTERNATIVA de um OU alcanca quase toda a base --
+      // quem nao tem a tag e praticamente todo mundo -- e o numero volta com
+      // cara de resposta certa. Recusar segue o criterio do resto do no: filtro
+      // que mexe no recorte nao passa batido.
+      if (filterLogic === 'or' && filter.negate) {
+        return {
+          success: false,
+          error: 'Consultar contatos: filtro negativo ("nao tem a tag" / "nao esta na etapa") nao vale quando os filtros se combinam com OU — "A ou nao-B" alcanca quase a base inteira. Use o modo E, ou tire a negacao deste filtro.',
+        };
+      }
+
       if (filter.type === 'tag') {
         if (!QUERY_CONTACTS_UUID_RE.test(filter.tagId ?? '')) {
           return {
@@ -1759,7 +1836,11 @@ async function executeQueryContacts(
       }
     }
 
-    // 1) Filtros que viram conjunto de ids (tag, pipeline).
+    // 1) Filtros que viram conjunto de ids. No modo E sao tag e etapa -- o campo
+    //    personalizado vira condicao SQL na consulta final, sem ida a mais ao
+    //    banco. No modo OU o campo personalizado tambem passa por aqui: deixado
+    //    encadeado na consulta ele valeria como E em cima da uniao, que e
+    //    exatamente o contrario do que a tela prometeu.
     let candidateIds: Set<string> | null = null;
     const excludedIds = new Set<string>();
 
@@ -1773,6 +1854,16 @@ async function executeQueryContacts(
       candidateIds = next;
     };
 
+    // Uniao: filtro que nao trouxe ninguem soma zero em vez de zerar o conjunto.
+    // "Coluna A ou coluna B" com a B vazia continua sendo a A inteira.
+    const unite = (ids: string[]) => {
+      const next = candidateIds === null ? new Set<string>() : candidateIds;
+      for (const id of ids) next.add(id);
+      candidateIds = next;
+    };
+
+    const combine = filterLogic === 'or' ? unite : intersect;
+
     for (const filter of filters) {
       if (filter.type === 'tag') {
         const ids = await contactIdsWithTag(supabase, filter.tagId as string);
@@ -1783,7 +1874,7 @@ async function executeQueryContacts(
           };
         }
         if (filter.negate) ids.forEach((id) => excludedIds.add(id));
-        else intersect(ids);
+        else combine(ids);
       } else if (filter.type === 'pipeline') {
         const ids = await contactIdsInPipelineColumn(supabase, context.organizationId, filter.columnId as string);
         if (ids === null) {
@@ -1793,8 +1884,32 @@ async function executeQueryContacts(
           };
         }
         if (filter.negate) ids.forEach((id) => excludedIds.add(id));
-        else intersect(ids);
+        else combine(ids);
+      } else if (filter.type === 'custom_field' && filterLogic === 'or') {
+        const ids = await contactIdsMatchingCustomField(
+          supabase,
+          context.organizationId,
+          filter,
+          context.variables,
+        );
+        if (ids === null) {
+          return {
+            success: false,
+            error: `Consultar contatos: o filtro do campo "${filter.fieldKey}" alcanca mais de ${QUERY_CONTACTS_ID_CAP} contatos e nao cabe numa combinacao com OU. Estreite o filtro ou use o modo E.`,
+          };
+        }
+        combine(ids);
       }
+    }
+
+    // Teto tambem para a uniao. No modo E o conjunto so encolhe a cada filtro,
+    // entao o teto por origem bastava; no OU ele CRESCE, e sao esses ids que
+    // viram querystring fatiada mais abaixo.
+    if (filterLogic === 'or' && candidateIds !== null && (candidateIds as Set<string>).size > QUERY_CONTACTS_ID_CAP) {
+      return {
+        success: false,
+        error: `Consultar contatos: a uniao dos filtros alcanca mais de ${QUERY_CONTACTS_ID_CAP} contatos. Estreite os filtros — devolver um numero cortado seria pior que nao devolver.`,
+      };
     }
 
     // Intersecao vazia: acabou aqui, sem ir ao banco de novo.
@@ -1838,38 +1953,13 @@ async function executeQueryContacts(
         q = q.not('id', 'in', `(${Array.from(excludedIds).join(',')})`);
       }
 
-      for (const filter of filters) {
-        if (filter.type !== 'custom_field') continue;
-        // Chave e operador ja passaram pela validacao la em cima; aqui nao
-        // existe mais caminho que descarte filtro.
-        const key = String(filter.fieldKey || '');
-        const path = `metadata->custom_fields->>${key}`;
-        const value = replaceVariables(String(filter.value ?? ''), context.variables).trim();
-
-        switch (filter.operator || 'equals') {
-          case 'equals':
-            q = q.eq(path, value);
-            break;
-          case 'not_equals':
-            // Quem nao tem o campo preenchido tambem "nao e X" -- e o que a
-            // pergunta quer dizer. NULL <> 'x' e NULL, nao true, entao um neq
-            // puro deixaria esses de fora.
-            q = q.or(`${path}.is.null,${path}.neq.${quoteForPostgrestOr(value)}`);
-            break;
-          case 'contains':
-            q = q.ilike(path, `%${value.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
-            break;
-          case 'is_empty':
-            q = q.or(`${path}.is.null,${path}.eq.${quoteForPostgrestOr('')}`);
-            break;
-          case 'is_not_empty':
-            q = q.not(path, 'is', null).neq(path, '');
-            break;
-          default:
-            // Inalcancavel: a validacao la em cima ja recusou. Fica como rede --
-            // e joga, em vez de avisar, porque um console.warn aqui seria filtro
-            // silenciosamente ignorado de novo.
-            throw new Error(`operador desconhecido "${filter.operator}" no filtro do campo "${key}"`);
+      // No modo OU o campo personalizado ja virou conjunto de ids la em cima.
+      // Encadear a condicao aqui de novo faria ela valer como E em cima da
+      // uniao -- o filtro apareceria duas vezes, com sinais diferentes.
+      if (filterLogic === 'and') {
+        for (const filter of filters) {
+          if (filter.type !== 'custom_field') continue;
+          q = applyCustomFieldCondition(q, filter, context.variables);
         }
       }
 
@@ -1906,7 +1996,7 @@ async function executeQueryContacts(
       return {
         success: true,
         variables: { [outputVariable]: String(total), [`${outputVariable}_total`]: String(total) },
-        metadata: { mode, total },
+        metadata: { mode, filterLogic, total },
       };
     }
 
@@ -1984,7 +2074,7 @@ async function executeQueryContacts(
       return {
         success: true,
         variables: { [outputVariable]: built.text, [`${outputVariable}_total`]: String(built.total) },
-        metadata: { mode, total, grouped: built.lineCount, collapsed: built.collapsed, notAnswered: emptyCount },
+        metadata: { mode, filterLogic, total, grouped: built.lineCount, collapsed: built.collapsed, notAnswered: emptyCount },
       };
     }
 
@@ -2034,7 +2124,7 @@ async function executeQueryContacts(
     return {
       success: true,
       variables: { [outputVariable]: text, [`${outputVariable}_total`]: String(total) },
-      metadata: { mode, total, listed: lines.length },
+      metadata: { mode, filterLogic, total, listed: lines.length },
     };
   } catch (error) {
     console.error('[FLOW EXECUTE] query-contacts error:', error);

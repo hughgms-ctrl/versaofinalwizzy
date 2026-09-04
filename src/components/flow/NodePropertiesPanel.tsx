@@ -2966,6 +2966,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         // primeira vez que ele consegue PERGUNTAR algo sobre a base.
         const queryMode = String(localData.queryMode || 'count');
         const queryFilters = (localData.filters as ContactQueryFilter[]) || [];
+        const queryFilterLogic: 'and' | 'or' = String(localData.filterLogic || 'and') === 'or' ? 'or' : 'and';
         const listFields = (localData.listFields as string[]) || ['name', 'phone'];
         const groupByField = String(localData.groupByField || '');
         const groupExpected = (localData.groupExpectedValues as string[]) || [];
@@ -2975,6 +2976,19 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
         const updateQueryFilter = (id: string, patch: Partial<ContactQueryFilter>) => {
           handleChange('filters', queryFilters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+        };
+        // Duas chaves numa tacada só: `handleChange` monta o objeto novo a partir
+        // do `localData` que ele capturou, então duas chamadas seguidas fariam a
+        // segunda apagar a primeira. E a negação sai junto porque o motor recusa
+        // filtro negado no modo OU — deixá-la salva só falharia na hora do disparo.
+        const changeQueryFilterLogic = (value: string) => {
+          const next: 'and' | 'or' = value === 'or' ? 'or' : 'and';
+          const nextFilters = next === 'or'
+            ? queryFilters.map((f) => (f.negate ? { ...f, negate: false } : f))
+            : queryFilters;
+          const newData = { ...localData, filterLogic: next, filters: nextFilters };
+          setLocalData(newData);
+          onUpdate(node.id, newData);
         };
         const addQueryFilter = () => {
           const nf: ContactQueryFilter = {
@@ -3033,15 +3047,33 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between gap-2 mb-1">
                 <Label className="text-xs">Filtros</Label>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addQueryFilter}>
-                  <Plus className="h-3 w-3 mr-1" /> Filtro
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  {/* So aparece com dois filtros ou mais: com um so a escolha nao
+                      muda nada, e controle que nao faz efeito e pior que ausente.
+                      Mas se o no ESTA em OU, o seletor fica -- apagar um filtro
+                      nao pode esconder o controle que ainda esta valendo e levar
+                      junto o interruptor de negacao, sem caminho de volta. */}
+                  {(queryFilters.length > 1 || queryFilterLogic === 'or') && (
+                    <Select value={queryFilterLogic} onValueChange={changeQueryFilterLogic}>
+                      <SelectTrigger className="h-7 w-[142px] text-[11px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="and">Todos (E)</SelectItem>
+                        <SelectItem value="or">Qualquer um (OU)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={addQueryFilter}>
+                    <Plus className="h-3 w-3 mr-1" /> Filtro
+                  </Button>
+                </div>
               </div>
               <p className="text-[10px] text-muted-foreground mb-2">
-                Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro nenhum, conta a base inteira da organizacao.
-                O botao <Braces className="inline h-3 w-3 align-[-2px]" /> troca a lista por uma variavel, resolvida na hora do
+                {queryFilterLogic === 'or'
+                  ? 'Basta UM filtro bater (OU) — e o modo de "esta na coluna A ou na coluna B". Aqui nao existe filtro negativo: "A ou nao-B" alcancaria quase a base inteira. Sem filtro nenhum, conta a base inteira da organizacao.'
+                  : 'Todos os filtros precisam bater ao mesmo tempo (E). Sem filtro nenhum, conta a base inteira da organizacao.'}
+                {' '}O botao <Braces className="inline h-3 w-3 align-[-2px]" /> troca a lista por uma variavel, resolvida na hora do
                 disparo — se ela vier vazia, o no falha em vez de ignorar o filtro e devolver um numero maior.
               </p>
 
@@ -3073,10 +3105,14 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
                     {f.type === 'tag' && (
                       <>
-                        <div className="flex items-center gap-2">
-                          <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
-                          <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao tem a tag' : 'Tem a tag'}</span>
-                        </div>
+                        {/* Negacao so no modo E: no OU o motor recusa, entao o
+                            interruptor some em vez de oferecer o que nao roda. */}
+                        {queryFilterLogic === 'and' && (
+                          <div className="flex items-center gap-2">
+                            <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
+                            <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao tem a tag' : 'Tem a tag'}</span>
+                          </div>
+                        )}
                         {f.useVariable ? (
                           <VariableInput
                             value={f.tagId || ''}
@@ -3105,10 +3141,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
                     {f.type === 'pipeline' && (
                       <>
-                        <div className="flex items-center gap-2">
-                          <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
-                          <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao esta na etapa' : 'Esta na etapa'}</span>
-                        </div>
+                        {queryFilterLogic === 'and' && (
+                          <div className="flex items-center gap-2">
+                            <Switch checked={!f.negate} onCheckedChange={(c) => updateQueryFilter(f.id, { negate: !c })} />
+                            <span className="text-[11px] text-muted-foreground">{f.negate ? 'Nao esta na etapa' : 'Esta na etapa'}</span>
+                          </div>
+                        )}
                         {f.useVariable ? (
                           // Quem filtra e o columnId; o pipelineId so existe para
                           // popular o segundo seletor do modo lista.

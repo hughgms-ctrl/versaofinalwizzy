@@ -344,6 +344,9 @@ export function QueryContactsActionNode({ data, selected }: NodeProps<ActionNode
   const mode = String(data.queryMode || 'count');
   const groupField = String(data.groupByField || '');
   const filterCount = Array.isArray(data.filters) ? (data.filters as unknown[]).length : 0;
+  // "3 filtro(s)" le igual nos dois modos e sao recortes bem diferentes: quem
+  // olha o canvas precisa ver que esta lendo uma uniao.
+  const filterLogicLabel = filterCount > 1 && String(data.filterLogic || 'and') === 'or' ? ' (OU)' : '';
 
   return (
     <BaseActionNode selected={!!selected} icon={DatabaseZap} color="bg-indigo-600" title="Consultar Contatos">
@@ -351,7 +354,7 @@ export function QueryContactsActionNode({ data, selected }: NodeProps<ActionNode
         {mode === 'group'
           ? `Agrupar por ${groupField || '...'}`
           : `${mode === 'list' ? 'Listar' : 'Contar'} contatos`}
-        {filterCount > 0 ? ` — ${filterCount} filtro(s)` : ' — sem filtro'}
+        {filterCount > 0 ? ` — ${filterCount} filtro(s)${filterLogicLabel}` : ' — sem filtro'}
       </p>
       <p className="text-[10px] text-muted-foreground mt-1">
         Resultado em <span className="font-mono text-foreground">{`{{${variable}}}`}</span>

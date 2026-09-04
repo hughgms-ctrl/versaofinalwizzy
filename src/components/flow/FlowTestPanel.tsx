@@ -855,6 +855,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         const variable = /^\w+$/.test(rawOutput) ? rawOutput : 'consulta_resultado';
         const mode = String(d.queryMode || 'count');
         const filterCount = Array.isArray(d.filters) ? (d.filters as unknown[]).length : 0;
+        const filterLogicLabel = filterCount > 1 && String(d.filterLogic || 'and') === 'or' ? ' (OU)' : '';
         // No modo agrupar o exemplo respeita os valores esperados configurados:
         // é o formato da saída que interessa ver aqui, não os números.
         const expected = (Array.isArray(d.groupExpectedValues) ? d.groupExpectedValues : [])
@@ -875,7 +876,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         // desenhar a ramificação em cima de um dado inventado.
         addMsg({
           type: 'action',
-          content: `${mode === 'group' ? `Agrupando contatos por "${String(d.groupByField || '...')}"` : mode === 'list' ? 'Listando contatos' : 'Contando contatos'} (${filterCount} filtro(s)) — resultado simulado`,
+          content: `${mode === 'group' ? `Agrupando contatos por "${String(d.groupByField || '...')}"` : mode === 'list' ? 'Listando contatos' : 'Contando contatos'} (${filterCount} filtro(s)${filterLogicLabel}) — resultado simulado`,
           actionIcon: '🔎',
         });
         setSimState(prev => ({

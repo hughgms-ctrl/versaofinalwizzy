@@ -169,6 +169,14 @@ export interface ContactQueryConfig {
    */
   queryMode: 'count' | 'list' | 'group';
   filters: ContactQueryFilter[];
+  /**
+   * Como os filtros se combinam: 'and' exige todos ao mesmo tempo, 'or' aceita
+   * qualquer um (é o que permite "coluna A ou coluna B ou coluna C"). Ausente
+   * vale 'and' — fluxo já salvo não tem a chave e não pode mudar de resultado.
+   * No modo 'or' o motor recusa filtro negado: "A ou não-B" alcança quase a
+   * base inteira e o número voltaria com cara de resposta certa.
+   */
+  filterLogic?: 'and' | 'or';
   /** Só para 'group': a `key` do campo personalizado que vira as linhas. */
   groupByField?: string;
   /** Afordância da tela: troca o seletor do campo de agrupamento por {{variavel}}. */
